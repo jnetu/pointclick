@@ -105,6 +105,18 @@ void Application::processEvents() {
             running_ = false;
         } else if (event.type == SDL_EVENT_TEXT_INPUT) {
             game_.onTextInput(event.text.text);
+        } else if (event.type == SDL_EVENT_MOUSE_MOTION
+                   || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+            SDL_FPoint point{};
+            const float x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
+            const float y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
+            if (renderer_.windowToWorld(x, y, point)) {
+                game_.onPointerMove(point);
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+                    && event.button.button == SDL_BUTTON_LEFT) {
+                    game_.onClick(point);
+                }
+            }
         }
     }
 }

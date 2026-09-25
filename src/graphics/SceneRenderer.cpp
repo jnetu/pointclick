@@ -30,15 +30,8 @@ void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
 
 void drawPlayer(SpriteLibrary& sprites, const Room& room,
                 const Player& player, const SDL_FPoint feet) {
-    const SpriteClip* clip = &room.playerSprites.idle;
-    switch (player.pose()) {
-    case PlayerPose::idle: break;
-    case PlayerPose::left: clip = &room.playerSprites.left; break;
-    case PlayerPose::right: clip = &room.playerSprites.right; break;
-    case PlayerPose::up: clip = &room.playerSprites.up; break;
-    case PlayerPose::down: clip = &room.playerSprites.down; break;
-    }
-    (void)sprites.draw(*clip, clip->targetRect(feet, room.playerBaseSize.x,
+    const SpriteClip& clip = room.playerSprites.forPose(player.pose());
+    (void)sprites.draw(clip, clip.targetRect(feet, room.playerBaseSize.x,
                                         room.playerBaseSize.y, room.scaleAt(feet.y)),
                  player.animationTime());
 }

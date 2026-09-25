@@ -52,6 +52,8 @@ void testClipDefinition(const std::filesystem::path& directory) {
     assert(loaded.room->playerSprites.left.frames == 4);
     assert(loaded.room->playerSprites.right.file == "player_direita.png");
     assert(loaded.room->playerSprites.right.frames == 2);
+    assert(&loaded.room->playerSprites.forPose(PlayerPose::right)
+           == &loaded.room->playerSprites.right);
     assert(loaded.room->playerSprites.up.frameWidth == 6);
     assert(loaded.room->playerSprites.up.frameHeight == 8);
     assert(loaded.room->scenery[0].sprite->file == "props/flag.png");

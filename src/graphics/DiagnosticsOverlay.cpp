@@ -64,19 +64,19 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                               room.speedAt(feet.y), room.playerFarSpeed,
                               room.playerNearSpeed);
     const char* poseName = "idle";
-    const SpriteClip* clip = &room.playerSprites.idle;
     switch (game.player().pose()) {
     case PlayerPose::idle: break;
-    case PlayerPose::left: poseName = "left"; clip = &room.playerSprites.left; break;
-    case PlayerPose::right: poseName = "right"; clip = &room.playerSprites.right; break;
-    case PlayerPose::up: poseName = "up"; clip = &room.playerSprites.up; break;
-    case PlayerPose::down: poseName = "down"; clip = &room.playerSprites.down; break;
+    case PlayerPose::left: poseName = "left"; break;
+    case PlayerPose::right: poseName = "right"; break;
+    case PlayerPose::up: poseName = "up"; break;
+    case PlayerPose::down: poseName = "down"; break;
     }
+    const SpriteClip& clip = room.playerSprites.forPose(game.player().pose());
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 156.0F,
                               "anim: %s  frame: %d/%d", poseName,
-                              clip->frameAt(game.player().animationTime()) + 1, clip->frames);
+                              clip.frameAt(game.player().animationTime()) + 1, clip.frames);
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
-                              "sprite: %s", clip->file.substr(0, 42).c_str());
+                              "sprite: %s", clip.file.substr(0, 42).c_str());
 
     const SDL_FPoint hint = anchored(Anchor::bottomRight, 256.0F, 18.0F, 12.0F);
     SDL_SetRenderDrawColor(renderer, 160, 175, 190, 255);

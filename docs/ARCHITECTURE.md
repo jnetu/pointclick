@@ -80,6 +80,48 @@ desenha o quadriculado de substituição quando o PNG ou corte falha. Ao aplicar
 uma sala, o renderizador limpa o cache para permitir recarregar arquivos. A
 colisão usa `bounds` e a base, independentemente dos pixels do sprite.
 
+## Evoluir animações, interações e diálogos
+
+`SpriteClip` é somente a **definição** de uma animação: arquivo, corte, FPS e
+tamanho visual. O tempo e a animação ativa pertencem ao estado da entidade. O
+`Player` já mantém a direção e o tempo da animação de locomoção; a seleção do
+clip correspondente fica em `PlayerSprites::forPose`. Os objetos com sprite
+usam hoje `Game::sceneTime()` para animações ambientais contínuas. Eles ainda
+não possuem estado individual de animação.
+
+Quando houver animações de ação, como abrir uma porta ou pegar um item, crie um
+conjunto de clips nomeados por entidade e um estado de reprodução por instância
+do objeto (clip ativo, tempo e conclusão). Esse estado deve ficar no domínio do
+jogo, associado ao ID estável do objeto, e avançar em `Game::tick`. O
+renderizador deve apenas consultar o clip e o tempo já escolhidos pelo jogo.
+O formato atual aceita as cinco animações de locomoção do player e um clip por
+objeto; ele precisará de novas chaves para clips adicionais. Não use um novo
+valor de `SceneObjectType` para cada animação: esse enum expressa apenas se a
+base do objeto bloqueia o caminho.
+
+Uma interação pode começar com um teste de alvo antes da rota em
+`Game::onClick`: identificar o objeto pelo ID, encontrar uma posição alcançável
+perto dele e caminhar. Ao chegar, uma regra de interação decide o resultado e
+pode iniciar animação, diálogo, mudança de estado ou transição de sala. Assim,
+cliques no chão continuam sendo pedidos de movimento; cliques em objetos podem
+produzir ações sem colocá-las dentro de `SceneRenderer` ou `DebugEditor`.
+
+Para diálogos, mantenha texto, escolhas, condições e progresso em um sistema de
+domínio próprio. A interface de diálogo apenas apresenta esse estado e envia a
+escolha do jogador. `Application` deverá encaminhar entrada conforme o modo
+ativo (jogo, diálogo ou editor); no momento, texto fora do DEBUG só alimenta o
+texto flutuante de demonstração. Uma transição de sala deve ser uma operação de
+`Game` que aplique a definição da próxima sala e a posição de entrada. Efeitos
+visuais de transição podem usar um estado temporizado separado no renderizador,
+sem alterar colisões ou conteúdo da sala.
+
+`Game::applyRoom` é usado hoje pelo editor e reinicia a rota e o `Player` ao
+aplicar uma edição. Antes de adicionar progresso persistente, separe o estado
+de sessão (inventário, diálogos concluídos, estado dos objetos) da definição
+`Room`; editar parâmetros da sala não deve apagar esse progresso. O `undo` do
+editor continua sendo uma ferramenta para definição de sala, não para desfazer
+ações de gameplay.
+
 ## Escopo atual
 
 O canvas lógico é compartilhado por todas as salas; o SDL aplica letterbox e
@@ -101,6 +143,6 @@ ctest --test-dir build/debug --output-on-failure
 Os testes cobrem movimento, perspectiva, desvio, quinas, configurações inválidas,
 ativação e fechamento do editor, edição em tempo real, persistência, outra sala
 e conversão de coordenadas ao redimensionar. Os testes de sprites cobrem cortes,
-animação, espelhamento, persistência e imagem de substituição. Os testes gráficos
+animação, seleção de direção, persistência e imagem de substituição. Os testes gráficos
 usam o driver virtual e o renderizador de software do SDL. As verificações também
 ficam ativas em Release.

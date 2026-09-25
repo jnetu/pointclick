@@ -5,13 +5,13 @@
 #include <utility>
 
 Game::Game(Room room)
-        : room_(std::move(room)), player_(room_.playerStart, room_.playerSpeed) {
+        : room_(std::move(room)), player_(room_.playerStart) {
     configureNavigation();
 }
 
 void Game::loadRoom(Room room) {
     room_ = std::move(room);
-    player_ = Player(room_.playerStart, room_.playerSpeed);
+    player_ = Player(room_.playerStart);
     configureNavigation();
 }
 
@@ -48,7 +48,7 @@ void Game::onTextInput(const std::string_view text) {
 
 void Game::tick(const float deltaSeconds) {
     floatingText_.tick(deltaSeconds);
-    player_.tick(deltaSeconds);
+    player_.tick(deltaSeconds, room_.speedAt(player_.feet().y));
 }
 
 const FloatingText& Game::floatingText() const {

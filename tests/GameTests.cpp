@@ -14,7 +14,7 @@ void testMovementAndRetargeting() {
 
     game.onClick({900.0F, 360.0F});
     game.tick(0.5F);
-    assert(near(game.player().feet().x, 750.0F));
+    assert(near(game.player().feet().x, 640.0F + game.room().speedAt(360.0F) * 0.5F));
     game.onClick({750.0F, 500.0F});
     for (int i = 0; i < 20; ++i) {
         game.tick(0.05F);
@@ -40,6 +40,9 @@ void testRoomPerspective() {
     assert(near(room.scaleAt(room.farDepthY), room.farScale));
     assert(near(room.scaleAt(room.nearDepthY), room.nearScale));
     assert(room.scaleAt(360.0F) < room.scaleAt(600.0F));
+    assert(near(room.speedAt(room.farDepthY), room.playerFarSpeed));
+    assert(near(room.speedAt(room.nearDepthY), room.playerNearSpeed));
+    assert(room.speedAt(360.0F) < room.speedAt(600.0F));
     assert(room.playerBounds({640.0F, 360.0F}).w
            < room.playerBounds({640.0F, 600.0F}).w);
 
@@ -48,7 +51,8 @@ void testRoomPerspective() {
     room.farDepthY = 370.0F;
     room.farScale = 0.4F;
     room.nearScale = 2.0F;
-    room.playerSpeed = 100.0F;
+    room.playerFarSpeed = 100.0F;
+    room.playerNearSpeed = 100.0F;
     room.playerStart = {640.0F, 400.0F};
     Game custom(room);
     custom.onClick({800.0F, 320.0F});
@@ -65,6 +69,25 @@ void testRoomPerspective() {
     assert(near(custom.player().feet().x, 300.0F));
     assert(near(custom.player().feet().y, 620.0F));
     assert(!custom.player().moving());
+}
+
+void testPerspectiveMovementSpeed() {
+    Room room = Room::firstRoom();
+    room.scenery.clear();
+    room.playerStart = {500.0F, 320.0F};
+    Game far(room);
+    far.onClick({1000.0F, 320.0F});
+    far.tick(0.5F);
+    const float farDistance = far.player().feet().x - 500.0F;
+
+    room.playerStart = {500.0F, 650.0F};
+    Game nearGame(room);
+    nearGame.onClick({1000.0F, 650.0F});
+    nearGame.tick(0.5F);
+    const float nearDistance = nearGame.player().feet().x - 500.0F;
+    assert(nearDistance > farDistance);
+    assert(near(farDistance, room.speedAt(320.0F) * 0.5F));
+    assert(near(nearDistance, room.speedAt(650.0F) * 0.5F));
 }
 
 void testObstacleRoute() {
@@ -139,6 +162,7 @@ void testSolidObjectFootprint() {
 int main() {
     testMovementAndRetargeting();
     testRoomPerspective();
+    testPerspectiveMovementSpeed();
     testObstacleRoute();
     testSolidObjectFootprint();
 }

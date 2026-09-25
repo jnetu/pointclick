@@ -4,8 +4,8 @@
 #include <cmath>
 #include <utility>
 
-Player::Player(const SDL_FPoint start, const float speed)
-        : speed_(speed), previousFeet_(start), feet_(start), destination_(start) {}
+Player::Player(const SDL_FPoint start)
+        : previousFeet_(start), feet_(start), destination_(start) {}
 
 void Player::setPath(std::vector<SDL_FPoint> path) {
     if (path.empty()) {
@@ -19,9 +19,9 @@ void Player::setPath(std::vector<SDL_FPoint> path) {
     nextWaypoint_ = 0;
 }
 
-void Player::tick(const float deltaSeconds) {
+void Player::tick(const float deltaSeconds, const float speed) {
     previousFeet_ = feet_;
-    float travel = speed_ * deltaSeconds;
+    float travel = std::max(speed, 0.0F) * deltaSeconds;
     while (travel > 0.0F && nextWaypoint_ < path_.size()) {
         const SDL_FPoint target = path_[nextWaypoint_];
         const float dx = target.x - feet_.x;

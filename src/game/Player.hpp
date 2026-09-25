@@ -8,10 +8,10 @@
 
 class Player {
 public:
-    Player(SDL_FPoint start, float speed);
+    explicit Player(SDL_FPoint start);
 
     void setPath(std::vector<SDL_FPoint> path);
-    void tick(float deltaSeconds);
+    void tick(float deltaSeconds, float speed);
 
     [[nodiscard]] SDL_FPoint feet() const;
     [[nodiscard]] SDL_FPoint interpolatedFeet(float alpha) const;
@@ -21,7 +21,6 @@ public:
     [[nodiscard]] bool moving() const;
 
 private:
-    float speed_;
     SDL_FPoint previousFeet_;
     SDL_FPoint feet_;
     SDL_FPoint destination_;

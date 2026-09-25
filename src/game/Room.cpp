@@ -4,10 +4,17 @@
 
 #include <algorithm>
 
-float Room::scaleAt(const float feetY) const {
+float Room::depthAt(const float feetY) const {
     const float range = std::max(nearDepthY - farDepthY, 1.0F);
-    const float depth = std::clamp((feetY - farDepthY) / range, 0.0F, 1.0F);
-    return std::lerp(farScale, nearScale, depth);
+    return std::clamp((feetY - farDepthY) / range, 0.0F, 1.0F);
+}
+
+float Room::scaleAt(const float feetY) const {
+    return std::lerp(farScale, nearScale, depthAt(feetY));
+}
+
+float Room::speedAt(const float feetY) const {
+    return std::lerp(playerFarSpeed, playerNearSpeed, depthAt(feetY));
 }
 
 SDL_FRect Room::playerBounds(const SDL_FPoint feet) const {

@@ -19,7 +19,10 @@ Os parâmetros da sala ficam em [`src/game/Room.hpp`](src/game/Room.hpp):
 `wallBottomY` separa parede vermelha e chão azul, `walkableTopY` limita onde os
 pés podem ficar, e `farDepthY`/`nearDepthY` com `farScale`/`nearScale` controlam
 o tamanho aparente do jogador. Cores, linhas de perspectiva, tamanho base,
-velocidade, ponto inicial e objetos da cena também podem ser ajustados. Os
+velocidade, ponto inicial e objetos da cena também podem ser ajustados. Use
+`playerFarSpeed` e `playerNearSpeed` (pixels por segundo) para controlar a
+velocidade no fundo e perto da câmera; `Room::speedAt()` interpola entre elas
+com os mesmos limites de profundidade usados pela escala visual. Os
 valores da primeira sala ficam em `Room::firstRoom()`; outra sala pode ser
 passada para `Game` ou ativada com `Game::loadRoom()`.
 

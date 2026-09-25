@@ -1,5 +1,4 @@
 #include "game/SpriteClip.hpp"
-#include "game/Player.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -47,15 +46,4 @@ SDL_FRect SpriteClip::targetRect(const SDL_FPoint feet, const float baseWidth,
     const float height = (displayHeight > 0 ? displayHeight : baseHeight) * scale;
     return {feet.x + offsetX * scale - width * 0.5F,
             feet.y + offsetY * scale - height, width, height};
-}
-
-const SpriteClip& PlayerSprites::forPose(const PlayerPose pose) const {
-    switch (pose) {
-    case PlayerPose::idle: return idle;
-    case PlayerPose::left: return left;
-    case PlayerPose::right: return right;
-    case PlayerPose::up: return up;
-    case PlayerPose::down: return down;
-    }
-    return idle;
 }

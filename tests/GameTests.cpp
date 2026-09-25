@@ -1,3 +1,4 @@
+#include "content/RoomPresets.hpp"
 #include "game/Game.hpp"
 #include "game/Navigation.hpp"
 
@@ -8,7 +9,7 @@ namespace {
 bool near(const float a, const float b) { return std::abs(a - b) < 0.01F; }
 
 void testMovementAndRetargeting() {
-    Game game;
+    Game game(RoomPresets::firstRoom());
     assert(near(game.player().feet().x, 640.0F));
     assert(near(game.player().feet().y, 360.0F));
 
@@ -36,7 +37,7 @@ void testMovementAndRetargeting() {
 }
 
 void testRoomPerspective() {
-    Room room = Room::firstRoom();
+    Room room = RoomPresets::firstRoom();
     assert(near(room.scaleAt(room.farDepthY), room.farScale));
     assert(near(room.scaleAt(room.nearDepthY), room.nearScale));
     assert(room.scaleAt(360.0F) < room.scaleAt(600.0F));
@@ -63,7 +64,7 @@ void testRoomPerspective() {
     assert(near(std::hypot(custom.player().feet().x - room.playerStart.x,
                            custom.player().feet().y - room.playerStart.y), 50.0F));
 
-    Room nextRoom = Room::firstRoom();
+    Room nextRoom = RoomPresets::firstRoom();
     nextRoom.playerStart = {300.0F, 620.0F};
     custom.loadRoom(nextRoom);
     assert(near(custom.player().feet().x, 300.0F));
@@ -72,7 +73,7 @@ void testRoomPerspective() {
 }
 
 void testPerspectiveMovementSpeed() {
-    Room room = Room::firstRoom();
+    Room room = RoomPresets::firstRoom();
     room.scenery.clear();
     room.playerStart = {500.0F, 320.0F};
     Game far(room);
@@ -134,7 +135,7 @@ void testObstacleRoute() {
 }
 
 void testSolidObjectFootprint() {
-    Room room = Room::firstRoom();
+    Room room = RoomPresets::firstRoom();
     assert(room.scenery[0].type == SceneObjectType::decoration);
     assert(room.scenery[1].type == SceneObjectType::solid);
     const SceneObject& red = room.scenery[1];

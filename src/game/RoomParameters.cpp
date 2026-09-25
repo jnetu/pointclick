@@ -1,4 +1,4 @@
-#include "content/RoomParameters.hpp"
+#include "game/RoomParameters.hpp"
 #include "game/Room.hpp"
 
 namespace {

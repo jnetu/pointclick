@@ -71,12 +71,13 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     case PlayerPose::up: poseName = "up"; break;
     case PlayerPose::down: poseName = "down"; break;
     }
-    const SpriteClip& clip = room.playerSprites.forPose(game.player().pose());
+    const SpriteClip* clip = findAnimation(room.playerAnimations, game.player().animationName());
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 156.0F,
                               "anim: %s  frame: %d/%d", poseName,
-                              clip.frameAt(game.player().animationTime()) + 1, clip.frames);
+                              clip ? clip->frameAt(game.player().animationTime()) + 1 : 0,
+                              clip ? clip->frames : 0);
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
-                              "sprite: %s", clip.file.substr(0, 42).c_str());
+                              "sprite: %s", clip ? clip->file.substr(0, 42).c_str() : "missing clip");
 
     const SDL_FPoint hint = anchored(Anchor::bottomRight, 256.0F, 18.0F, 12.0F);
     SDL_SetRenderDrawColor(renderer, 160, 175, 190, 255);

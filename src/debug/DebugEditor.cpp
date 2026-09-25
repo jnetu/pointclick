@@ -1,7 +1,8 @@
 #include "debug/DebugEditor.hpp"
 #include "content/RoomFiles.hpp"
-#include "content/RoomParameters.hpp"
+#include "game/RoomParameters.hpp"
 #include "game/Game.hpp"
+#include "game/Identifier.hpp"
 
 #include <algorithm>
 #include <cctype>
@@ -15,8 +16,7 @@ bool finished(std::istringstream& input) { input >> std::ws; return input.eof();
 bool validFilename(const std::string& name) {
     const std::filesystem::path path(name);
     return path.extension() == ".room" && !path.stem().empty()
-           && path.stem().string().find_first_not_of(
-                   "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos
+           && validIdentifier(path.stem().string())
            && path.filename() == path;
 }
 }

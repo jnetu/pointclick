@@ -3,8 +3,7 @@
 #include <SDL3/SDL_pixels.h>
 #include <SDL3/SDL_rect.h>
 #include <string>
-#include <optional>
-#include "game/SpriteClip.hpp"
+#include "game/Animation.hpp"
 
 enum class SceneObjectType { decoration, solid };
 
@@ -15,7 +14,9 @@ struct SceneObject {
     // Local to bounds. Only the object's base needs to block the player's feet.
     SDL_FRect collisionFootprint{};
     std::string id;
-    std::optional<SpriteClip> sprite;
+    // Empty means the colored placeholder. Gameplay selects an animation by name.
+    AnimationSet animations;
+    std::string initialAnimation = "idle";
 
     [[nodiscard]] float depth() const { return bounds.y + bounds.h; }
     [[nodiscard]] SDL_FRect worldCollisionFootprint() const {

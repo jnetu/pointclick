@@ -6,22 +6,27 @@ include(cmake/Dependencies.cmake)
 
 # Shared game code: the executable and the tests use the same implementation.
 add_library(pointclick_core STATIC
+        src/game/Animation.cpp
         src/game/FloatingText.cpp
         src/game/Game.cpp
         src/game/Navigation.cpp
+        src/game/ObjectAnimations.cpp
         src/game/Player.cpp
         src/game/Room.cpp
         src/game/SpriteClip.cpp
-        src/content/RoomParameters.cpp
+        src/game/RoomParameters.cpp
         src/content/RoomPresets.cpp
         src/content/RoomFiles.cpp
+        src/content/SpriteFields.cpp
         src/debug/DebugEditor.cpp)
 target_compile_features(pointclick_core PUBLIC cxx_std_20)
 target_include_directories(pointclick_core PUBLIC src)
 target_link_libraries(pointclick_core PUBLIC SDL3::SDL3)
 
 add_library(pointclick_graphics STATIC
+        src/graphics/EntityRenderer.cpp
         src/graphics/Renderer.cpp
+        src/graphics/RoomBackdropRenderer.cpp
         src/graphics/SceneRenderer.cpp
         src/graphics/SpriteLibrary.cpp
         src/graphics/DiagnosticsOverlay.cpp

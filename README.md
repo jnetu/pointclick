@@ -31,6 +31,7 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 
 - [Guia para game design](docs/GAME_DESIGN.md): parâmetros, controles, colisões e novas salas.
 - [Arquitetura e novas mecânicas](docs/ARCHITECTURE.md): responsabilidades e pontos de extensão.
+- [Mapa rápido para código e IA](AGENTS.md): onde alterar cada comportamento.
 
 ```sh
 ctest --test-dir build/debug --output-on-failure

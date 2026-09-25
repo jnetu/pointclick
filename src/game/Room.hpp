@@ -1,7 +1,7 @@
 #pragma once
 
 #include "game/SceneObject.hpp"
-#include "game/SpriteClip.hpp"
+#include "game/Animation.hpp"
 
 #include <SDL3/SDL_rect.h>
 
@@ -9,8 +9,8 @@
 #include <string>
 #include <vector>
 
-// Validated room definition. Designers author assets/rooms/*.room; field defaults
-// are used for omitted settings. Pixel values always use the logical canvas.
+// Room definition only. Content supplies player art defaults when loading files.
+// Pixel values always use the logical canvas.
 struct Room {
     std::string id = "first";
     // Room geometry and the shared depth range for size and movement speed.
@@ -36,18 +36,7 @@ struct Room {
     SDL_FPoint playerBaseSize{48.0F, 80.0F};
     float playerFarSpeed = 110.0F;
     float playerNearSpeed = 330.0F;
-    PlayerSprites playerSprites{
-        SpriteClip{.file = "player_idle.png", .frameWidth = 32, .frameHeight = 48,
-                   .frames = 8, .columns = 1, .fps = 6, .displayWidth = 53.333333F},
-        SpriteClip{.file = "player_esquerda.png", .frameWidth = 32, .frameHeight = 48,
-                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
-        SpriteClip{.file = "player_direita.png", .frameWidth = 32, .frameHeight = 48,
-                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
-        SpriteClip{.file = "player_cima.png", .frameWidth = 32, .frameHeight = 48,
-                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
-        SpriteClip{.file = "player_baixo.png", .frameWidth = 32, .frameHeight = 48,
-                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
-    };
+    AnimationSet playerAnimations;
     // Extra space around solid footprints before rasterizing the navigation grid.
     float collisionPaddingX = 40.0F;
     float collisionPaddingY = 8.0F;
@@ -59,7 +48,6 @@ struct Room {
     [[nodiscard]] bool containsFloor(SDL_FPoint point) const;
     [[nodiscard]] SDL_FPoint clampDestination(SDL_FPoint point) const;
 
-    [[nodiscard]] static Room firstRoom();
     // Empty means valid. Invalid designer data must never enter the simulation.
     [[nodiscard]] std::string validationError() const;
 

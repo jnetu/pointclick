@@ -7,17 +7,22 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | --- | --- |
 | `assets/rooms/*.room` | Salas editáveis por game design |
 | `assets/sprites/*.png` | Imagens estáticas e folhas de animação |
-| `content/RoomParameters` | Catálogo de parâmetros: nome, descrição, intervalo, passo e acesso ao campo |
+| `game/RoomParameters` | Catálogo de parâmetros: nome, descrição, intervalo, passo e acesso ao campo |
 | `content/RoomFiles` | Leitura e gravação das salas; erros com número de linha |
-| `content/RoomPresets` | Exemplo embutido usado por testes e por quem instancia `Game` diretamente |
+| `content/SpriteFields` | Leitura e gravação dos campos de um clip, independente da sala |
+| `content/RoomPresets` | Sprites padrão e exemplo embutido usado por testes e por quem instancia `Game` diretamente |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
+| `game/Animation` | Clips nomeados e reprodução por entidade |
+| `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
 | `game/Game` | Coordena entrada de gameplay, salas, navegação e jogador |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
 | `game/Navigation` | Grade, obstáculos, A* e simplificação segura das rotas |
 | `debug/DebugEditor` | Reconhece DEBUG, processa comandos e gerencia edição/undo |
-| `graphics/SceneRenderer` | Cenário e ordenação por profundidade |
+| `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva |
+| `graphics/EntityRenderer` | Desenho do player e dos objetos |
+| `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena |
 | `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas, corte e imagem quadriculada de substituição |
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição e viewport |
 | `graphics/DebugOverlay` | Interface visual do editor |
@@ -26,6 +31,9 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 
 O executável e os testes compartilham `pointclick_core`. As rotinas de desenho
 ficam em `pointclick_graphics`. Uma correção no jogo chega aos dois consumidores.
+As dependências seguem `core` → `debug`/`content`/`graphics` → `game`.
+`graphics` e `content` leem tipos de `game`; o domínio do jogo não carrega
+arquivos de arte nem chama funções de desenho.
 
 ## Fluxos principais
 
@@ -49,7 +57,7 @@ necessário. Uma sala inteiramente bloqueada é rejeitada.
 ## Adicionar um parâmetro numérico
 
 1. Adicione o campo e seu padrão em `Room.hpp`.
-2. Registre nome, descrição, intervalo e passo em `RoomParameters.cpp`.
+2. Registre nome, descrição, intervalo e passo em `game/RoomParameters.cpp`.
 3. Use o campo na mecânica correspondente. Se depender de outro campo,
    adicione a verificação em `Room::validationError()`.
 4. Documente o significado e acrescente um teste do comportamento relevante.
@@ -73,8 +81,8 @@ e aplique com `Game::applyRoom(room, true, error)`. Para ajustes que preservem a
 posição atual, use `false`. Isso reutiliza as verificações e a reconstrução da
 navegação. O editor é um consumidor dessa API, não um caminho exclusivo de mudança.
 
-Para adicionar arte, configure `SpriteClip` na sala ou no objeto. A definição
-guarda o caminho relativo e o corte da imagem, sem carregar texturas. O
+Para adicionar arte, configure um `SpriteClip` no conjunto de animações da sala
+ou do objeto. A definição guarda o caminho relativo e o corte da imagem, sem carregar texturas. O
 `SpriteLibrary` carrega PNGs sob `assets/sprites`, mantém as texturas em cache e
 desenha o quadriculado de substituição quando o PNG ou corte falha. Ao aplicar
 uma sala, o renderizador limpa o cache para permitir recarregar arquivos. A
@@ -83,19 +91,21 @@ colisão usa `bounds` e a base, independentemente dos pixels do sprite.
 ## Evoluir animações, interações e diálogos
 
 `SpriteClip` é somente a **definição** de uma animação: arquivo, corte, FPS e
-tamanho visual. O tempo e a animação ativa pertencem ao estado da entidade. O
-`Player` já mantém a direção e o tempo da animação de locomoção; a seleção do
-clip correspondente fica em `PlayerSprites::forPose`. Os objetos com sprite
-usam hoje `Game::sceneTime()` para animações ambientais contínuas. Eles ainda
-não possuem estado individual de animação.
+tamanho visual. `AnimationSet` reúne clips por nome. `AnimationPlayback` guarda
+o nome ativo e o tempo de uma instância. O `Player` usa esse estado para a
+locomoção, e `Game` mantém um estado separado por ID de objeto animado. Uma
+regra pode chamar `Game::playObjectAnimation` para selecionar ou reiniciar um
+clip; o renderizador só consulta o estado. O tempo é preservado quando o editor
+reaplica uma sala sem mudar o objeto ou remover o clip ativo. Carregar uma sala
+com reposicionamento reinicia as animações dos objetos.
 
-Quando houver animações de ação, como abrir uma porta ou pegar um item, crie um
-conjunto de clips nomeados por entidade e um estado de reprodução por instância
-do objeto (clip ativo, tempo e conclusão). Esse estado deve ficar no domínio do
-jogo, associado ao ID estável do objeto, e avançar em `Game::tick`. O
-renderizador deve apenas consultar o clip e o tempo já escolhidos pelo jogo.
-O formato atual aceita as cinco animações de locomoção do player e um clip por
-objeto; ele precisará de novas chaves para clips adicionais. Não use um novo
+Os cinco nomes de locomoção do jogador (`idle`, `left`, `right`, `up`, `down`)
+são escolhidos em `Player.cpp`. O arquivo `.room` aceita clips adicionais com
+`player.NOME.*`, e objetos aceitam `animation.NOME.*`. Para uma ação do jogador,
+uma futura regra precisará decidir quando a animação toma prioridade da
+locomoção e quando devolve o controle. Para ações de objetos, use o ID do
+objeto e `Game::playObjectAnimation`; a conclusão de um clip sem repetição pode
+ser consultada com `AnimationPlayback::finished`. Não use um novo
 valor de `SceneObjectType` para cada animação: esse enum expressa apenas se a
 base do objeto bloqueia o caminho.
 

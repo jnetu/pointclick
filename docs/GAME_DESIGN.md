@@ -74,8 +74,9 @@ possível salvar a sala atual com outro nome e continuar editando essa cópia.
 A pasta do editor aparece na parte inferior do painel.
 
 O formato aceita comentários iniciados por `#`. Chaves não reconhecidas,
-valores inválidos e IDs repetidos são rejeitados. Os valores omitidos usam os
-padrões de `Room.hpp`; os objetos devem ser declarados no arquivo.
+valores inválidos e IDs repetidos são rejeitados. Os valores numéricos omitidos
+usam os padrões de `Room.hpp`; os sprites padrão do jogador ficam em
+`src/content/RoomPresets.cpp`. Os objetos devem ser declarados no arquivo.
 
 ## Sprites e animações
 
@@ -85,9 +86,11 @@ procura os sprites ao carregar a sala. Se o arquivo faltar ou o corte não coube
 na imagem, ele desenha um quadriculado roxo e preto no lugar.
 
 Cada direção do jogador tem seu próprio conjunto de valores: `player.idle`,
-`player.left`, `player.right`, `player.up` e `player.down`. A animação `idle`
-é usada quando o jogador para. As cinco imagens podem ter tamanhos e
-quantidades de quadros diferentes.
+`player.left`, `player.right`, `player.up` e `player.down`. Esses cinco nomes
+são usados pelo movimento atual. Outras animações podem ser cadastradas com
+`player.NOME.file`, `player.NOME.frames` e os mesmos sufixos abaixo, sem alterar
+o leitor de salas. A regra que aciona uma nova animação ainda precisa ser
+implementada no jogo. A animação `idle` é usada quando o jogador para.
 Edite as chaves abaixo no bloco `[room]` de cada sala:
 
 | Sufixo | Significado |
@@ -161,10 +164,33 @@ Para manter a proporção original de cada quadro, ajuste `.display_width` e
 o `.room` ou colocar um PNG na pasta, use
 `load first.room` no modo DEBUG para recarregar sem recompilar.
 
-Objetos também aceitam sprites. Dentro de `[object mesa]`, use
-`sprite.file = cenario/mesa.png` para uma imagem simples ou acrescente
-`sprite.frame_width`, `sprite.frame_height`, `sprite.frames` e `sprite.fps`
-para uma animação. Os mesmos sufixos da tabela funcionam para objetos.
+Objetos também aceitam clips nomeados. Dentro de `[object mesa]`, use
+`animation.idle.file = cenario/mesa.png` para uma imagem simples e acrescente
+`animation.open.file`, `animation.open.frames` e outros campos para uma ação.
+`animation.initial` define qual clip começa ativo. Os mesmos sufixos da tabela
+funcionam para objetos. O antigo `sprite.file` continua aceito como sinônimo
+de `animation.idle.file` ao carregar salas antigas. Exemplo:
+
+```ini
+[object porta]
+bounds = 800, 330, 110, 260
+type = solid
+collision = 10, 220, 90, 40
+animation.initial = idle
+animation.idle.file = cenario/porta_fechada.png
+animation.open.file = cenario/porta_abrindo.png
+animation.open.frame_width = 64
+animation.open.frame_height = 128
+animation.open.frames = 6
+animation.open.fps = 8
+animation.open.loop = 0
+```
+
+O jogo guarda o tempo de animação de cada objeto separadamente. Uma regra C++
+pode chamar `Game::playObjectAnimation("porta", "open", true, error)` para
+iniciar ou reiniciar a ação. O clip com `loop = 0` permanece no último quadro;
+`AnimationPlayback::finished(clip)` informa quando terminou. O clique para
+abrir a porta e as condições dessa interação ainda precisam ser implementados.
 `bounds` continua definindo a posição e o tamanho visual padrão; `collision`
 continua definindo a área sólida. O sprite não altera a navegação.
 

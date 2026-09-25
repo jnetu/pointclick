@@ -1,5 +1,6 @@
 #include "content/RoomFiles.hpp"
-#include "content/RoomParameters.hpp"
+#include "content/RoomPresets.hpp"
+#include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
 #include "graphics/Renderer.hpp"
@@ -18,7 +19,7 @@ void command(DebugEditor& editor, Game& game, const std::string_view text) {
 }
 
 void testEditing(const std::filesystem::path& directory) {
-    Game game;
+    Game game(RoomPresets::firstRoom());
     DebugEditor editor;
     editor.setRoomDirectory(directory);
     assert(!editor.onKey(DebugKey::increase, game));
@@ -135,7 +136,7 @@ void testDebugRendering() {
     assert(window);
     Renderer renderer;
     assert(renderer.initialize(window));
-    Game game;
+    Game game(RoomPresets::firstRoom());
     DebugEditor editor;
     editor.onTextInput("DEBUG", game);
     renderer.render(game, 1.0F, &editor);

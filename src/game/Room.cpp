@@ -1,7 +1,8 @@
 #include "game/Room.hpp"
 
 #include "game/World.hpp"
-#include "content/RoomParameters.hpp"
+#include "game/Player.hpp"
+#include "game/RoomParameters.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -39,11 +40,7 @@ SDL_FPoint Room::clampDestination(const SDL_FPoint point) const {
 }
 
 std::string Room::validationError() const {
-    const auto validId = [](const std::string& value) {
-        return !value.empty() && value.find_first_not_of(
-                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos;
-    };
-    if (!validId(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
+    if (!validIdentifier(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
     for (const auto& parameter : roomParameters()) {
         const float value = parameter.read(*this);
         if (!std::isfinite(value) || value < parameter.minimum || value > parameter.maximum) {
@@ -60,10 +57,14 @@ std::string Room::validationError() const {
     for (const float fraction : floorGuideFractions) {
         if (!std::isfinite(fraction) || fraction < 0 || fraction > 1) return "Linhas do chao: use 0 a 1";
     }
-    for (const auto* clip : {&playerSprites.idle, &playerSprites.left,
-                             &playerSprites.right, &playerSprites.up,
-                             &playerSprites.down}) {
-        if (const auto problem = clip->validationError(); !problem.empty()) return "Sprite do player: " + problem;
+    for (const std::string_view name : playerLocomotionAnimations) {
+        if (!findAnimation(playerAnimations, name)) return "Animacao obrigatoria do player: " + std::string(name);
+    }
+    for (const auto& [name, clip] : playerAnimations) {
+        if (!validIdentifier(name)) return "Nome de animacao do player invalido: " + name;
+        if (const auto problem = clip.validationError(); !problem.empty()) {
+            return "Animacao do player " + name + ": " + problem;
+        }
     }
     const auto validRect = [](const SDL_FRect r) {
         return std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.w)
@@ -71,13 +72,20 @@ std::string Room::validationError() const {
     };
     std::set<std::string> ids;
     for (const auto& object : scenery) {
-        if (!validId(object.id) || !ids.insert(object.id).second) return "ID de objeto invalido ou repetido";
+        if (!validIdentifier(object.id) || !ids.insert(object.id).second) {
+            return "ID de objeto invalido ou repetido";
+        }
         if (!validRect(object.bounds) || object.bounds.x < 0 || object.bounds.y < 0
             || object.bounds.x + object.bounds.w > World::width
             || object.bounds.y + object.bounds.h > World::height) return "Objeto fora da tela: " + object.id;
-        if (object.sprite) {
-            if (const auto problem = object.sprite->validationError(); !problem.empty()) {
-                return "Sprite de " + object.id + ": " + problem;
+        if (!validIdentifier(object.initialAnimation)) return "Animacao inicial invalida: " + object.id;
+        if (!object.animations.empty() && !findAnimation(object.animations, object.initialAnimation)) {
+            return "Animacao inicial ausente: " + object.id;
+        }
+        for (const auto& [name, clip] : object.animations) {
+            if (!validIdentifier(name)) return "Nome de animacao invalido: " + object.id;
+            if (const auto problem = clip.validationError(); !problem.empty()) {
+                return "Animacao de " + object.id + " (" + name + "): " + problem;
             }
         }
         const auto base = object.collisionFootprint;

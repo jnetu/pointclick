@@ -1,5 +1,6 @@
 #include "core/Application.hpp"
 #include "content/RoomFiles.hpp"
+#include "content/RoomPresets.hpp"
 #include "graphics/DebugOverlay.hpp"
 
 #include <SDL3/SDL.h>
@@ -16,7 +17,8 @@ constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
 }
 
-Application::Application(std::filesystem::path roomDirectory) {
+Application::Application(std::filesystem::path roomDirectory)
+        : game_(RoomPresets::firstRoom()) {
     debugEditor_.setRoomDirectory(std::move(roomDirectory));
 }
 

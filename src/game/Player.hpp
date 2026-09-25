@@ -1,12 +1,22 @@
 #pragma once
 
+#include "game/Animation.hpp"
 #include <SDL3/SDL_rect.h>
 
+#include <array>
 #include <cstddef>
 #include <span>
+#include <string_view>
 #include <vector>
 
 enum class PlayerPose { idle, left, right, up, down };
+
+// The names the current movement rules require in every room's animation set.
+inline constexpr std::array<std::string_view, 5> playerLocomotionAnimations{
+    "idle", "left", "right", "up", "down"
+};
+static_assert(static_cast<std::size_t>(PlayerPose::down) + 1
+              == playerLocomotionAnimations.size());
 
 class Player {
 public:
@@ -22,6 +32,7 @@ public:
     [[nodiscard]] std::span<const SDL_FPoint> remainingPath() const;
     [[nodiscard]] bool moving() const;
     [[nodiscard]] PlayerPose pose() const;
+    [[nodiscard]] std::string_view animationName() const;
     [[nodiscard]] float animationTime() const;
 
 private:
@@ -31,5 +42,5 @@ private:
     std::vector<SDL_FPoint> path_;
     std::size_t nextWaypoint_ = 0;
     PlayerPose pose_ = PlayerPose::idle;
-    float animationTime_ = 0.0F;
+    AnimationPlayback animation_;
 };

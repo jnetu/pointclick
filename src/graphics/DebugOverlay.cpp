@@ -1,5 +1,5 @@
 #include "graphics/DebugOverlay.hpp"
-#include "content/RoomParameters.hpp"
+#include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
 #include <SDL3/SDL.h>

@@ -3,8 +3,6 @@
 #include <SDL3/SDL_rect.h>
 #include <string>
 
-enum class PlayerPose;
-
 // Asset and frame layout only. The renderer owns PNG decoding and GPU textures.
 // Zero frame dimensions mean a single static image using the entire PNG.
 struct SpriteClip {
@@ -30,14 +28,4 @@ struct SpriteClip {
     [[nodiscard]] int frameAt(float elapsedSeconds) const;
     [[nodiscard]] SDL_FRect targetRect(SDL_FPoint feet, float baseWidth,
                                         float baseHeight, float scale = 1.0F) const;
-};
-
-struct PlayerSprites {
-    SpriteClip idle;
-    SpriteClip left;
-    SpriteClip right;
-    SpriteClip up;
-    SpriteClip down;
-
-    [[nodiscard]] const SpriteClip& forPose(PlayerPose pose) const;
 };

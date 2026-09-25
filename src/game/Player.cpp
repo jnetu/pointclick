@@ -47,12 +47,10 @@ void Player::tick(const float deltaSeconds, const float speed) {
             nextPose = dy < 0 ? PlayerPose::up : PlayerPose::down;
         }
     }
-    if (nextPose != pose_) {
-        pose_ = nextPose;
-        animationTime_ = 0.0F;
-    } else {
-        animationTime_ += std::max(deltaSeconds, 0.0F);
-    }
+    pose_ = nextPose;
+    const bool changed = animation_.play(
+            playerLocomotionAnimations[static_cast<std::size_t>(pose_)]);
+    if (!changed) animation_.tick(deltaSeconds);
 }
 
 SDL_FPoint Player::feet() const { return feet_; }
@@ -78,4 +76,6 @@ bool Player::moving() const { return nextWaypoint_ < path_.size(); }
 
 PlayerPose Player::pose() const { return pose_; }
 
-float Player::animationTime() const { return animationTime_; }
+std::string_view Player::animationName() const { return animation_.name(); }
+
+float Player::animationTime() const { return animation_.elapsed(); }

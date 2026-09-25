@@ -37,6 +37,22 @@ void Player::tick(const float deltaSeconds, const float speed) {
             travel = 0.0F;
         }
     }
+    PlayerPose nextPose = PlayerPose::idle;
+    if (moving()) {
+        const float dx = feet_.x - previousFeet_.x;
+        const float dy = feet_.y - previousFeet_.y;
+        if (std::abs(dx) >= std::abs(dy)) {
+            nextPose = dx < 0 ? PlayerPose::left : PlayerPose::right;
+        } else {
+            nextPose = dy < 0 ? PlayerPose::up : PlayerPose::down;
+        }
+    }
+    if (nextPose != pose_) {
+        pose_ = nextPose;
+        animationTime_ = 0.0F;
+    } else {
+        animationTime_ += std::max(deltaSeconds, 0.0F);
+    }
 }
 
 SDL_FPoint Player::feet() const { return feet_; }
@@ -59,3 +75,7 @@ std::span<const SDL_FPoint> Player::remainingPath() const {
 }
 
 bool Player::moving() const { return nextWaypoint_ < path_.size(); }
+
+PlayerPose Player::pose() const { return pose_; }
+
+float Player::animationTime() const { return animationTime_; }

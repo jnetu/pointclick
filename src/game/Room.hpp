@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/SceneObject.hpp"
+#include "game/SpriteClip.hpp"
 
 #include <SDL3/SDL_rect.h>
 
@@ -20,12 +21,12 @@ struct Room {
     float farScale = 0.55F;
     float nearScale = 1.65F;
 
-    // Placeholder art and perspective guides (replace with sprites later).
+    // Placeholder room art and perspective guides.
     SDL_Color wallColor{171, 62, 67, 255};
     SDL_Color floorColor{42, 102, 175, 255};
     SDL_Color wallTrimColor{109, 39, 48, 255};
     SDL_Color floorGuideColor{68, 124, 190, 255};
-    SDL_Color playerColor{245, 194, 102, 255};
+    SDL_Color playerColor{245, 194, 102, 255}; // Legacy room-file fields, unused with PNGs.
     SDL_Color playerOutlineColor{255, 239, 205, 255};
     float vanishingPointX = 640.0F;
     int floorRaySpacing = 160;
@@ -35,6 +36,18 @@ struct Room {
     SDL_FPoint playerBaseSize{48.0F, 80.0F};
     float playerFarSpeed = 110.0F;
     float playerNearSpeed = 330.0F;
+    PlayerSprites playerSprites{
+        SpriteClip{.file = "player_idle.png", .frameWidth = 32, .frameHeight = 48,
+                   .frames = 8, .columns = 1, .fps = 6, .displayWidth = 53.333333F},
+        SpriteClip{.file = "player_esquerda.png", .frameWidth = 32, .frameHeight = 48,
+                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
+        SpriteClip{.file = "player_direita.png", .frameWidth = 32, .frameHeight = 48,
+                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
+        SpriteClip{.file = "player_cima.png", .frameWidth = 32, .frameHeight = 48,
+                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
+        SpriteClip{.file = "player_baixo.png", .frameWidth = 32, .frameHeight = 48,
+                   .frames = 7, .columns = 7, .spacingX = 1, .displayWidth = 53.333333F},
+    };
     // Extra space around solid footprints before rasterizing the navigation grid.
     float collisionPaddingX = 40.0F;
     float collisionPaddingY = 8.0F;

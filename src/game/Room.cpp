@@ -60,6 +60,11 @@ std::string Room::validationError() const {
     for (const float fraction : floorGuideFractions) {
         if (!std::isfinite(fraction) || fraction < 0 || fraction > 1) return "Linhas do chao: use 0 a 1";
     }
+    for (const auto* clip : {&playerSprites.idle, &playerSprites.left,
+                             &playerSprites.right, &playerSprites.up,
+                             &playerSprites.down}) {
+        if (const auto problem = clip->validationError(); !problem.empty()) return "Sprite do player: " + problem;
+    }
     const auto validRect = [](const SDL_FRect r) {
         return std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.w)
                && std::isfinite(r.h) && r.w > 0 && r.h > 0;
@@ -70,6 +75,11 @@ std::string Room::validationError() const {
         if (!validRect(object.bounds) || object.bounds.x < 0 || object.bounds.y < 0
             || object.bounds.x + object.bounds.w > World::width
             || object.bounds.y + object.bounds.h > World::height) return "Objeto fora da tela: " + object.id;
+        if (object.sprite) {
+            if (const auto problem = object.sprite->validationError(); !problem.empty()) {
+                return "Sprite de " + object.id + ": " + problem;
+            }
+        }
         const auto base = object.collisionFootprint;
         if (!std::isfinite(base.x) || !std::isfinite(base.y) || !std::isfinite(base.w)
             || !std::isfinite(base.h)) return "Base de colisao invalida: " + object.id;

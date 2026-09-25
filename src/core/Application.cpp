@@ -58,6 +58,7 @@ bool Application::initialize() {
         if (!base) { SDL_Log("Could not locate assets: %s", SDL_GetError()); return false; }
         debugEditor_.setRoomDirectory(std::filesystem::path(base) / "assets" / "rooms");
     }
+    renderer_.setSpriteRoot(debugEditor_.roomDirectory().parent_path() / "sprites");
     auto loaded = RoomFiles::load(debugEditor_.roomDirectory() / "first.room");
     std::string roomError;
     if (!loaded.room || !game_.applyRoom(std::move(*loaded.room), true, roomError)) {

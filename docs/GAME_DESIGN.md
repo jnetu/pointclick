@@ -77,6 +77,97 @@ O formato aceita comentários iniciados por `#`. Chaves não reconhecidas,
 valores inválidos e IDs repetidos são rejeitados. Os valores omitidos usam os
 padrões de `Room.hpp`; os objetos devem ser declarados no arquivo.
 
+## Sprites e animações
+
+Coloque os PNGs em `assets/sprites`. Cada `*.file` é relativo a essa pasta;
+subpastas também funcionam, por exemplo `personagens/player_idle.png`. O jogo
+procura os sprites ao carregar a sala. Se o arquivo faltar ou o corte não couber
+na imagem, ele desenha um quadriculado roxo e preto no lugar.
+
+Cada direção do jogador tem seu próprio conjunto de valores: `player.idle`,
+`player.left`, `player.right`, `player.up` e `player.down`. A animação `idle`
+é usada quando o jogador para. As cinco imagens podem ter tamanhos e
+quantidades de quadros diferentes.
+Edite as chaves abaixo no bloco `[room]` de cada sala:
+
+| Sufixo | Significado |
+| --- | --- |
+| `.file` | Caminho relativo do PNG |
+| `.frame_width`, `.frame_height` | Tamanho, em pixels do PNG, de **um** quadro; ambos 0 usam a imagem inteira |
+| `.frames` | Número de quadros da animação |
+| `.columns` | Quadros por linha; 0 calcula pela largura da imagem |
+| `.first_frame` | Quantos espaços da grade pular antes do primeiro quadro |
+| `.margin_x`, `.margin_y` | Margem antes da grade de quadros, em pixels |
+| `.spacing_x`, `.spacing_y` | Espaço entre quadros, em pixels |
+| `.fps` | Quadros por segundo; 0 mantém o primeiro quadro |
+| `.loop` | `1` repete a animação; `0` para no último quadro |
+| `.pixelated` | `1` usa pixels nítidos; `0` suaviza a ampliação |
+| `.display_width`, `.display_height` | Tamanho visual base; 0 usa `player.width/height` ou `bounds` do objeto |
+| `.offset_x`, `.offset_y` | Ajuste visual da imagem em relação ao centro dos pés, antes da perspectiva |
+
+Os quadros são lidos da esquerda para a direita, depois de cima para baixo.
+Para uma imagem simples, use `.frames = 1` e deixe `.frame_width` e
+`.frame_height` em 0. Para uma spritesheet, defina os dois tamanhos e a
+quantidade de quadros. As outras salas usam os mesmos cortes padrão quando não
+definem suas próprias chaves `player.*`. A primeira sala usa estes cortes reais:
+
+```ini
+player.idle.file = player_idle.png
+player.idle.frame_width = 32
+player.idle.frame_height = 48
+player.idle.frames = 8
+player.idle.columns = 1
+player.idle.fps = 6
+
+player.left.file = player_esquerda.png
+player.left.frame_width = 32
+player.left.frame_height = 48
+player.left.frames = 7
+player.left.columns = 7
+player.left.spacing_x = 1
+player.left.fps = 8
+
+player.right.file = player_direita.png
+player.right.frame_width = 32
+player.right.frame_height = 48
+player.right.frames = 7
+player.right.columns = 7
+player.right.spacing_x = 1
+player.right.fps = 8
+
+player.up.file = player_cima.png
+player.up.frame_width = 32
+player.up.frame_height = 48
+player.up.frames = 7
+player.up.columns = 7
+player.up.spacing_x = 1
+player.up.fps = 8
+
+player.down.file = player_baixo.png
+player.down.frame_width = 32
+player.down.frame_height = 48
+player.down.frames = 7
+player.down.columns = 7
+player.down.spacing_x = 1
+player.down.fps = 8
+```
+
+O tamanho visual e os deslocamentos são medidos nas coordenadas da sala. A
+perspectiva da sala é aplicada depois: o sprite diminui ao se afastar da câmera
+e continua ancorado nos pés usados para caminhar e ordenar as camadas.
+Para manter a proporção original de cada quadro, ajuste `.display_width` e
+`.display_height` na mesma proporção. A primeira sala usa largura visual
+53,33 com altura 80, preservando a proporção 32:48 de cada quadro. Após editar
+o `.room` ou colocar um PNG na pasta, use
+`load first.room` no modo DEBUG para recarregar sem recompilar.
+
+Objetos também aceitam sprites. Dentro de `[object mesa]`, use
+`sprite.file = cenario/mesa.png` para uma imagem simples ou acrescente
+`sprite.frame_width`, `sprite.frame_height`, `sprite.frames` e `sprite.fps`
+para uma animação. Os mesmos sufixos da tabela funcionam para objetos.
+`bounds` continua definindo a posição e o tamanho visual padrão; `collision`
+continua definindo a área sólida. O sprite não altera a navegação.
+
 ```ini
 [room]
 id = biblioteca
@@ -125,6 +216,8 @@ As cores são RGBA, com quatro inteiros entre 0 e 255. As chaves são
 `wall.color`, `floor.color`, `wall.trim_color`, `floor.guide_color`,
 `player.color` e `player.outline_color`. Para editar cores ou linhas, altere
 o arquivo e use `load` novamente. Use alfa 255 para os retângulos atuais.
+As duas cores do jogador continuam aceitas nos arquivos antigos, mas não
+afetam o jogador desenhado com PNG.
 
 Tamanho e velocidade são interpolados linearmente pela altura dos pés.
 A profundidade de desenho usa o Y dos pés do jogador e a borda inferior dos

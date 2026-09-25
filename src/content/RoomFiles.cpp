@@ -53,6 +53,74 @@ bool parseRect(const std::string& text, SDL_FRect& rect) {
     return true;
 }
 
+bool parseSpriteField(SpriteClip& clip, const std::string_view key,
+                      const std::string& value) {
+    if (key == "file") { clip.file = value; return true; }
+    if (key == "loop" || key == "pixelated") {
+        if (value != "0" && value != "1") return false;
+        (key == "loop" ? clip.loop : clip.pixelated) = value == "1";
+        return true;
+    }
+    float number[1];
+    if (!numbers(value, number)) return false;
+    const auto integer = [&](int& field) {
+        if (std::floor(number[0]) != number[0]
+            || number[0] < -8192 || number[0] > 8192) return false;
+        field = static_cast<int>(number[0]);
+        return true;
+    };
+    if (key == "frame_width") return integer(clip.frameWidth);
+    if (key == "frame_height") return integer(clip.frameHeight);
+    if (key == "frames") return integer(clip.frames);
+    if (key == "columns") return integer(clip.columns);
+    if (key == "first_frame") return integer(clip.firstFrame);
+    if (key == "margin_x") return integer(clip.marginX);
+    if (key == "margin_y") return integer(clip.marginY);
+    if (key == "spacing_x") return integer(clip.spacingX);
+    if (key == "spacing_y") return integer(clip.spacingY);
+    if (key == "fps") { clip.fps = number[0]; return true; }
+    if (key == "display_width") { clip.displayWidth = number[0]; return true; }
+    if (key == "display_height") { clip.displayHeight = number[0]; return true; }
+    if (key == "offset_x") { clip.offsetX = number[0]; return true; }
+    if (key == "offset_y") { clip.offsetY = number[0]; return true; }
+    return false;
+}
+
+void writeSprite(std::ostream& out, const std::string_view prefix, const SpriteClip& clip) {
+    out << prefix << "file = " << clip.file << '\n';
+    out << prefix << "frame_width = " << clip.frameWidth << '\n';
+    out << prefix << "frame_height = " << clip.frameHeight << '\n';
+    out << prefix << "frames = " << clip.frames << '\n';
+    out << prefix << "columns = " << clip.columns << '\n';
+    out << prefix << "first_frame = " << clip.firstFrame << '\n';
+    out << prefix << "margin_x = " << clip.marginX << '\n';
+    out << prefix << "margin_y = " << clip.marginY << '\n';
+    out << prefix << "spacing_x = " << clip.spacingX << '\n';
+    out << prefix << "spacing_y = " << clip.spacingY << '\n';
+    out << prefix << "fps = " << clip.fps << '\n';
+    out << prefix << "loop = " << (clip.loop ? 1 : 0) << '\n';
+    out << prefix << "pixelated = " << (clip.pixelated ? 1 : 0) << '\n';
+    out << prefix << "display_width = " << clip.displayWidth << '\n';
+    out << prefix << "display_height = " << clip.displayHeight << '\n';
+    out << prefix << "offset_x = " << clip.offsetX << '\n';
+    out << prefix << "offset_y = " << clip.offsetY << '\n';
+}
+
+SpriteClip* playerSpriteFor(Room& room, const std::string_view key,
+                            std::string_view& field) {
+    constexpr std::string_view idle = "player.idle.";
+    constexpr std::string_view left = "player.left.";
+    constexpr std::string_view right = "player.right.";
+    constexpr std::string_view up = "player.up.";
+    constexpr std::string_view down = "player.down.";
+    if (key.starts_with(idle)) { field = key.substr(idle.size()); return &room.playerSprites.idle; }
+    if (key.starts_with(left)) { field = key.substr(left.size()); return &room.playerSprites.left; }
+    if (key.starts_with(right)) { field = key.substr(right.size()); return &room.playerSprites.right; }
+    if (key.starts_with(up)) { field = key.substr(up.size()); return &room.playerSprites.up; }
+    if (key.starts_with(down)) { field = key.substr(down.size()); return &room.playerSprites.down; }
+    return nullptr;
+}
+
 void writeColor(std::ostream& out, const SDL_Color color) {
     out << static_cast<int>(color.r) << ", " << static_cast<int>(color.g) << ", "
         << static_cast<int>(color.b) << ", " << static_cast<int>(color.a) << '\n';
@@ -81,7 +149,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
         if (line == "[room]") { object = nullptr; section = "room"; continue; }
         if (line.starts_with("[object ") && line.ends_with(']')) {
             const auto id = trim(line.substr(8, line.size() - 9));
-            room.scenery.push_back({{}, {180, 180, 180, 255}, SceneObjectType::decoration, {}, id});
+            room.scenery.push_back({{}, {180, 180, 180, 255}, SceneObjectType::decoration, {}, id, {}});
             object = &room.scenery.back();
             section = "object." + id;
             continue;
@@ -99,10 +167,15 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
             else if (key == "type" && (value == "solid" || value == "decoration")) {
                 object->type = value == "solid" ? SceneObjectType::solid : SceneObjectType::decoration;
                 parsed = true;
+            } else if (key.starts_with("sprite.")) {
+                if (!object->sprite) object->sprite.emplace();
+                parsed = parseSpriteField(*object->sprite, std::string_view(key).substr(7), value);
             }
         } else if (key == "id") {
             room.id = value;
             parsed = true;
+        } else if (std::string_view spriteField; auto* clip = playerSpriteFor(room, key, spriteField)) {
+            parsed = parseSpriteField(*clip, spriteField, value);
         } else if (const auto* parameter = findRoomParameter(key)) {
             float number[1];
             parsed = numbers(value, number);
@@ -139,6 +212,11 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
         out << parameter.key << " = " << parameter.read(room) << '\n';
     }
     for (const auto& color : colors) { out << color.key << " = "; writeColor(out, room.*(color.member)); }
+    writeSprite(out, "player.idle.", room.playerSprites.idle);
+    writeSprite(out, "player.left.", room.playerSprites.left);
+    writeSprite(out, "player.right.", room.playerSprites.right);
+    writeSprite(out, "player.up.", room.playerSprites.up);
+    writeSprite(out, "player.down.", room.playerSprites.down);
     out << "floor.lines = ";
     for (std::size_t i = 0; i < room.floorGuideFractions.size(); ++i) {
         out << (i == 0 ? "" : ", ") << room.floorGuideFractions[i];
@@ -149,6 +227,7 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
         out << "color = "; writeColor(out, object.color);
         out << "type = " << (object.type == SceneObjectType::solid ? "solid" : "decoration") << '\n';
         out << "collision = "; writeRect(out, object.collisionFootprint);
+        if (object.sprite) writeSprite(out, "sprite.", *object.sprite);
     }
     out.close();
     std::error_code ioError;

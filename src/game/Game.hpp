@@ -25,6 +25,8 @@ public:
     [[nodiscard]] SDL_FPoint pointer() const;
     [[nodiscard]] bool pointerInside() const;
     [[nodiscard]] const Room& room() const;
+    [[nodiscard]] float sceneTime() const;
+    [[nodiscard]] unsigned long long roomRevision() const;
 
 private:
     FloatingText floatingText_;
@@ -33,4 +35,6 @@ private:
     Player player_;
     SDL_FPoint pointer_{};
     bool pointerInside_ = false;
+    float sceneTime_ = 0.0F;
+    unsigned long long roomRevision_ = 0;
 };

@@ -1,7 +1,8 @@
 # Point & Click
 
 Protótipo em C++20 e SDL3: movimento por clique, perspectiva por profundidade,
-objetos com bases sólidas, rotas com A* e viewport lógica de 1280 × 720.
+objetos com bases sólidas, rotas com A*, sprites PNG e viewport lógica de
+1280 × 720.
 
 ```sh
 cmake --preset debug
@@ -24,6 +25,9 @@ load gallery.room
 Os arquivos de sala ficam em [assets/rooms](assets/rooms). O argumento `--rooms`
 permite editar e salvar diretamente no projeto, sem recompilar. Alterações
 feitas durante o jogo persistem após fechar somente quando se usa `save`.
+Os PNGs ficam em [assets/sprites](assets/sprites). A sala define separadamente
+o corte, o número de quadros e a velocidade de cada animação. Quando algum PNG
+faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e preto.
 
 - [Guia para game design](docs/GAME_DESIGN.md): parâmetros, controles, colisões e novas salas.
 - [Arquitetura e novas mecânicas](docs/ARCHITECTURE.md): responsabilidades e pontos de extensão.

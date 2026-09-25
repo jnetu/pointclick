@@ -6,16 +6,19 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | Local | Responsabilidade |
 | --- | --- |
 | `assets/rooms/*.room` | Salas editáveis por game design |
+| `assets/sprites/*.png` | Imagens estáticas e folhas de animação |
 | `content/RoomParameters` | Catálogo de parâmetros: nome, descrição, intervalo, passo e acesso ao campo |
 | `content/RoomFiles` | Leitura e gravação das salas; erros com número de linha |
 | `content/RoomPresets` | Exemplo embutido usado por testes e por quem instancia `Game` diretamente |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
+| `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
 | `game/Game` | Coordena entrada de gameplay, salas, navegação e jogador |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
 | `game/Navigation` | Grade, obstáculos, A* e simplificação segura das rotas |
 | `debug/DebugEditor` | Reconhece DEBUG, processa comandos e gerencia edição/undo |
 | `graphics/SceneRenderer` | Cenário e ordenação por profundidade |
+| `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas, corte e imagem quadriculada de substituição |
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição e viewport |
 | `graphics/DebugOverlay` | Interface visual do editor |
 | `graphics/Renderer` | Ciclo de desenho e apresentação lógica do SDL |
@@ -28,7 +31,9 @@ ficam em `pointclick_graphics`. Uma correção no jogo chega aos dois consumidor
 
 Clique → conversão janela/mundo → `Game::onClick` → navegação → rota do `Player`.
 A cada tick, o jogo calcula a velocidade na profundidade atual; o player avança
-sem ultrapassar o próximo ponto. O render usa posições interpoladas.
+sem ultrapassar o próximo ponto. O player escolhe a animação pela direção do
+movimento e reinicia seus quadros ao mudar de direção. O render usa posições
+interpoladas.
 
 Texto → `DebugEditor::onTextInput` → ativação por DEBUG. Enquanto ativo, o editor
 consome texto e teclas de edição. As alterações passam por `Game::applyRoom`;
@@ -68,9 +73,12 @@ e aplique com `Game::applyRoom(room, true, error)`. Para ajustes que preservem a
 posição atual, use `false`. Isso reutiliza as verificações e a reconstrução da
 navegação. O editor é um consumidor dessa API, não um caminho exclusivo de mudança.
 
-Ao trocar os retângulos por sprites, preserve `bounds`, ID, base de colisão e
-âncora dos pés. Adicione a referência do recurso à definição e trate o desenho
-em `SceneRenderer`. A navegação não precisa conhecer texturas.
+Para adicionar arte, configure `SpriteClip` na sala ou no objeto. A definição
+guarda o caminho relativo e o corte da imagem, sem carregar texturas. O
+`SpriteLibrary` carrega PNGs sob `assets/sprites`, mantém as texturas em cache e
+desenha o quadriculado de substituição quando o PNG ou corte falha. Ao aplicar
+uma sala, o renderizador limpa o cache para permitir recarregar arquivos. A
+colisão usa `bounds` e a base, independentemente dos pixels do sprite.
 
 ## Escopo atual
 
@@ -92,5 +100,7 @@ ctest --test-dir build/debug --output-on-failure
 
 Os testes cobrem movimento, perspectiva, desvio, quinas, configurações inválidas,
 ativação e fechamento do editor, edição em tempo real, persistência, outra sala
-e conversão de coordenadas ao redimensionar. O teste gráfico usa o driver virtual
-e o renderizador de software do SDL. As verificações também ficam ativas em Release.
+e conversão de coordenadas ao redimensionar. Os testes de sprites cobrem cortes,
+animação, espelhamento, persistência e imagem de substituição. Os testes gráficos
+usam o driver virtual e o renderizador de software do SDL. As verificações também
+ficam ativas em Release.

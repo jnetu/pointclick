@@ -51,6 +51,8 @@ bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
     room_ = std::move(room);
     navigation_ = std::move(navigation);
     player_ = Player(feet);
+    if (resetPlayer) sceneTime_ = 0.0F;
+    ++roomRevision_;
     return true;
 }
 
@@ -85,6 +87,7 @@ void Game::onTextInput(const std::string_view text) {
 void Game::tick(const float deltaSeconds) {
     floatingText_.tick(deltaSeconds);
     player_.tick(deltaSeconds, room_.speedAt(player_.feet().y));
+    sceneTime_ += deltaSeconds;
 }
 
 const FloatingText& Game::floatingText() const {
@@ -98,3 +101,7 @@ SDL_FPoint Game::pointer() const { return pointer_; }
 bool Game::pointerInside() const { return pointerInside_; }
 
 const Room& Game::room() const { return room_; }
+
+float Game::sceneTime() const { return sceneTime_; }
+
+unsigned long long Game::roomRevision() const { return roomRevision_; }

@@ -1,4 +1,5 @@
 #include "graphics/SceneRenderer.hpp"
+#include "graphics/SpriteLibrary.hpp"
 #include "game/Game.hpp"
 #include "game/World.hpp"
 #include <SDL3/SDL.h>
@@ -6,7 +7,16 @@
 #include <vector>
 
 namespace {
-void drawObject(SDL_Renderer* renderer, const SceneObject& object) {
+void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
+                const SceneObject& object, const float elapsedSeconds) {
+    if (object.sprite) {
+        const SDL_FPoint foot{object.bounds.x + object.bounds.w * 0.5F,
+                              object.bounds.y + object.bounds.h};
+        (void)sprites.draw(*object.sprite,
+                     object.sprite->targetRect(foot, object.bounds.w, object.bounds.h),
+                     elapsedSeconds);
+        return;
+    }
     SDL_SetRenderDrawColor(renderer, object.color.r, object.color.g, object.color.b, 255);
     SDL_RenderFillRect(renderer, &object.bounds);
     if (object.type == SceneObjectType::solid) {
@@ -18,19 +28,24 @@ void drawObject(SDL_Renderer* renderer, const SceneObject& object) {
     SDL_RenderRect(renderer, &object.bounds);
 }
 
-void drawPlayer(SDL_Renderer* renderer, const Room& room, const SDL_FPoint feet) {
-    const SDL_FRect bounds = room.playerBounds(feet);
-    SDL_SetRenderDrawColor(renderer, room.playerColor.r, room.playerColor.g,
-                           room.playerColor.b, room.playerColor.a);
-    SDL_RenderFillRect(renderer, &bounds);
-    SDL_SetRenderDrawColor(renderer, room.playerOutlineColor.r,
-                           room.playerOutlineColor.g, room.playerOutlineColor.b,
-                           room.playerOutlineColor.a);
-    SDL_RenderRect(renderer, &bounds);
+void drawPlayer(SpriteLibrary& sprites, const Room& room,
+                const Player& player, const SDL_FPoint feet) {
+    const SpriteClip* clip = &room.playerSprites.idle;
+    switch (player.pose()) {
+    case PlayerPose::idle: break;
+    case PlayerPose::left: clip = &room.playerSprites.left; break;
+    case PlayerPose::right: clip = &room.playerSprites.right; break;
+    case PlayerPose::up: clip = &room.playerSprites.up; break;
+    case PlayerPose::down: clip = &room.playerSprites.down; break;
+    }
+    (void)sprites.draw(*clip, clip->targetRect(feet, room.playerBaseSize.x,
+                                        room.playerBaseSize.y, room.scaleAt(feet.y)),
+                 player.animationTime());
 }
 }
 
-void SceneRenderer::draw(SDL_Renderer* renderer, const Game& game, const float interpolation) {
+void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
+                         const Game& game, const float interpolation) {
     const Room& room = game.room();
     const SDL_FRect wall{0.0F, 0.0F, static_cast<float>(World::width), room.wallBottomY};
     const SDL_FRect floor{0.0F, room.wallBottomY, static_cast<float>(World::width),
@@ -81,9 +96,10 @@ void SceneRenderer::draw(SDL_Renderer* renderer, const Game& game, const float i
     });
     for (const DrawItem item : items) {
         if (item.objectIndex < 0) {
-            drawPlayer(renderer, room, feet);
+            drawPlayer(sprites, room, game.player(), feet);
         } else {
-            drawObject(renderer, scenery[static_cast<std::size_t>(item.objectIndex)]);
+            drawObject(renderer, sprites, scenery[static_cast<std::size_t>(item.objectIndex)],
+                       game.sceneTime());
         }
     }
 

@@ -1,41 +1,32 @@
 # Point & Click
 
-Protótipo em SDL3. O jogador começa no centro do mundo e caminha até o ponto
-clicado com o botão esquerdo. Um novo clique substitui a rota atual. Cliques
-nas barras fora da área do jogo são ignorados.
+Protótipo em C++20 e SDL3: movimento por clique, perspectiva por profundidade,
+objetos com bases sólidas, rotas com A* e viewport lógica de 1280 × 720.
 
 ```sh
 cmake --preset debug
 cmake --build --preset debug
-./build/debug/pointclick
+./build/debug/pointclick --rooms assets/rooms
 ```
 
-O mundo usa coordenadas lógicas de 1280 × 720. A apresentação do SDL preserva
-essa proporção ao redimensionar a janela, e a posição do mouse é convertida de
-coordenadas da janela para coordenadas do mundo. Os textos de debug usam âncoras
-nos cantos do mundo.
+Digite **DEBUG** para abrir o editor durante o jogo. Use cima/baixo para
+selecionar e esquerda/direita para alterar valores. **Tab** oculta o painel
+para testar a sala; **Esc** sai do editor. Também há comandos:
 
-Os parâmetros da sala ficam em [`src/game/Room.hpp`](src/game/Room.hpp):
-`wallBottomY` separa parede vermelha e chão azul, `walkableTopY` limita onde os
-pés podem ficar, e `farDepthY`/`nearDepthY` com `farScale`/`nearScale` controlam
-o tamanho aparente do jogador. Cores, linhas de perspectiva, tamanho base,
-velocidade, ponto inicial e objetos da cena também podem ser ajustados. Use
-`playerFarSpeed` e `playerNearSpeed` (pixels por segundo) para controlar a
-velocidade no fundo e perto da câmera; `Room::speedAt()` interpola entre elas
-com os mesmos limites de profundidade usados pela escala visual. Os
-valores da primeira sala ficam em `Room::firstRoom()`; outra sala pode ser
-passada para `Game` ou ativada com `Game::loadRoom()`.
+```text
+set player.far_speed 140
+set player.near_speed 350
+move red_box 850 460
+save minha_sala.room
+load gallery.room
+```
 
-`Navigation` guarda uma grade de células caminháveis e calcula rotas com A*.
-Quando o caminho direto está livre, o destino é usado sem desvios. O objeto
-vermelho à direita usa `SceneObjectType::solid`: somente sua base definida em
-`collisionFootprint` bloqueia os pés do jogador. A parte superior continua
-visual e pode cobrir o jogador conforme a profundidade. Um clique na base
-bloqueada é levado ao ponto alcançável mais próximo. Outros objetos sólidos
-podem ser adicionados a `Room::scenery` com sua própria base e a margem de
-colisão ajustada em `Room`.
+Os arquivos de sala ficam em [assets/rooms](assets/rooms). O argumento `--rooms`
+permite editar e salvar diretamente no projeto, sem recompilar. Alterações
+feitas durante o jogo persistem após fechar somente quando se usa `save`.
 
-Para rodar os testes:
+- [Guia para game design](docs/GAME_DESIGN.md): parâmetros, controles, colisões e novas salas.
+- [Arquitetura e novas mecânicas](docs/ARCHITECTURE.md): responsabilidades e pontos de extensão.
 
 ```sh
 ctest --test-dir build/debug --output-on-failure

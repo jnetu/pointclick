@@ -91,6 +91,11 @@ void testPerspectiveMovementSpeed() {
 }
 
 void testObstacleRoute() {
+    Navigation corner;
+    corner.setBlocked(1, 1, true);
+    const auto aroundCorner = corner.findPath({31, 33}, {33, 31});
+    assert(aroundCorner.size() > 1);
+    assert(corner.findPath({10, 10}, {10, 720}).empty());
     Navigation navigation;
     for (int row = 8; row <= 13; ++row) {
         navigation.setBlocked(19, row, true);

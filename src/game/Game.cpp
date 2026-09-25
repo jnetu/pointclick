@@ -2,28 +2,64 @@
 
 #include "game/World.hpp"
 
+#include <limits>
+#include <optional>
+#include <stdexcept>
 #include <utility>
 
 Game::Game(Room room)
-        : room_(std::move(room)), player_(room_.playerStart) {
-    configureNavigation();
+        : player_(room.playerStart) {
+    loadRoom(std::move(room));
 }
 
 void Game::loadRoom(Room room) {
-    room_ = std::move(room);
-    player_ = Player(room_.playerStart);
-    configureNavigation();
+    std::string error;
+    if (!applyRoom(std::move(room), true, error)) throw std::invalid_argument(error);
 }
 
-void Game::configureNavigation() {
-    navigation_ = Navigation{};
-    navigation_.setWalkableTop(room_.walkableTopY);
-    for (const SceneObject& object : room_.scenery) {
+bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
+    error = room.validationError();
+    if (!error.empty()) return false;
+    Navigation navigation;
+    navigation.setWalkableTop(room.walkableTopY);
+    for (const SceneObject& object : room.scenery) {
         if (object.type == SceneObjectType::solid) {
-            navigation_.addObstacle(object.worldCollisionFootprint(),
-                                    room_.collisionPaddingX, room_.collisionPaddingY);
+            navigation.addObstacle(object.worldCollisionFootprint(),
+                                   room.collisionPaddingX, room.collisionPaddingY);
         }
     }
+    SDL_FPoint feet = room.clampDestination(resetPlayer ? room.playerStart : player_.feet());
+    if (!navigation.canStandAt(feet)) {
+        std::optional<SDL_FPoint> nearest;
+        float bestDistance = std::numeric_limits<float>::infinity();
+        for (int y = 0; y < World::height; y += Navigation::cellSize) {
+            for (int x = 0; x < World::width; x += Navigation::cellSize) {
+                const auto point = room.clampDestination({x + Navigation::cellSize * 0.5F,
+                                                          y + Navigation::cellSize * 0.5F});
+                const float dx = point.x - feet.x;
+                const float dy = point.y - feet.y;
+                const float distance = dx * dx + dy * dy;
+                if (navigation.canStandAt(point) && distance < bestDistance) {
+                    bestDistance = distance;
+                    nearest = point;
+                }
+            }
+        }
+        if (!nearest) { error = "A sala precisa de uma area caminhavel"; return false; }
+        feet = *nearest;
+    }
+    room_ = std::move(room);
+    navigation_ = std::move(navigation);
+    player_ = Player(feet);
+    return true;
+}
+
+bool Game::teleportPlayer(const SDL_FPoint position, std::string& error) {
+    const auto feet = room_.clampDestination(position);
+    if (!navigation_.canStandAt(feet)) { error = "Posicao bloqueada"; return false; }
+    player_ = Player(feet);
+    error.clear();
+    return true;
 }
 
 void Game::onPointerMove(const SDL_FPoint position) {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <SDL3/SDL_rect.h>
+#include "game/World.hpp"
 
 #include <vector>
 
@@ -14,12 +15,12 @@ public:
     void addObstacle(SDL_FRect bounds, float paddingX, float paddingY);
     [[nodiscard]] std::vector<SDL_FPoint> findPath(SDL_FPoint from, SDL_FPoint to) const;
     [[nodiscard]] std::vector<SDL_FPoint> findPathToNearestReachable(SDL_FPoint from,
-                                                                     SDL_FPoint desired) const;
+                                                                  SDL_FPoint desired) const;
     [[nodiscard]] bool canStandAt(SDL_FPoint point) const;
 
 private:
-    static constexpr int columns = 40;
-    static constexpr int rows = 23;
+    static constexpr int columns = (World::width + cellSize - 1) / cellSize;
+    static constexpr int rows = (World::height + cellSize - 1) / cellSize;
 
     [[nodiscard]] bool walkable(int column, int row) const;
     [[nodiscard]] bool clearLine(SDL_FPoint from, SDL_FPoint to) const;

@@ -1,0 +1,29 @@
+# Segunda sala de exemplo. No editor: load gallery.room
+[room]
+id = gallery
+room.wall_y = 240
+room.walkable_y = 270
+perspective.far_y = 270
+perspective.near_y = 720
+perspective.far_scale = 0.7
+perspective.near_scale = 1.4
+player.far_speed = 140
+player.near_speed = 280
+player.start_x = 220
+player.start_y = 460
+wall.color = 73,82,102,255
+floor.color = 68,111,121,255
+wall.trim_color = 38,48,62,255
+floor.guide_color = 85,131,139,255
+
+[object table]
+bounds = 600,370,200,140
+color = 164,109,71,255
+type = solid
+collision = 10,105,180,35
+
+[object plant]
+bounds = 1050,260,80,170
+color = 91,157,98,255
+type = solid
+collision = 20,150,40,20

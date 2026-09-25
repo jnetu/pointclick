@@ -47,7 +47,8 @@ bool Navigation::walkable(const int column, const int row) const {
 }
 
 bool Navigation::canStandAt(const SDL_FPoint point) const {
-    if (point.x < 0.0F || point.x >= World::width
+    if (!std::isfinite(point.x) || !std::isfinite(point.y)
+        || point.x < 0.0F || point.x >= World::width
         || point.y < walkableTopY_ || point.y >= World::height) {
         return false;
     }
@@ -62,20 +63,27 @@ int Navigation::cellAt(const SDL_FPoint point) const {
 }
 
 bool Navigation::clearLine(const SDL_FPoint from, const SDL_FPoint to) const {
-    const float length = distance(from, to);
-    const int steps = std::max(1, static_cast<int>(std::ceil(length / (cellSize * 0.25F))));
-    for (int step = 0; step <= steps; ++step) {
-        const float t = static_cast<float>(step) / static_cast<float>(steps);
-        const SDL_FPoint point{std::lerp(from.x, to.x, t), std::lerp(from.y, to.y, t)};
-        const int cell = cellAt(point);
-        if (point.y < walkableTopY_ || !walkable(cell % columns, cell / columns)) {
-            return false;
+    if (!canStandAt(from) || !canStandAt(to)) return false;
+    // Exact segment checks prevent the path smoother from clipping a cell corner.
+    const int left = static_cast<int>(std::min(from.x, to.x)) / cellSize;
+    const int right = static_cast<int>(std::max(from.x, to.x)) / cellSize;
+    const int top = static_cast<int>(std::min(from.y, to.y)) / cellSize;
+    const int bottom = static_cast<int>(std::max(from.y, to.y)) / cellSize;
+    for (int row = top; row <= bottom; ++row) {
+        for (int column = left; column <= right; ++column) {
+            if (!blocked_[row * columns + column]) continue;
+            const SDL_FRect cell{static_cast<float>(column * cellSize),
+                                 static_cast<float>(row * cellSize),
+                                 static_cast<float>(cellSize), static_cast<float>(cellSize)};
+            float x1 = from.x, y1 = from.y, x2 = to.x, y2 = to.y;
+            if (SDL_GetRectAndLineIntersectionFloat(&cell, &x1, &y1, &x2, &y2)) return false;
         }
     }
     return true;
 }
 
 std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FPoint to) const {
+    if (!canStandAt(from) || !canStandAt(to)) return {};
     const int start = cellAt(from);
     const int goal = cellAt(to);
     if (from.y < walkableTopY_ || to.y < walkableTopY_
@@ -93,10 +101,12 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
         bool operator>(const Entry& other) const { return estimate > other.estimate; }
     };
 
-    const auto center = [this](const int cell) -> SDL_FPoint {
+    const auto center = [this, start, goal, from, to](const int cell) -> SDL_FPoint {
+        if (cell == start) return from;
+        if (cell == goal) return to;
         return {static_cast<float>((cell % columns) * cellSize) + cellSize * 0.5F,
                 std::clamp(static_cast<float>((cell / columns) * cellSize) + cellSize * 0.5F,
-                           walkableTopY_, static_cast<float>(World::height))};
+                           walkableTopY_, static_cast<float>(World::height - 1))};
     };
 
     std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
@@ -129,6 +139,7 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
                 continue;
             }
             const int next = ny * columns + nx;
+            if (!clearLine(center(current.cell), center(next))) continue;
             const float nextCost = cost[current.cell] + distance(center(current.cell), center(next));
             if (nextCost < cost[next]) {
                 cost[next] = nextCost;
@@ -147,7 +158,6 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
         reversed.push_back(center(cell));
     }
     std::reverse(reversed.begin(), reversed.end());
-    reversed.push_back(to);
 
     // Remove cell-by-cell turns when the straight segment is free.
     std::vector<SDL_FPoint> path;
@@ -168,6 +178,7 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
 
 std::vector<SDL_FPoint> Navigation::findPathToNearestReachable(
         const SDL_FPoint from, const SDL_FPoint desired) const {
+    if (!canStandAt(from) || !std::isfinite(desired.x) || !std::isfinite(desired.y)) return {};
     if (const auto direct = findPath(from, desired); !direct.empty()) {
         return direct;
     }

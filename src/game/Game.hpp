@@ -11,6 +11,9 @@ class Game {
 public:
     explicit Game(Room room = Room::firstRoom());
     void loadRoom(Room room);
+    // Validates and commits atomically. Edits preserve feet; loads use the spawn.
+    bool applyRoom(Room room, bool resetPlayer, std::string& error);
+    bool teleportPlayer(SDL_FPoint position, std::string& error);
 
     void onTextInput(std::string_view text);
     void onPointerMove(SDL_FPoint position);
@@ -24,8 +27,6 @@ public:
     [[nodiscard]] const Room& room() const;
 
 private:
-    void configureNavigation();
-
     FloatingText floatingText_;
     Room room_;
     Navigation navigation_;

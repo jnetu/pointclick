@@ -1,8 +1,11 @@
 #include "game/Room.hpp"
 
 #include "game/World.hpp"
+#include "content/RoomParameters.hpp"
 
 #include <algorithm>
+#include <cmath>
+#include <set>
 
 float Room::depthAt(const float feetY) const {
     const float range = std::max(nearDepthY - farDepthY, 1.0F);
@@ -30,17 +33,52 @@ bool Room::containsFloor(const SDL_FPoint point) const {
 }
 
 SDL_FPoint Room::clampDestination(const SDL_FPoint point) const {
-    const float y = std::clamp(point.y, walkableTopY, static_cast<float>(World::height));
+    const float y = std::clamp(point.y, walkableTopY, static_cast<float>(World::height - 1));
     const float halfWidth = playerBaseSize.x * scaleAt(y) * 0.5F;
     return {std::clamp(point.x, halfWidth, World::width - halfWidth), y};
 }
 
-Room Room::firstRoom() {
-    Room room;
-    room.scenery = {
-            {{380.0F, 345.0F, 100.0F, 135.0F}, {89, 127, 157, 255}},
-            {{810.0F, 465.0F, 110.0F, 125.0F}, {220, 74, 68, 255},
-             SceneObjectType::solid, {14.0F, 92.0F, 82.0F, 33.0F}},
+std::string Room::validationError() const {
+    const auto validId = [](const std::string& value) {
+        return !value.empty() && value.find_first_not_of(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") == std::string::npos;
     };
-    return room;
+    if (!validId(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
+    for (const auto& parameter : roomParameters()) {
+        const float value = parameter.read(*this);
+        if (!std::isfinite(value) || value < parameter.minimum || value > parameter.maximum) {
+            return "Fora do intervalo: " + std::string(parameter.key);
+        }
+    }
+    if (farDepthY >= nearDepthY) return "far_y deve ser menor que near_y";
+    if (wallBottomY > walkableTopY) return "walkable_y deve ficar abaixo da parede";
+    const float largestScale = std::max(farScale, nearScale);
+    if (playerBaseSize.x * largestScale >= World::width
+        || playerBaseSize.y * largestScale >= World::height) {
+        return "O tamanho escalado do player deve caber na tela";
+    }
+    for (const float fraction : floorGuideFractions) {
+        if (!std::isfinite(fraction) || fraction < 0 || fraction > 1) return "Linhas do chao: use 0 a 1";
+    }
+    const auto validRect = [](const SDL_FRect r) {
+        return std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.w)
+               && std::isfinite(r.h) && r.w > 0 && r.h > 0;
+    };
+    std::set<std::string> ids;
+    for (const auto& object : scenery) {
+        if (!validId(object.id) || !ids.insert(object.id).second) return "ID de objeto invalido ou repetido";
+        if (!validRect(object.bounds) || object.bounds.x < 0 || object.bounds.y < 0
+            || object.bounds.x + object.bounds.w > World::width
+            || object.bounds.y + object.bounds.h > World::height) return "Objeto fora da tela: " + object.id;
+        const auto base = object.collisionFootprint;
+        if (!std::isfinite(base.x) || !std::isfinite(base.y) || !std::isfinite(base.w)
+            || !std::isfinite(base.h)) return "Base de colisao invalida: " + object.id;
+        if (object.type == SceneObjectType::solid || base.w != 0 || base.h != 0) {
+            if (!validRect(base) || base.x < 0 || base.y < 0
+                || base.x + base.w > object.bounds.w || base.y + base.h > object.bounds.h) {
+                return "Base de colisao invalida: " + object.id;
+            }
+        }
+    }
+    return {};
 }

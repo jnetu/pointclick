@@ -1,16 +1,23 @@
 #include "core/Application.hpp"
+#include "content/RoomFiles.hpp"
+#include "graphics/DebugOverlay.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <chrono>
 #include <thread>
+#include <utility>
 
 namespace {
 constexpr double kTicksPerSecond = 20.0;
 constexpr double kFramesPerSecond = 60.0;
 constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
+}
+
+Application::Application(std::filesystem::path roomDirectory) {
+    debugEditor_.setRoomDirectory(std::move(roomDirectory));
 }
 
 int Application::run() {
@@ -43,6 +50,18 @@ bool Application::initialize() {
     }
 
     if (!renderer_.initialize(window_)) {
+        return false;
+    }
+
+    if (debugEditor_.roomDirectory().empty()) {
+        const char* base = SDL_GetBasePath();
+        if (!base) { SDL_Log("Could not locate assets: %s", SDL_GetError()); return false; }
+        debugEditor_.setRoomDirectory(std::filesystem::path(base) / "assets" / "rooms");
+    }
+    auto loaded = RoomFiles::load(debugEditor_.roomDirectory() / "first.room");
+    std::string roomError;
+    if (!loaded.room || !game_.applyRoom(std::move(*loaded.room), true, roomError)) {
+        SDL_Log("Could not load room: %s", loaded.room ? roomError.c_str() : loaded.error.c_str());
         return false;
     }
 
@@ -86,7 +105,7 @@ void Application::mainLoop() {
             const float interpolation = static_cast<float>(
                     tickAccumulator / kTickSeconds
             );
-            renderer_.render(game_, interpolation);
+            renderer_.render(game_, interpolation, &debugEditor_);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {
@@ -104,7 +123,19 @@ void Application::processEvents() {
         if (event.type == SDL_EVENT_QUIT) {
             running_ = false;
         } else if (event.type == SDL_EVENT_TEXT_INPUT) {
-            game_.onTextInput(event.text.text);
+            if (!debugEditor_.onTextInput(event.text.text, game_)) game_.onTextInput(event.text.text);
+        } else if (event.type == SDL_EVENT_KEY_DOWN) {
+            switch (event.key.key) {
+            case SDLK_UP: debugEditor_.onKey(DebugKey::previous, game_); break;
+            case SDLK_DOWN: debugEditor_.onKey(DebugKey::next, game_); break;
+            case SDLK_LEFT: debugEditor_.onKey(DebugKey::decrease, game_); break;
+            case SDLK_RIGHT: debugEditor_.onKey(DebugKey::increase, game_); break;
+            case SDLK_RETURN: debugEditor_.onKey(DebugKey::submit, game_); break;
+            case SDLK_BACKSPACE: debugEditor_.onKey(DebugKey::backspace, game_); break;
+            case SDLK_ESCAPE: debugEditor_.onKey(DebugKey::close, game_); break;
+            case SDLK_TAB: debugEditor_.onKey(DebugKey::togglePanel, game_); break;
+            default: break;
+            }
         } else if (event.type == SDL_EVENT_MOUSE_MOTION
                    || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
             SDL_FPoint point{};
@@ -114,7 +145,9 @@ void Application::processEvents() {
                 game_.onPointerMove(point);
                 if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
                     && event.button.button == SDL_BUTTON_LEFT) {
-                    game_.onClick(point);
+                    if (!debugEditor_.panelVisible() || !SDL_PointInRectFloat(&point, &DebugOverlay::panel)) {
+                        game_.onClick(point);
+                    }
                 }
             }
         }

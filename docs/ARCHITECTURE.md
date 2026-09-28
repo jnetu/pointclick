@@ -54,6 +54,20 @@ necessário. Uma sala inteiramente bloqueada é rejeitada.
 `load` passa pela mesma validação usada pelas edições. A aplicação carrega
 `first.room` da pasta indicada por `--rooms` na inicialização.
 
+A leitura usa `SDL_IOFromFile` e `SDL_LoadFile_IO` do SDL3 3.4.16, com caminhos
+UTF-8 e o tamanho explícito dos dados. O stream permanece aberto para conferir
+erros de leitura antes do parser; stream e buffer são liberados por RAII.
+Sem `--rooms`, o caminho continua sendo `SDL_GetBasePath()/assets/rooms`.
+No Android, a base é `./` e o SDL remove esse prefixo ao procurar no pacote.
+O empacotamento deve preservar `assets/rooms` dentro do espaço de assets do APK
+(por exemplo, `app/src/main/assets/assets/rooms/first.room`), ou usar `--rooms`
+para indicar outra raiz. `SDL_GetBasePath` devolve um ponteiro mantido pelo SDL,
+que o chamador não deve liberar.
+
+A gravação continua usando `std::ofstream` e o sistema de arquivos local.
+Essa migração de leitura não define um diretório gravável para saves em mobile
+nem implementa suporte mobile completo.
+
 ## Adicionar um parâmetro numérico
 
 1. Adicione o campo e seu padrão em `Room.hpp`.

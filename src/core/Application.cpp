@@ -7,6 +7,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -58,7 +59,9 @@ bool Application::initialize() {
     if (debugEditor_.roomDirectory().empty()) {
         const char* base = SDL_GetBasePath();
         if (!base) { SDL_Log("Could not locate assets: %s", SDL_GetError()); return false; }
-        debugEditor_.setRoomDirectory(std::filesystem::path(base) / "assets" / "rooms");
+        // SDL owns this cached UTF-8 path; on Android it is "./" for APK assets.
+        const std::u8string basePath(base, base + SDL_strlen(base));
+        debugEditor_.setRoomDirectory(std::filesystem::path(basePath) / "assets" / "rooms");
     }
     renderer_.setSpriteRoot(debugEditor_.roomDirectory().parent_path() / "sprites");
     auto loaded = RoomFiles::load(debugEditor_.roomDirectory() / "first.room");

@@ -2,12 +2,15 @@
 
 #include "core/Application.hpp"
 #include <cstdio>
+#include <string>
 #include <string_view>
 
 int main(int argc, char* argv[]) {
     std::filesystem::path roomDirectory;
-    if (argc == 3 && std::string_view(argv[1]) == "--rooms") roomDirectory = argv[2];
-    else if (argc != 1) {
+    if (argc == 3 && std::string_view(argv[1]) == "--rooms") {
+        const std::string_view utf8Path(argv[2]);
+        roomDirectory = std::u8string(utf8Path.begin(), utf8Path.end());
+    } else if (argc != 1) {
         std::fprintf(stderr, "Usage: pointclick [--rooms path/to/rooms]\n");
         return 1;
     }

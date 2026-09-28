@@ -3,16 +3,25 @@
 #include "content/SpriteFields.hpp"
 #include "game/RoomParameters.hpp"
 
+#include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_stdinc.h>
+
 #include <algorithm>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <memory>
 #include <set>
 #include <sstream>
 
 namespace {
+std::string pathToUtf8(const std::filesystem::path& path) {
+    const auto utf8 = path.u8string();
+    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
+}
+
 std::string trim(std::string value) {
     const auto first = value.find_first_not_of(" \t\r\n");
     if (first == std::string::npos) return {};
@@ -81,8 +90,19 @@ void writeRect(std::ostream& out, const SDL_FRect rect) {
 }
 
 RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
-    std::ifstream input(path);
-    if (!input) return {{}, "Nao foi possivel abrir " + path.filename().string()};
+    const auto filename = pathToUtf8(path);
+    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> file(
+            SDL_IOFromFile(filename.c_str(), "rb"), SDL_CloseIO);
+    if (!file) return {{}, "Nao foi possivel abrir " + pathToUtf8(path.filename())};
+    std::size_t dataSize = 0;
+    std::unique_ptr<void, decltype(&SDL_free)> data(
+            SDL_LoadFile_IO(file.get(), &dataSize, false), SDL_free);
+    // SDL 3.4.16 can return partial data on a read error; inspect the open stream.
+    const auto status = SDL_GetIOStatus(file.get());
+    if (!data || (status != SDL_IO_STATUS_READY && status != SDL_IO_STATUS_EOF)) {
+        return {{}, "Falha de leitura"};
+    }
+    std::istringstream input(std::string(static_cast<const char*>(data.get()), dataSize));
     Room room = RoomPresets::defaults();
     SceneObject* object = nullptr;
     std::string section = "room";

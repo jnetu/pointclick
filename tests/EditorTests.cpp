@@ -91,6 +91,39 @@ void testRoomFiles(const std::filesystem::path& directory) {
     const auto loaded = RoomFiles::load(source);
     assert(loaded.room);
     assert(loaded.room->scenery.size() == 2);
+    const auto missing = RoomFiles::load(directory / std::filesystem::path(u8"ausente-\u00e7.room"));
+    assert(!missing.room);
+    assert(missing.error == "Nao foi possivel abrir ausente-\xC3\xA7.room");
+
+    const auto unicodeDirectory = directory / std::filesystem::path(u8"salas-a\u00e7\u00e3o");
+    std::filesystem::create_directory(unicodeDirectory);
+    const auto commentedPath = unicodeDirectory / std::filesystem::path(u8"sala-\u65e5.room");
+    {
+        std::ofstream out(commentedPath, std::ios::binary);
+        out << "# comentario\r\n[room] # secao\r\n\r\nid = commented # id\r\n"
+               "player.far_speed = 123.5 # velocidade";
+    }
+    const auto commented = RoomFiles::load(commentedPath);
+    assert(commented.room && commented.error.empty());
+    assert(commented.room->id == "commented");
+    assert(commented.room->playerFarSpeed == 123.5F);
+
+    const auto emptyPath = directory / "empty.room";
+    { std::ofstream out(emptyPath, std::ios::binary); }
+    const auto empty = RoomFiles::load(emptyPath);
+    assert(empty.room && empty.error.empty());
+    assert(empty.room->id == RoomPresets::defaults().id);
+
+    const auto nulPath = directory / "nul.room";
+    {
+        std::ofstream out(nulPath, std::ios::binary);
+        out << "[room]\nid = nul_room\n";
+        out.put('\0');
+        out << '\n';
+    }
+    const auto nul = RoomFiles::load(nulPath);
+    assert(!nul.room && nul.error == "Linha 3: Esperado chave = valor");
+
     const auto gallery = RoomFiles::load(source.parent_path() / "gallery.room");
     assert(gallery.room);
     Game other(*gallery.room);
@@ -116,11 +149,19 @@ void testRoomFiles(const std::filesystem::path& directory) {
     assert(restored.room->scenery[1].collisionFootprint.h == 21.5F);
     assert(restored.room->scenery[1].id == "red_box");
 
-    for (const auto text : {"player.far_speed = nan", "typo = 40",
-                            "player.far_speed = 40 px", "player.width = 0",
-                            "player.far_speed = 40\nplayer.far_speed = 50"}) {
-        { std::ofstream bad(directory / "bad.room"); bad << text; }
-        assert(!RoomFiles::load(directory / "bad.room").room);
+    const struct { const char* text; const char* error; } invalidRooms[]{
+        {"player.far_speed = nan", "Linha 1: Chave ou valor invalido: player.far_speed"},
+        {"typo = 40", "Linha 1: Chave ou valor invalido: typo"},
+        {"player.far_speed = 40 px", "Linha 1: Chave ou valor invalido: player.far_speed"},
+        {"player.width = 0", "Linha 1: Fora do intervalo: player.width"},
+        {"player.far_speed = 40\nplayer.far_speed = 50", "Linha 2: Chave repetida: player.far_speed"},
+        {"# comentario\r\n[room]\r\n\r\nplayer.far_speed 40", "Linha 4: Esperado chave = valor"},
+        {"perspective.far_y = 500\nperspective.near_y = 500", "far_y deve ser menor que near_y"},
+    };
+    for (const auto& invalid : invalidRooms) {
+        { std::ofstream bad(directory / "bad.room", std::ios::binary); bad << invalid.text; }
+        const auto result = RoomFiles::load(directory / "bad.room");
+        assert(!result.room && result.error == invalid.error);
     }
     const auto validSpeed = restored.room->playerNearSpeed;
     room.nearDepthY = room.farDepthY;

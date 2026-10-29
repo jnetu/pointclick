@@ -20,25 +20,45 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Game` | Coordena entrada de gameplay, salas, navegação, câmera e jogador |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
 | `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas |
-| `debug/DebugEditor` | Reconhece DEBUG, processa comandos e gerencia edição/undo |
+| `debug/DebugEditor` | Reconhece DEBUG/F1/Select, decide hit-test do painel na viewport, processa comandos e gerencia edição/undo |
+| `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
+| `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `DebugEditor` → `ViewportUiConsumer` (UIs futuras) → `Game` |
 | `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera |
 | `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena no espaço da câmera |
 | `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas, corte e imagem quadriculada de substituição |
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
-| `graphics/DebugOverlay` | Guias de objetos no mundo e painel visual fixo do editor |
-| `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox e conversão janela/viewport/mundo |
-| `core/Application` | Janela, eventos SDL e atualização em passo fixo |
+| `graphics/DebugOverlay` | Guias de objetos no mundo e desenho do painel consultando `DebugEditor::panelRect()` |
+| `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox, cursor virtual do controle e conversão janela/toque/viewport |
+| `core/Application` | Janela, ciclo de vida mobile/console, teclado virtual sob demanda e atualização em passo fixo |
 
 O executável e os testes compartilham `pointclick_core`. As rotinas de desenho
-ficam em `pointclick_graphics`. Uma correção no jogo chega aos dois consumidores.
-As dependências seguem `core` → `debug`/`content`/`graphics` → `game`.
+ficam em `pointclick_graphics`. Uma correção no jogo ou na entrada chega aos dois
+consumidores. As dependências seguem `core` → `graphics`/`input`/`debug`/`content` → `game`.
+`input` não depende de `graphics` (recebe `ViewportCoordinateMapper` injetado);
 `graphics` e `content` leem tipos de `game`; o domínio do jogo não carrega
 arquivos de arte nem chama funções de desenho.
 
 ## Fluxos principais
 
-Clique → `Renderer::windowToViewport` (teste de letterbox e `DebugOverlay::panel` em `0..1280 × 0..720`) → `Camera::viewportToWorld` → `Game::onClick` → navegação → rota do `Player`.
+`SDL_Event` (mouse/teclado, toque ou gamepad) → `InputSystem::translateEvent` (com
+`Renderer::viewportMapper` para mapear janela e toque `[0..1]` à viewport lógica
+`1280×720` respeitando letterbox/pillarbox, filtrando `SDL_TOUCH_MOUSEID` /
+`SDL_MOUSE_TOUCHID` e atualizando o cursor virtual pelo `moveAxis` do analógico) →
+`InputRouter` (Consumer Chain em 4 camadas):
+1. **Ciclo de Vida e Sistema**: `SDL_EVENT_QUIT`, suspensão mobile/console
+   (`SDL_EVENT_WILL_ENTER_BACKGROUND` / `SDL_EVENT_DID_ENTER_FOREGROUND`, pausando
+   renderização em background e limpando eixos transitórios) e reset gráfico
+   (`SDL_EVENT_RENDER_DEVICE_RESET` / `SDL_EVENT_RENDER_TARGETS_RESET` / `SDL_EVENT_LOW_MEMORY`,
+   invalidando texturas em `Renderer`).
+2. **Ferramentas (`DebugEditor`)**: ativado por `DEBUG`, `F1` ou botão `BACK`/`Select`
+   do controle; consome comandos (`DebugKey` via setas, D-Pad ou ombros), texto e
+   cliques dentro de `DebugEditor::panelRect()` quando visível (`consumesViewportPoint`).
+3. **UIs de Gameplay (`ViewportUiConsumer`)**: ponto de extensão na viewport fixa
+   `0..1280 × 0..720` para futuros Diálogos, Inventário e Menus antes da câmera.
+4. **Mundo (`Game`)**: converte `viewportPoint` via `Camera::viewportToWorld` e
+   entrega `Game::onPointerMove` / `Game::onClick` → navegação → rota do `Player`.
+
 A cada tick, o jogo calcula a velocidade na profundidade atual; o player avança
 sem ultrapassar o próximo ponto e a `Camera` atualiza sua posição suavizada dentro
 dos limites `[0, room.width - 1280] × [0, room.height - 720]` (permanecendo fixa em
@@ -47,7 +67,10 @@ a câmera faz *snap* imediato ao alvo; em edições ao vivo do editor, preserva 
 continuidade respeitando os novos limites. O render usa posições interpoladas tanto
 para o `Player` quanto para a `Camera`.
 
-Texto → `DebugEditor::onTextInput` → ativação por DEBUG. Enquanto ativo, o editor
+Texto → `InputRouter` → `DebugEditor::onTextInput` → ativação por DEBUG. Em
+plataformas com teclado virtual na tela (`SDL_HasScreenKeyboardSupport`), o texto
+só é ativado sob demanda quando o painel do editor está visível sem uso de gamepad,
+evitando abrir o teclado virtual no boot mobile/console. Enquanto ativo, o editor
 consome texto e teclas de edição. As alterações passam por `Game::applyRoom`;
 ele valida os dados e prepara uma nova navegação antes de substituir o estado.
 Uma edição rejeitada não altera sala, posição ou rota. Uma edição aceita
@@ -173,8 +196,11 @@ ctest --test-dir build/debug --output-on-failure
 
 Os testes cobrem movimento, perspectiva, desvio, quinas, salas panorâmicas,
 câmera fixa e suave com clamp nas bordas, configurações inválidas, ativação e
-fechamento do editor, edição em tempo real, persistência, outra sala e
-independência de resolução/campo de visão (720p, 1080p, 2K, 4K e Ultrawide).
-Os testes de sprites cobrem cortes, animação, seleção de direção, persistência e
-imagem de substituição. Os testes gráficos usam o driver virtual e o renderizador
-de software do SDL. As verificações também ficam ativas em Release.
+fechamento do editor (texto, teclado e controle), hit-test do painel na viewport,
+entrada multiplataforma (mouse, toque sem duplicação sintética, cursor virtual e
+hotplug de controle, ciclo de vida e `ViewportUiConsumer`), edição em tempo real,
+persistência, outra sala e independência de resolução/campo de visão (720p, 1080p,
+2K, 4K e Ultrawide). Os testes de sprites cobrem cortes, animação, seleção de
+direção, persistência e imagem de substituição. Os testes gráficos usam o driver
+virtual e o renderizador de software do SDL. As verificações também ficam ativas
+em Release.

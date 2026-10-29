@@ -30,16 +30,17 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
         return;
     }
     SDL_SetRenderDrawColor(renderer, 12, 18, 28, 255);
+    const SDL_FRect panel = DebugEditor::panelRect();
     SDL_RenderFillRect(renderer, &panel);
     SDL_SetRenderDrawColor(renderer, 113, 171, 223, 255);
     SDL_RenderRect(renderer, &panel);
     const float x = panel.x + 12;
     const float y = panel.y + 12;
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
-    SDL_RenderDebugTextFormat(renderer, x, y, "DEBUG | sala: %s | ESC: sair", game.room().id.c_str());
+    SDL_RenderDebugTextFormat(renderer, x, y, "DEBUG | sala: %s | ESC/F1: sair", game.room().id.c_str());
     SDL_SetRenderDrawColor(renderer, 214, 223, 232, 255);
     SDL_RenderDebugText(renderer, x, y + 24, "CIMA/BAIXO: selecionar | ESQ/DIR: alterar");
-    SDL_RenderDebugText(renderer, x, y + 40, "TAB: ocultar painel e testar a sala inteira.");
+    SDL_RenderDebugText(renderer, x, y + 40, "TAB/X: ocultar painel e testar a sala inteira.");
     const auto parameters = roomParameters();
     constexpr std::size_t pageSize = 16;
     const auto first = (editor.selected() / pageSize) * pageSize;

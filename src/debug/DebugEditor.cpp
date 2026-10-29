@@ -23,6 +23,21 @@ bool validFilename(const std::string& name) {
 
 void DebugEditor::setRoomDirectory(std::filesystem::path path) { roomDirectory_ = std::move(path); }
 
+void DebugEditor::activate(Game& game) {
+    active_ = true;
+    panelVisible_ = true;
+    baseline_ = game.room();
+    undo_.reset();
+    activation_.clear();
+    command_.clear();
+    status_ = "Editor ativo. Alteracoes so persistem com save.";
+    game.onTextInput("");
+}
+
+bool DebugEditor::consumesViewportPoint(const SDL_FPoint viewportPoint) const {
+    return panelVisible() && SDL_PointInRectFloat(&viewportPoint, &kPanelRect);
+}
+
 bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
     if (active_ && !panelVisible_) return true;
     bool consumed = active_;
@@ -33,15 +48,8 @@ bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
             activation_ += static_cast<char>(std::toupper(character));
             if (activation_.size() > 5) activation_.erase(0, activation_.size() - 5);
             if (activation_ == "DEBUG") {
-                active_ = true;
-                panelVisible_ = true;
+                activate(game);
                 consumed = true;
-                baseline_ = game.room();
-                undo_.reset();
-                activation_.clear();
-                command_.clear();
-                status_ = "Editor ativo. Alteracoes so persistem com save.";
-                game.onTextInput("");
             }
         }
     }
@@ -69,10 +77,21 @@ void DebugEditor::setParameter(Game& game, const std::string_view key, const flo
 }
 
 bool DebugEditor::onKey(const DebugKey key, Game& game) {
+    if (key == DebugKey::toggleEditor) {
+        if (active_) {
+            active_ = false;
+            command_.clear();
+            activation_.clear();
+        } else {
+            activate(game);
+        }
+        return true;
+    }
     if (!active_) return false;
     if (!panelVisible_ && key != DebugKey::togglePanel && key != DebugKey::close) return true;
     const auto parameters = roomParameters();
     switch (key) {
+    case DebugKey::toggleEditor: break;
     case DebugKey::togglePanel: panelVisible_ = !panelVisible_; command_.clear(); break;
     case DebugKey::close: active_ = false; command_.clear(); activation_.clear(); break;
     case DebugKey::previous: selected_ = (selected_ + parameters.size() - 1) % parameters.size(); break;

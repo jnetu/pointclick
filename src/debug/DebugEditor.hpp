@@ -6,16 +6,30 @@
 #include <string_view>
 
 class Game;
-enum class DebugKey { previous, next, decrease, increase, submit, backspace, close, togglePanel };
+enum class DebugKey {
+    previous,
+    next,
+    decrease,
+    increase,
+    submit,
+    backspace,
+    close,
+    togglePanel,
+    toggleEditor,
+};
 
-// Input and editing only. Drawing lives in graphics/DebugOverlay.cpp.
+// Input, viewport hit-testing, and editing only. Drawing lives in graphics/DebugOverlay.cpp.
 class DebugEditor {
 public:
+    static constexpr SDL_FRect kPanelRect{724.0F, 12.0F, 544.0F, 696.0F};
+
     void setRoomDirectory(std::filesystem::path path);
-    // Returns true when the editor consumed the text/key.
+    // Returns true when the editor consumed the text/key/click.
     bool onTextInput(std::string_view text, Game& game);
     bool onKey(DebugKey key, Game& game);
+    [[nodiscard]] bool consumesViewportPoint(SDL_FPoint viewportPoint) const;
 
+    [[nodiscard]] static constexpr SDL_FRect panelRect() { return kPanelRect; }
     [[nodiscard]] bool active() const { return active_; }
     [[nodiscard]] bool panelVisible() const { return active_ && panelVisible_; }
     [[nodiscard]] std::size_t selected() const { return selected_; }
@@ -24,6 +38,7 @@ public:
     [[nodiscard]] const std::filesystem::path& roomDirectory() const { return roomDirectory_; }
 
 private:
+    void activate(Game& game);
     void submit(Game& game);
     bool commit(Game& game, Room room, bool resetPlayer = false);
     void setParameter(Game& game, std::string_view key, float value);

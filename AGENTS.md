@@ -15,9 +15,9 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
-| Comandos DEBUG | `src/debug/DebugEditor.cpp` | `tests/EditorTests.cpp` |
-| Entrada da janela e viewport | `src/core/Application.cpp`, `src/graphics/Renderer.cpp` | `tests/EditorTests.cpp` |
-| Diálogo futuro | novo módulo em `src/game/` para estado e regras | roteamento em `Application`, interface em `graphics/` |
+| Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` | `src/graphics/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
+| Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
+| Diálogo / Inventário futuro | novo módulo em `src/game/` para estado e regras | `ViewportUiConsumer` em `src/input/InputRouter.hpp`, interface em `graphics/` |
 | Transição de sala futura | definição em `content/`, troca de estado em `Game` | efeito visual em `graphics/` |
 
 ## Contratos
@@ -30,11 +30,16 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   da sala deslocadas por `Camera`.
 - `Game`, `Player`, `Camera` e `AnimationPlayback` guardam estado de execução. Regras
   de gameplay não devem carregar texturas nem fazer chamadas de desenho.
+- `input/` traduz eventos brutos de mouse/teclado, toque (ignorando mouse sintético)
+  e gamepad (hotplug, eixo analógico com *deadzone* e cursor virtual) para a viewport
+  lógica, roteando por prioridade (`Ciclo de Vida → DebugEditor → ViewportUiConsumer → Game`)
+  sem depender de `graphics/`.
 - `graphics/` lê o estado do jogo e desenha. Não decide resultados de interação,
-  colisão, diálogo ou transição de sala.
+  hit-test de UI, colisão, diálogo ou transição de sala.
 - `content/` traduz arquivos `.room` em definições e de volta para arquivos.
   Preserve a leitura de chaves antigas ao evoluir o formato.
-- `debug/` altera a definição da sala para teste. Não é o sistema de gameplay.
+- `debug/` altera a definição da sala para teste e define sua própria geometria de
+  captura na viewport (`DebugEditor::panelRect`). Não é o sistema de gameplay.
 - IDs de objetos e nomes de animação são estáveis, com letras, números, `_` e
   `-`. Use esses nomes nas regras, sem depender da posição no vetor da sala.
 

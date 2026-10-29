@@ -83,8 +83,8 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 188.0F,
                               "sprite: %s", clip ? clip->file.substr(0, 42).c_str() : "missing clip");
 
-    const SDL_FPoint hint = anchored(Anchor::bottomRight, 256.0F, 18.0F, 12.0F);
+    const SDL_FPoint hint = anchored(Anchor::bottomRight, 272.0F, 18.0F, 12.0F);
     SDL_SetRenderDrawColor(renderer, 160, 175, 190, 255);
-    SDL_RenderDebugText(renderer, hint.x, hint.y, "Digite DEBUG para editar a sala");
+    SDL_RenderDebugText(renderer, hint.x, hint.y, "DEBUG / F1 / Select: editar sala");
 
 }

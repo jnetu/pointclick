@@ -19,7 +19,9 @@ add_library(pointclick_core STATIC
         src/content/RoomPresets.cpp
         src/content/RoomFiles.cpp
         src/content/SpriteFields.cpp
-        src/debug/DebugEditor.cpp)
+        src/debug/DebugEditor.cpp
+        src/input/InputSystem.cpp
+        src/input/InputRouter.cpp)
 target_compile_features(pointclick_core PUBLIC cxx_std_20)
 target_include_directories(pointclick_core PUBLIC src)
 target_link_libraries(pointclick_core PUBLIC SDL3::SDL3)

@@ -1,7 +1,6 @@
 #include "core/Application.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
-#include "graphics/DebugOverlay.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -39,6 +38,7 @@ bool Application::initialize() {
         SDL_Log("Could not initialize SDL: %s", SDL_GetError());
         return false;
     }
+    inputSystem_.initialize();
 
     window_ = SDL_CreateWindow(
             "Point & Click",
@@ -71,7 +71,8 @@ bool Application::initialize() {
         return false;
     }
 
-    if (!SDL_StartTextInput(window_)) {
+    // Avoid opening the on-screen virtual keyboard immediately on mobile/console boot.
+    if (!SDL_HasScreenKeyboardSupport() && !SDL_StartTextInput(window_)) {
         SDL_Log("Could not start text input: %s", SDL_GetError());
         return false;
     }
@@ -93,6 +94,19 @@ void Application::mainLoop() {
 
     while (running_) {
         processEvents();
+        if (!running_) {
+            break;
+        }
+        if (suspended_) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            continue;
+        }
+        if (resetFrameClock_) {
+            previousTime = Clock::now();
+            nextRenderTime = previousTime;
+            tickAccumulator = 0.0;
+            resetFrameClock_ = false;
+        }
 
         const auto currentTime = Clock::now();
         const double elapsedSeconds = std::chrono::duration<double>(
@@ -100,18 +114,20 @@ void Application::mainLoop() {
         ).count();
         previousTime = currentTime;
 
-        tickAccumulator += std::min(elapsedSeconds, kMaximumFrameTime);
+        const double frameSeconds = std::min(elapsedSeconds, kMaximumFrameTime);
+        tickAccumulator += frameSeconds;
 
         while (tickAccumulator >= kTickSeconds) {
             game_.tick(static_cast<float>(kTickSeconds));
             tickAccumulator -= kTickSeconds;
         }
 
+        renderInterpolation_ = static_cast<float>(tickAccumulator / kTickSeconds);
+        inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_,
+                            debugEditor_, game_, renderInterpolation_);
+
         if (currentTime >= nextRenderTime) {
-            renderInterpolation_ = static_cast<float>(
-                    tickAccumulator / kTickSeconds
-            );
-            renderer_.render(game_, renderInterpolation_, &debugEditor_);
+            renderer_.render(game_, renderInterpolation_, &debugEditor_, &inputSystem_);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {
@@ -124,44 +140,38 @@ void Application::mainLoop() {
 }
 
 void Application::processEvents() {
+    const ViewportCoordinateMapper mapper = renderer_.viewportMapper();
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
-        if (event.type == SDL_EVENT_QUIT) {
+        const InputRouteResult result = inputRouter_.handleEvent(
+                event, inputSystem_, debugEditor_, game_, mapper, renderInterpolation_);
+        if (result.quitRequested) {
             running_ = false;
-        } else if (event.type == SDL_EVENT_TEXT_INPUT) {
-            if (!debugEditor_.onTextInput(event.text.text, game_)) game_.onTextInput(event.text.text);
-        } else if (event.type == SDL_EVENT_KEY_DOWN) {
-            switch (event.key.key) {
-            case SDLK_UP: debugEditor_.onKey(DebugKey::previous, game_); break;
-            case SDLK_DOWN: debugEditor_.onKey(DebugKey::next, game_); break;
-            case SDLK_LEFT: debugEditor_.onKey(DebugKey::decrease, game_); break;
-            case SDLK_RIGHT: debugEditor_.onKey(DebugKey::increase, game_); break;
-            case SDLK_RETURN: debugEditor_.onKey(DebugKey::submit, game_); break;
-            case SDLK_BACKSPACE: debugEditor_.onKey(DebugKey::backspace, game_); break;
-            case SDLK_ESCAPE: debugEditor_.onKey(DebugKey::close, game_); break;
-            case SDLK_TAB: debugEditor_.onKey(DebugKey::togglePanel, game_); break;
-            default: break;
-            }
-        } else if (event.type == SDL_EVENT_MOUSE_MOTION
-                   || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            SDL_FPoint viewportPoint{};
-            const float x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
-            const float y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
-            if (renderer_.windowToViewport(x, y, viewportPoint)) {
-                const bool insideViewport = Renderer::containsViewportPoint(viewportPoint);
-                const SDL_FPoint worldPoint = game_.camera().viewportToWorld(
-                        viewportPoint, renderInterpolation_);
-                game_.onPointerMove(worldPoint, insideViewport);
-                if (insideViewport
-                    && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
-                    && event.button.button == SDL_BUTTON_LEFT) {
-                    if (!debugEditor_.panelVisible()
-                        || !SDL_PointInRectFloat(&viewportPoint, &DebugOverlay::panel)) {
-                        game_.onClick(worldPoint);
-                    }
-                }
-            }
         }
+        if (result.enteredBackground) {
+            suspended_ = true;
+        }
+        if (result.enteredForeground) {
+            suspended_ = false;
+            resetFrameClock_ = true;
+        }
+        if (result.invalidateGraphics) {
+            renderer_.invalidateTextures();
+        }
+    }
+    syncTextInputState();
+}
+
+void Application::syncTextInputState() {
+    if (window_ == nullptr || !SDL_HasScreenKeyboardSupport()) {
+        return;
+    }
+    const bool wantTextInput = debugEditor_.panelVisible()
+                               && inputSystem_.activeDevice() != InputDevice::gamepad;
+    if (wantTextInput && !SDL_TextInputActive(window_)) {
+        SDL_StartTextInput(window_);
+    } else if (!wantTextInput && SDL_TextInputActive(window_)) {
+        SDL_StopTextInput(window_);
     }
 }
 
@@ -170,6 +180,7 @@ void Application::shutdown() {
         SDL_StopTextInput(window_);
     }
 
+    inputSystem_.shutdown();
     renderer_.shutdown();
 
     if (window_ != nullptr) {

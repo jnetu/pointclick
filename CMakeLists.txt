@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.26)
 project(pointclick VERSION 0.1.0 LANGUAGES CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 if(NOT CMAKE_C_COMPILER_LAUNCHER AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
     find_program(POINTCLICK_COMPILER_CACHE NAMES sccache ccache)
     if(POINTCLICK_COMPILER_CACHE)
@@ -33,7 +35,7 @@ add_library(pointclick_core STATIC
         src/input/InputSystem.cpp
         src/input/InputRouter.cpp)
 target_compile_features(pointclick_core PUBLIC cxx_std_20)
-target_include_directories(pointclick_core PUBLIC src)
+target_include_directories(pointclick_core PUBLIC src ${POINTCLICK_SDL3_INCLUDE_DIRS})
 target_link_libraries(pointclick_core PUBLIC SDL3::SDL3)
 
 add_library(pointclick_graphics STATIC

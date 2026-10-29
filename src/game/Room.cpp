@@ -29,14 +29,14 @@ SDL_FRect Room::playerBounds(const SDL_FPoint feet) const {
 }
 
 bool Room::containsFloor(const SDL_FPoint point) const {
-    return point.x >= 0.0F && point.x < World::width
-           && point.y >= wallBottomY && point.y < World::height;
+    return point.x >= 0.0F && point.x < width
+           && point.y >= wallBottomY && point.y < height;
 }
 
 SDL_FPoint Room::clampDestination(const SDL_FPoint point) const {
-    const float y = std::clamp(point.y, walkableTopY, static_cast<float>(World::height - 1));
+    const float y = std::clamp(point.y, walkableTopY, height - 1.0F);
     const float halfWidth = playerBaseSize.x * scaleAt(y) * 0.5F;
-    return {std::clamp(point.x, halfWidth, World::width - halfWidth), y};
+    return {std::clamp(point.x, halfWidth, width - halfWidth), y};
 }
 
 std::string Room::validationError() const {
@@ -48,7 +48,18 @@ std::string Room::validationError() const {
         }
     }
     if (farDepthY >= nearDepthY) return "far_y deve ser menor que near_y";
+    if (nearDepthY > height) return "near_y nao pode ultrapassar a altura da sala";
     if (wallBottomY > walkableTopY) return "walkable_y deve ficar abaixo da parede";
+    if (wallBottomY > height - 2.0F || walkableTopY > height - 1.0F) {
+        return "Parede e chao caminhavel devem caber na altura da sala";
+    }
+    if (vanishingPointX < 0.0F || vanishingPointX > width) {
+        return "vanishing_x fora da largura da sala";
+    }
+    if (playerStart.x < 0.0F || playerStart.x >= width
+        || playerStart.y < 0.0F || playerStart.y >= height) {
+        return "Posicao inicial do player fora da sala";
+    }
     const float largestScale = std::max(farScale, nearScale);
     if (playerBaseSize.x * largestScale >= World::width
         || playerBaseSize.y * largestScale >= World::height) {
@@ -76,8 +87,8 @@ std::string Room::validationError() const {
             return "ID de objeto invalido ou repetido";
         }
         if (!validRect(object.bounds) || object.bounds.x < 0 || object.bounds.y < 0
-            || object.bounds.x + object.bounds.w > World::width
-            || object.bounds.y + object.bounds.h > World::height) return "Objeto fora da tela: " + object.id;
+            || object.bounds.x + object.bounds.w > width
+            || object.bounds.y + object.bounds.h > height) return "Objeto fora da sala: " + object.id;
         if (!validIdentifier(object.initialAnimation)) return "Animacao inicial invalida: " + object.id;
         if (!object.animations.empty() && !findAnimation(object.animations, object.initialAnimation)) {
             return "Animacao inicial ausente: " + object.id;

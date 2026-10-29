@@ -20,6 +20,7 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                               const float interpolation) {
     const Room& room = game.room();
     const auto feet = game.player().interpolatedFeet(interpolation);
+    const auto camera = game.camera().interpolatedPosition(interpolation);
     const auto destination = game.player().destination();
     int windowWidth = 0;
     int windowHeight = 0;
@@ -30,8 +31,8 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     SDL_GetRenderOutputSize(renderer, &outputWidth, &outputHeight);
     SDL_GetRenderLogicalPresentationRect(renderer, &viewport);
 
-    const SDL_FPoint panel = anchored(Anchor::topLeft, 444.0F, 208.0F, 12.0F);
-    const SDL_FRect panelRect{panel.x, panel.y, 444.0F, 208.0F};
+    const SDL_FPoint panel = anchored(Anchor::topLeft, 444.0F, 224.0F, 12.0F);
+    const SDL_FRect panelRect{panel.x, panel.y, 444.0F, 224.0F};
     SDL_SetRenderDrawColor(renderer, 9, 12, 19, 230);
     SDL_RenderFillRect(renderer, &panelRect);
     SDL_SetRenderDrawColor(renderer, 198, 215, 231, 255);
@@ -48,18 +49,21 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                               game.pointer().x, game.pointer().y,
                               game.pointerInside() ? "inside" : "outside");
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 76.0F,
+                              "room: %.0f x %.0f  camera: (%.1f, %.1f)",
+                              room.width, room.height, camera.x, camera.y);
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 92.0F,
                               "window: %d x %d  output: %d x %d",
                               windowWidth, windowHeight, outputWidth, outputHeight);
-    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 92.0F,
-                              "world: %d x %d  viewport: %.0f x %.0f",
-                              World::width, World::height, viewport.w, viewport.h);
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 108.0F,
+                              "fov: %d x %d  viewport: %.0f x %.0f",
+                              World::width, World::height, viewport.w, viewport.h);
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 124.0F,
                               "viewport offset: (%.0f, %.0f)  scale: %.2f",
                               viewport.x, viewport.y, viewport.w / World::width);
-    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 124.0F,
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 140.0F,
                               "wall: y < %.0f  player depth scale: %.2f",
                               room.wallBottomY, room.scaleAt(feet.y));
-    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 140.0F,
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 156.0F,
                               "speed: %.1f px/s  far: %.0f  near: %.0f",
                               room.speedAt(feet.y), room.playerFarSpeed,
                               room.playerNearSpeed);
@@ -72,11 +76,11 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     case PlayerPose::down: poseName = "down"; break;
     }
     const SpriteClip* clip = findAnimation(room.playerAnimations, game.player().animationName());
-    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 156.0F,
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
                               "anim: %s  frame: %d/%d", poseName,
                               clip ? clip->frameAt(game.player().animationTime()) + 1 : 0,
                               clip ? clip->frames : 0);
-    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
+    SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 188.0F,
                               "sprite: %s", clip ? clip->file.substr(0, 42).c_str() : "missing clip");
 
     const SDL_FPoint hint = anchored(Anchor::bottomRight, 256.0F, 18.0F, 12.0F);

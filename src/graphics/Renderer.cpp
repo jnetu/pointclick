@@ -26,8 +26,23 @@ void Renderer::setSpriteRoot(std::filesystem::path root) {
     sprites_.setRoot(std::move(root));
 }
 
-bool Renderer::windowToWorld(const float x, const float y, SDL_FPoint& result) const {
+bool Renderer::windowToViewport(const float x, const float y, SDL_FPoint& result) const {
     return SDL_RenderCoordinatesFromWindow(renderer_, x, y, &result.x, &result.y);
+}
+
+bool Renderer::windowToWorld(const float x, const float y, SDL_FPoint& result,
+                             const SDL_FPoint cameraOffset) const {
+    if (!windowToViewport(x, y, result)) {
+        return false;
+    }
+    result.x += cameraOffset.x;
+    result.y += cameraOffset.y;
+    return true;
+}
+
+bool Renderer::containsViewportPoint(const SDL_FPoint viewportPoint) {
+    return viewportPoint.x >= 0.0F && viewportPoint.x < World::width
+           && viewportPoint.y >= 0.0F && viewportPoint.y < World::height;
 }
 
 void Renderer::render(const Game& game, const float interpolation, const DebugEditor* editor) {
@@ -39,7 +54,7 @@ void Renderer::render(const Game& game, const float interpolation, const DebugEd
     }
     SceneRenderer::draw(renderer_, sprites_, game, interpolation);
     DiagnosticsOverlay::draw(renderer_, window_, game, interpolation);
-    if (editor) DebugOverlay::draw(renderer_, game, *editor);
+    if (editor) DebugOverlay::draw(renderer_, game, *editor, interpolation);
     SDL_RenderPresent(renderer_);
 }
 

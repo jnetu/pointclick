@@ -16,17 +16,18 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
-| `game/Game` | Coordena entrada de gameplay, salas, navegação e jogador |
+| `game/Camera` | Câmera 2D suave com campo de visão fixo (`1280×720`), clamp nas bordas da sala e interpolação |
+| `game/Game` | Coordena entrada de gameplay, salas, navegação, câmera e jogador |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
-| `game/Navigation` | Grade, obstáculos, A* e simplificação segura das rotas |
+| `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas |
 | `debug/DebugEditor` | Reconhece DEBUG, processa comandos e gerencia edição/undo |
-| `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva |
-| `graphics/EntityRenderer` | Desenho do player e dos objetos |
-| `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena |
+| `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera |
+| `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
+| `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena no espaço da câmera |
 | `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas, corte e imagem quadriculada de substituição |
-| `graphics/DiagnosticsOverlay` | Textos técnicos de posição e viewport |
-| `graphics/DebugOverlay` | Interface visual do editor |
-| `graphics/Renderer` | Ciclo de desenho e apresentação lógica do SDL |
+| `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
+| `graphics/DebugOverlay` | Guias de objetos no mundo e painel visual fixo do editor |
+| `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox e conversão janela/viewport/mundo |
 | `core/Application` | Janela, eventos SDL e atualização em passo fixo |
 
 O executável e os testes compartilham `pointclick_core`. As rotinas de desenho
@@ -37,11 +38,14 @@ arquivos de arte nem chama funções de desenho.
 
 ## Fluxos principais
 
-Clique → conversão janela/mundo → `Game::onClick` → navegação → rota do `Player`.
+Clique → `Renderer::windowToViewport` (teste de letterbox e `DebugOverlay::panel` em `0..1280 × 0..720`) → `Camera::viewportToWorld` → `Game::onClick` → navegação → rota do `Player`.
 A cada tick, o jogo calcula a velocidade na profundidade atual; o player avança
-sem ultrapassar o próximo ponto. O player escolhe a animação pela direção do
-movimento e reinicia seus quadros ao mudar de direção. O render usa posições
-interpoladas.
+sem ultrapassar o próximo ponto e a `Camera` atualiza sua posição suavizada dentro
+dos limites `[0, room.width - 1280] × [0, room.height - 720]` (permanecendo fixa em
+`(0, 0)` nas salas `1280×720`). Ao carregar/resetar uma sala ou teleportar o player,
+a câmera faz *snap* imediato ao alvo; em edições ao vivo do editor, preserva a
+continuidade respeitando os novos limites. O render usa posições interpoladas tanto
+para o `Player` quanto para a `Camera`.
 
 Texto → `DebugEditor::onTextInput` → ativação por DEBUG. Enquanto ativo, o editor
 consome texto e teclas de edição. As alterações passam por `Game::applyRoom`;
@@ -148,10 +152,13 @@ ações de gameplay.
 
 ## Escopo atual
 
-O canvas lógico é compartilhado por todas as salas; o SDL aplica letterbox e
-converte os cliques. A navegação usa uma grade retangular com limite superior
-de chão. Formatos de chão com polígonos, múltiplos andares e obstáculos móveis
-exigirão ampliar esse modelo. O formato `.room` não executa scripts.
+A viewport lógica da câmera é estritamente fixa em `1280 × 720` (`World::width × World::height`)
+com `SDL_LOGICAL_PRESENTATION_LETTERBOX`: monitores 2K, 4K, Ultrawide, celulares e
+consoles exibem exatamente o mesmo enquadramento do mundo, sem revelar áreas extras.
+Cada sala define suas próprias dimensões (`room.width` e `room.height`, mínimo
+`1280 × 720`); salas maiores rolam com `Camera` 2D suave e redimensionam a grade
+retangular de `Navigation`. Formatos de chão com polígonos, múltiplos andares e
+obstáculos móveis exigirão ampliar esse modelo. O formato `.room` não executa scripts.
 
 O player é um ponto nos pés para a navegação, com margens configuráveis em volta
 dos obstáculos. A largura visual varia com a perspectiva; ajuste as margens
@@ -164,9 +171,10 @@ cmake --build --preset debug
 ctest --test-dir build/debug --output-on-failure
 ```
 
-Os testes cobrem movimento, perspectiva, desvio, quinas, configurações inválidas,
-ativação e fechamento do editor, edição em tempo real, persistência, outra sala
-e conversão de coordenadas ao redimensionar. Os testes de sprites cobrem cortes,
-animação, seleção de direção, persistência e imagem de substituição. Os testes gráficos
-usam o driver virtual e o renderizador de software do SDL. As verificações também
-ficam ativas em Release.
+Os testes cobrem movimento, perspectiva, desvio, quinas, salas panorâmicas,
+câmera fixa e suave com clamp nas bordas, configurações inválidas, ativação e
+fechamento do editor, edição em tempo real, persistência, outra sala e
+independência de resolução/campo de visão (720p, 1080p, 2K, 4K e Ultrawide).
+Os testes de sprites cobrem cortes, animação, seleção de direção, persistência e
+imagem de substituição. Os testes gráficos usam o driver virtual e o renderizador
+de software do SDL. As verificações também ficam ativas em Release.

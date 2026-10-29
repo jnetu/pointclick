@@ -12,6 +12,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Regra que escolhe animação | `src/game/Animation.*`, `src/game/ObjectAnimations.*` ou `src/game/Player.*` | `src/graphics/EntityRenderer.cpp` apenas se mudar a apresentação |
 | Nova direção de locomoção | `PlayerPose` e `playerLocomotionAnimations` em `src/game/Player.hpp` | regra em `Player.cpp` e clip no `.room` |
 | Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Game.cpp` | `tests/GameTests.cpp` |
+| Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
 | Comandos DEBUG | `src/debug/DebugEditor.cpp` | `tests/EditorTests.cpp` |
@@ -23,8 +24,12 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 
 - `Room`, `SceneObject`, `SpriteClip` e `AnimationSet` são definições editáveis.
   Não guarde neles progresso de diálogo, estado de interação ou tempo corrente.
-- `Game`, `Player` e `AnimationPlayback` guardam estado de execução. Regras de
-  gameplay não devem carregar texturas nem fazer chamadas de desenho.
+- `World::width` × `World::height` (`1280 × 720`) definem o campo de visão fixo da
+  câmera/viewport lógica; o tamanho total da cena pertence a `Room::width` e
+  `Room::height`. UI e overlays usam coordenadas de viewport; o mundo usa coordenadas
+  da sala deslocadas por `Camera`.
+- `Game`, `Player`, `Camera` e `AnimationPlayback` guardam estado de execução. Regras
+  de gameplay não devem carregar texturas nem fazer chamadas de desenho.
 - `graphics/` lê o estado do jogo e desenha. Não decide resultados de interação,
   colisão, diálogo ou transição de sala.
 - `content/` traduz arquivos `.room` em definições e de volta para arquivos.

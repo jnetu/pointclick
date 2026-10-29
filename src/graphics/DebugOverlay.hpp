@@ -7,5 +7,6 @@ class DebugEditor;
 
 namespace DebugOverlay {
 inline constexpr SDL_FRect panel{724, 12, 544, 696};
-void draw(SDL_Renderer* renderer, const Game& game, const DebugEditor& editor);
+void draw(SDL_Renderer* renderer, const Game& game, const DebugEditor& editor,
+          float interpolation = 1.0F);
 }

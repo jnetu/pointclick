@@ -21,5 +21,6 @@ private:
     Game game_;
     Renderer renderer_;
     DebugEditor debugEditor_;
+    float renderInterpolation_ = 1.0F;
     bool running_ = false;
 };

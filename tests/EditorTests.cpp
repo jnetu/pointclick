@@ -60,7 +60,18 @@ void testEditing(const std::filesystem::path& directory) {
     assert(game.room().scenery[1].bounds.x == 620);
     command(editor, game, "move red_box 2000 240");
     assert(game.room().scenery[1].bounds.x == 620);
+    command(editor, game, "set room.width 1000");
+    assert(game.room().width == 1280);
+    command(editor, game, "set room.height 600");
+    assert(game.room().height == 720);
+    command(editor, game, "set room.width 2560");
+    assert(game.room().width == 2560);
+    command(editor, game, "move red_box 2000 240");
+    assert(game.room().scenery[1].bounds.x == 2000);
+    command(editor, game, "set room.width 1280");
+    assert(game.room().width == 2560); // Cannot shrink past an object at x = 2000.
     command(editor, game, "reset");
+    assert(game.room().width == 1280);
     assert(game.room().playerFarSpeed == 110);
     assert(game.room().scenery[1].bounds.x == 810);
 
@@ -90,6 +101,7 @@ void testRoomFiles(const std::filesystem::path& directory) {
     const auto source = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms/first.room";
     const auto loaded = RoomFiles::load(source);
     assert(loaded.room);
+    assert(loaded.room->width == 1280.0F && loaded.room->height == 720.0F);
     assert(loaded.room->scenery.size() == 2);
     const auto missing = RoomFiles::load(directory / std::filesystem::path(u8"ausente-\u00e7.room"));
     assert(!missing.room);
@@ -132,8 +144,15 @@ void testRoomFiles(const std::filesystem::path& directory) {
     assert(other.player().moving());
     Room room = *loaded.room;
     room.id = "other_room";
+    room.width = 2560.0F;
+    room.height = 1440.0F;
+    room.nearDepthY = 1440.0F;
+    room.vanishingPointX = 1280.0F;
+    room.playerStart = {1800.0F, 920.0F};
     room.playerNearSpeed = 412.25F;
     room.floorColor = {20, 90, 190, 255};
+    room.scenery[1].bounds.x = 2100.0F;
+    room.scenery[1].bounds.y = 900.0F;
     room.scenery[1].collisionFootprint.h = 21.5F;
     room.scenery[1].type = SceneObjectType::decoration;
     std::string error;
@@ -145,7 +164,10 @@ void testRoomFiles(const std::filesystem::path& directory) {
         assert(parameter.read(room) == parameter.read(*restored.room));
     }
     assert(restored.room->id == room.id);
+    assert(restored.room->width == 2560.0F);
+    assert(restored.room->height == 1440.0F);
     assert(restored.room->floorColor.b == room.floorColor.b);
+    assert(restored.room->scenery[1].bounds.x == 2100.0F);
     assert(restored.room->scenery[1].collisionFootprint.h == 21.5F);
     assert(restored.room->scenery[1].id == "red_box");
 
@@ -154,6 +176,10 @@ void testRoomFiles(const std::filesystem::path& directory) {
         {"typo = 40", "Linha 1: Chave ou valor invalido: typo"},
         {"player.far_speed = 40 px", "Linha 1: Chave ou valor invalido: player.far_speed"},
         {"player.width = 0", "Linha 1: Fora do intervalo: player.width"},
+        {"room.width = 1000", "Linha 1: Fora do intervalo: room.width"},
+        {"room.height = 600", "Linha 1: Fora do intervalo: room.height"},
+        {"player.start_x = 1500", "Posicao inicial do player fora da sala"},
+        {"room.vanishing_x = 1500", "vanishing_x fora da largura da sala"},
         {"player.far_speed = 40\nplayer.far_speed = 50", "Linha 2: Chave repetida: player.far_speed"},
         {"# comentario\r\n[room]\r\n\r\nplayer.far_speed 40", "Linha 4: Esperado chave = valor"},
         {"perspective.far_y = 500\nperspective.near_y = 500", "far_y deve ser menor que near_y"},
@@ -167,6 +193,19 @@ void testRoomFiles(const std::filesystem::path& directory) {
     room.nearDepthY = room.farDepthY;
     assert(!RoomFiles::save(path, room, error));
     assert(RoomFiles::load(path).room->playerNearSpeed == validSpeed);
+}
+
+bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target) {
+    for (int y = 0; y < surface->h; y += 8) {
+        for (int x = 0; x < surface->w; x += 8) {
+            SDL_Color color{};
+            assert(SDL_ReadSurfacePixel(surface, x, y, &color.r, &color.g, &color.b, &color.a));
+            if (color.r == target.r && color.g == target.g && color.b == target.b) {
+                return true;
+            }
+        }
+    }
+    return false;
 }
 
 void testDebugRendering() {
@@ -195,6 +234,99 @@ void testDebugRendering() {
     SDL_FPoint bar{};
     assert(renderer.windowToWorld(500, 20, bar));
     assert(bar.y < 0);
+    assert(!Renderer::containsViewportPoint(bar));
+
+    // Panoramic room: 2K, 4K, and Ultrawide windows must keep the exact 1280x720 camera FOV
+    // without revealing off-camera scenery outside [camera.x, camera.x + 1280).
+    Room panorama = RoomPresets::firstRoom();
+    panorama.width = 2560.0F;
+    panorama.height = 720.0F;
+    panorama.playerStart = {400.0F, 520.0F};
+    const SDL_Color offscreenBeaconColor{24, 244, 92, 255};
+    panorama.scenery = {
+        {{1500.0F, 360.0F, 220.0F, 220.0F}, offscreenBeaconColor,
+         SceneObjectType::decoration, {}, "beacon", {}, "idle"},
+    };
+    game.loadRoom(panorama);
+    assert(std::abs(game.camera().position().x) < 0.01F);
+
+    const struct { int w; int h; } resolutions[]{
+        {1280, 720},
+        {1920, 1080},
+        {2560, 1440}, // 2K QHD
+        {3840, 2160}, // 4K UHD
+        {3440, 1440}, // 21:9 Ultrawide (pillarboxed)
+    };
+    for (const auto res : resolutions) {
+        assert(SDL_SetWindowSize(window, res.w, res.h));
+        SDL_PumpEvents();
+        renderer.render(game, 1.0F, nullptr);
+
+        SDL_FRect presentation{};
+        assert(SDL_GetRenderLogicalPresentationRect(SDL_GetRenderer(window), &presentation));
+        SDL_FPoint vpCenter{};
+        SDL_FPoint worldCenter{};
+        assert(renderer.windowToViewport(res.w * 0.5F, res.h * 0.5F, vpCenter));
+        assert(renderer.windowToWorld(res.w * 0.5F, res.h * 0.5F, worldCenter,
+                                      game.camera().position()));
+        assert(std::abs(vpCenter.x - 640.0F) < 0.5F && std::abs(vpCenter.y - 360.0F) < 0.5F);
+        assert(std::abs(worldCenter.x - 640.0F) < 0.5F && std::abs(worldCenter.y - 360.0F) < 0.5F);
+
+        SDL_FPoint leftEdge{};
+        SDL_FPoint rightEdge{};
+        assert(renderer.windowToWorld(presentation.x + 0.5F, res.h * 0.5F, leftEdge,
+                                      game.camera().position()));
+        assert(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, res.h * 0.5F,
+                                      rightEdge, game.camera().position()));
+        assert(leftEdge.x >= 0.0F && rightEdge.x <= 1280.0F);
+        assert(std::abs((rightEdge.x - leftEdge.x) - 1280.0F) < 2.0F);
+
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        assert(frame);
+        // The beacon at x = 1500..1720 must remain completely invisible while camera.x == 0.
+        assert(!surfaceContainsColor(frame, offscreenBeaconColor));
+        SDL_DestroySurface(frame);
+    }
+
+    // Once the camera scrolls to center on x = 1550 (camera.x = 910), the beacon enters view
+    // while Ultrawide pillarbox bars remain outside the viewport and keep the clear color.
+    std::string teleportError;
+    assert(game.teleportPlayer({1550.0F, 620.0F}, teleportError));
+    assert(std::abs(game.camera().position().x - 910.0F) < 0.01F);
+    assert(SDL_SetWindowSize(window, 3440, 1440));
+    SDL_PumpEvents();
+    renderer.render(game, 1.0F, nullptr);
+
+    SDL_FPoint ultrawideBar{};
+    assert(renderer.windowToViewport(10.0F, 720.0F, ultrawideBar));
+    assert(ultrawideBar.x < 0.0F && !Renderer::containsViewportPoint(ultrawideBar));
+
+    SDL_FPoint scrolledCenterViewport{};
+    SDL_FPoint scrolledCenterWorld{};
+    assert(renderer.windowToViewport(1720.0F, 720.0F, scrolledCenterViewport));
+    assert(renderer.windowToWorld(1720.0F, 720.0F, scrolledCenterWorld,
+                                  game.camera().position()));
+    assert(std::abs(scrolledCenterViewport.x - 640.0F) < 0.5F);
+    assert(std::abs(scrolledCenterWorld.x - 1550.0F) < 0.5F);
+
+    SDL_Surface* scrolledFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(scrolledFrame);
+    assert(scrolledFrame->w == 2560 && scrolledFrame->h == 1440);
+    assert(surfaceContainsColor(scrolledFrame, offscreenBeaconColor));
+    SDL_DestroySurface(scrolledFrame);
+
+    if (SDL_Surface* windowSurface = SDL_GetWindowSurface(window)) {
+        assert(windowSurface->w == 3440 && windowSurface->h == 1440);
+        SDL_Color leftBar{};
+        SDL_Color rightBar{};
+        assert(SDL_ReadSurfacePixel(windowSurface, 10, 720,
+                                    &leftBar.r, &leftBar.g, &leftBar.b, &leftBar.a));
+        assert(SDL_ReadSurfacePixel(windowSurface, 3430, 720,
+                                    &rightBar.r, &rightBar.g, &rightBar.b, &rightBar.a));
+        assert(leftBar.r == 8 && leftBar.g == 10 && leftBar.b == 16);
+        assert(rightBar.r == 8 && rightBar.g == 10 && rightBar.b == 16);
+    }
+
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

@@ -2,6 +2,7 @@
 
 #include "game/SceneObject.hpp"
 #include "game/Animation.hpp"
+#include "game/World.hpp"
 
 #include <SDL3/SDL_rect.h>
 
@@ -10,9 +11,13 @@
 #include <vector>
 
 // Room definition only. Content supplies player art defaults when loading files.
-// Pixel values always use the logical canvas.
+// Pixel values always use logical world units; the camera viewport is World::width x World::height.
 struct Room {
+    static constexpr float maxDimension = 8192.0F;
+
     std::string id = "first";
+    float width = static_cast<float>(World::width);
+    float height = static_cast<float>(World::height);
     // Room geometry and the shared depth range for size and movement speed.
     float wallBottomY = 280.0F;
     float walkableTopY = 300.0F;

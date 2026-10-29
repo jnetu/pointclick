@@ -11,7 +11,9 @@ struct SceneObject;
 
 namespace EntityRenderer {
 void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
-                const SceneObject& object, const AnimationPlayback* playback);
+                const SceneObject& object, const AnimationPlayback* playback,
+                SDL_FPoint cameraOffset = {});
 void drawPlayer(SpriteLibrary& sprites, const Room& room,
-                const Player& player, SDL_FPoint feet);
+                const Player& player, SDL_FPoint feet,
+                SDL_FPoint cameraOffset = {});
 }

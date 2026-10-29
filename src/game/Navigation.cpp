@@ -1,7 +1,5 @@
 #include "game/Navigation.hpp"
 
-#include "game/World.hpp"
-
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -13,13 +11,26 @@ float distance(const SDL_FPoint a, const SDL_FPoint b) {
 }
 }
 
+Navigation::Navigation(const float width, const float height) {
+    reset(width, height);
+}
+
+void Navigation::reset(const float width, const float height, const float walkableTopY) {
+    width_ = std::max(width, static_cast<float>(cellSize));
+    height_ = std::max(height, static_cast<float>(cellSize));
+    columns_ = (static_cast<int>(std::ceil(width_)) + cellSize - 1) / cellSize;
+    rows_ = (static_cast<int>(std::ceil(height_)) + cellSize - 1) / cellSize;
+    walkableTopY_ = walkableTopY;
+    blocked_.assign(static_cast<std::size_t>(columns_ * rows_), 0);
+}
+
 void Navigation::setWalkableTop(const float y) {
     walkableTopY_ = y;
 }
 
 void Navigation::setBlocked(const int column, const int row, const bool blocked) {
-    if (column >= 0 && column < columns && row >= 0 && row < rows) {
-        blocked_[row * columns + column] = blocked;
+    if (column >= 0 && column < columns_ && row >= 0 && row < rows_) {
+        blocked_[static_cast<std::size_t>(row * columns_ + column)] = blocked ? 1U : 0U;
     }
 }
 
@@ -27,8 +38,17 @@ void Navigation::addObstacle(const SDL_FRect bounds, const float paddingX,
                              const float paddingY) {
     const SDL_FRect padded{bounds.x - paddingX, bounds.y - paddingY,
                            bounds.w + paddingX * 2.0F, bounds.h + paddingY * 2.0F};
-    for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
+    if (padded.w <= 0.0F || padded.h <= 0.0F) {
+        return;
+    }
+    const int minColumn = std::max(0, static_cast<int>(std::floor(padded.x / cellSize)));
+    const int maxColumn = std::min(columns_ - 1,
+                                   static_cast<int>(std::floor((padded.x + padded.w) / cellSize)));
+    const int minRow = std::max(0, static_cast<int>(std::floor(padded.y / cellSize)));
+    const int maxRow = std::min(rows_ - 1,
+                                static_cast<int>(std::floor((padded.y + padded.h) / cellSize)));
+    for (int row = minRow; row <= maxRow; ++row) {
+        for (int column = minColumn; column <= maxColumn; ++column) {
             const SDL_FRect cell{static_cast<float>(column * cellSize),
                                  static_cast<float>(row * cellSize),
                                  static_cast<float>(cellSize),
@@ -41,25 +61,33 @@ void Navigation::addObstacle(const SDL_FRect bounds, const float paddingX,
 }
 
 bool Navigation::walkable(const int column, const int row) const {
-    return column >= 0 && column < columns && row >= 0 && row < rows
+    return column >= 0 && column < columns_ && row >= 0 && row < rows_
            && (row + 1) * cellSize > walkableTopY_
-           && !blocked_[row * columns + column];
+           && blocked_[static_cast<std::size_t>(row * columns_ + column)] == 0U;
 }
 
 bool Navigation::canStandAt(const SDL_FPoint point) const {
     if (!std::isfinite(point.x) || !std::isfinite(point.y)
-        || point.x < 0.0F || point.x >= World::width
-        || point.y < walkableTopY_ || point.y >= World::height) {
+        || point.x < 0.0F || point.x >= width_
+        || point.y < walkableTopY_ || point.y >= height_) {
         return false;
     }
     const int cell = cellAt(point);
-    return walkable(cell % columns, cell / columns);
+    return walkable(cell % columns_, cell / columns_);
+}
+
+int Navigation::columns() const {
+    return columns_;
+}
+
+int Navigation::rows() const {
+    return rows_;
 }
 
 int Navigation::cellAt(const SDL_FPoint point) const {
-    const int column = std::clamp(static_cast<int>(point.x) / cellSize, 0, columns - 1);
-    const int row = std::clamp(static_cast<int>(point.y) / cellSize, 0, rows - 1);
-    return row * columns + column;
+    const int column = std::clamp(static_cast<int>(point.x) / cellSize, 0, columns_ - 1);
+    const int row = std::clamp(static_cast<int>(point.y) / cellSize, 0, rows_ - 1);
+    return row * columns_ + column;
 }
 
 bool Navigation::clearLine(const SDL_FPoint from, const SDL_FPoint to) const {
@@ -71,7 +99,7 @@ bool Navigation::clearLine(const SDL_FPoint from, const SDL_FPoint to) const {
     const int bottom = static_cast<int>(std::max(from.y, to.y)) / cellSize;
     for (int row = top; row <= bottom; ++row) {
         for (int column = left; column <= right; ++column) {
-            if (!blocked_[row * columns + column]) continue;
+            if (blocked_[static_cast<std::size_t>(row * columns_ + column)] == 0U) continue;
             const SDL_FRect cell{static_cast<float>(column * cellSize),
                                  static_cast<float>(row * cellSize),
                                  static_cast<float>(cellSize), static_cast<float>(cellSize)};
@@ -87,8 +115,8 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
     const int start = cellAt(from);
     const int goal = cellAt(to);
     if (from.y < walkableTopY_ || to.y < walkableTopY_
-        || !walkable(start % columns, start / columns)
-        || !walkable(goal % columns, goal / columns)) {
+        || !walkable(start % columns_, start / columns_)
+        || !walkable(goal % columns_, goal / columns_)) {
         return {};
     }
     if (clearLine(from, to)) {
@@ -104,15 +132,18 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
     const auto center = [this, start, goal, from, to](const int cell) -> SDL_FPoint {
         if (cell == start) return from;
         if (cell == goal) return to;
-        return {static_cast<float>((cell % columns) * cellSize) + cellSize * 0.5F,
-                std::clamp(static_cast<float>((cell / columns) * cellSize) + cellSize * 0.5F,
-                           walkableTopY_, static_cast<float>(World::height - 1))};
+        return {std::min(static_cast<float>((cell % columns_) * cellSize) + cellSize * 0.5F,
+                         width_ - 1.0F),
+                std::clamp(static_cast<float>((cell / columns_) * cellSize) + cellSize * 0.5F,
+                           walkableTopY_, height_ - 1.0F)};
     };
 
+    const auto totalCells = static_cast<std::size_t>(columns_ * rows_);
+    cost_.assign(totalCells, std::numeric_limits<float>::infinity());
+    parent_.assign(totalCells, -1);
+
     std::priority_queue<Entry, std::vector<Entry>, std::greater<>> open;
-    std::vector<float> cost(columns * rows, std::numeric_limits<float>::infinity());
-    std::vector<int> parent(columns * rows, -1);
-    cost[start] = 0.0F;
+    cost_[static_cast<std::size_t>(start)] = 0.0F;
     open.push({distance(center(start), center(goal)), start});
 
     constexpr int offsets[8][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1},
@@ -123,11 +154,12 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
         if (current.cell == goal) {
             break;
         }
-        if (current.estimate > cost[current.cell] + distance(center(current.cell), center(goal)) + 0.001F) {
+        const auto currentIndex = static_cast<std::size_t>(current.cell);
+        if (current.estimate > cost_[currentIndex] + distance(center(current.cell), center(goal)) + 0.001F) {
             continue;
         }
-        const int x = current.cell % columns;
-        const int y = current.cell / columns;
+        const int x = current.cell % columns_;
+        const int y = current.cell / columns_;
         for (const auto& offset : offsets) {
             const int nx = x + offset[0];
             const int ny = y + offset[1];
@@ -138,23 +170,24 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
                 && (!walkable(x + offset[0], y) || !walkable(x, y + offset[1]))) {
                 continue;
             }
-            const int next = ny * columns + nx;
+            const int next = ny * columns_ + nx;
             if (!clearLine(center(current.cell), center(next))) continue;
-            const float nextCost = cost[current.cell] + distance(center(current.cell), center(next));
-            if (nextCost < cost[next]) {
-                cost[next] = nextCost;
-                parent[next] = current.cell;
+            const float nextCost = cost_[currentIndex] + distance(center(current.cell), center(next));
+            const auto nextIndex = static_cast<std::size_t>(next);
+            if (nextCost < cost_[nextIndex]) {
+                cost_[nextIndex] = nextCost;
+                parent_[nextIndex] = current.cell;
                 open.push({nextCost + distance(center(next), center(goal)), next});
             }
         }
     }
 
-    if (start != goal && parent[goal] == -1) {
+    if (start != goal && parent_[static_cast<std::size_t>(goal)] == -1) {
         return {};
     }
 
     std::vector<SDL_FPoint> reversed;
-    for (int cell = goal; cell != start; cell = parent[cell]) {
+    for (int cell = goal; cell != start; cell = parent_[static_cast<std::size_t>(cell)]) {
         reversed.push_back(center(cell));
     }
     std::reverse(reversed.begin(), reversed.end());
@@ -183,30 +216,26 @@ std::vector<SDL_FPoint> Navigation::findPathToNearestReachable(
         return direct;
     }
 
-    struct Candidate {
-        float distanceSquared;
-        SDL_FPoint position;
-    };
-    std::vector<Candidate> candidates;
-    candidates.reserve(columns * rows);
-    for (int row = 0; row < rows; ++row) {
-        for (int column = 0; column < columns; ++column) {
+    candidates_.clear();
+    candidates_.reserve(static_cast<std::size_t>(columns_ * rows_));
+    for (int row = 0; row < rows_; ++row) {
+        for (int column = 0; column < columns_; ++column) {
             if (!walkable(column, row)) {
                 continue;
             }
-            const SDL_FPoint position{column * cellSize + cellSize * 0.5F,
+            const SDL_FPoint position{std::min(column * cellSize + cellSize * 0.5F, width_ - 1.0F),
                                       std::clamp(row * cellSize + cellSize * 0.5F,
                                                  walkableTopY_,
-                                                 static_cast<float>(World::height - 1))};
+                                                 height_ - 1.0F)};
             const float dx = position.x - desired.x;
             const float dy = position.y - desired.y;
-            candidates.push_back({dx * dx + dy * dy, position});
+            candidates_.push_back({dx * dx + dy * dy, position});
         }
     }
-    std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b) {
+    std::sort(candidates_.begin(), candidates_.end(), [](const Candidate& a, const Candidate& b) {
         return a.distanceSquared < b.distanceSquared;
     });
-    for (const Candidate& candidate : candidates) {
+    for (const Candidate& candidate : candidates_) {
         if (const auto route = findPath(from, candidate.position); !route.empty()) {
             return route;
         }

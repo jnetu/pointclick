@@ -1,8 +1,12 @@
 # Guia para game design
 
-O jogo usa uma tela lógica de **1280 × 720**. X cresce para a direita e Y cresce
-para baixo. A posição do personagem representa o centro dos pés. Redimensionar
-a janela preserva essas coordenadas e a proporção do cenário.
+A câmera usa um campo de visão lógico fixo de **1280 × 720** em qualquer resolução
+(720p, 1080p, 2K, 4K, Ultrawide, mobile ou console), preservando sempre o mesmo
+enquadramento com letterbox. Por padrão, cada sala mede `1280 × 720` (câmera fixa);
+salas panorâmicas ou mais altas podem aumentar `room.width` e `room.height`, e a
+câmera acompanha suavemente os pés do personagem sem mostrar áreas fora da sala.
+X cresce para a direita e Y cresce para baixo. A posição do personagem representa
+o centro dos pés.
 
 ## Abrir o jogo para trabalhar nas salas
 
@@ -50,6 +54,7 @@ mensagem e preservam o estado anterior.
 | `set player.near_speed 350` | Velocidade perto da câmera |
 | `set player.width 50` | Largura antes de aplicar a escala |
 | `set perspective.far_scale 0.6` | Escala no fundo |
+| `set room.width 2560` | Sala panorâmica com rolagem horizontal suave da câmera |
 | `set room.walkable_y 320` | Limite superior para os pés |
 | `teleport 640 500` | Reposiciona os pés em chão livre; não altera o ponto inicial salvo |
 | `move red_box 850 460` | Move o objeto e sua base de colisão juntos |
@@ -227,15 +232,16 @@ tem um ID estável, como `mesa`, usado nos comandos e em futuras regras de inter
 
 | Chave | O que controla |
 | --- | --- |
+| `room.width`, `room.height` | Largura e altura totais da sala (padrão e mínimo `1280 × 720`; salas maiores ativam rolagem suave da câmera) |
 | `room.wall_y` | Divisão visual entre parede e chão |
 | `room.walkable_y` | Menor Y permitido para os pés; deve ser igual ou maior que `room.wall_y` |
-| `perspective.far_y`, `perspective.near_y` | Limites de profundidade; o primeiro deve ser menor que o segundo |
+| `perspective.far_y`, `perspective.near_y` | Limites de profundidade; o primeiro deve ser menor que o segundo e caber em `room.height` |
 | `perspective.far_scale`, `perspective.near_scale` | Escala visual nas duas profundidades |
 | `player.far_speed`, `player.near_speed` | Velocidades nas mesmas profundidades; valores iguais dão velocidade constante |
 | `player.width`, `player.height` | Tamanho visual base do jogador |
-| `player.start_x`, `player.start_y` | Ponto inicial ao carregar a sala |
+| `player.start_x`, `player.start_y` | Ponto inicial ao carregar a sala (dentro de `room.width × room.height`) |
 | `collision.padding_x`, `collision.padding_y` | Margens extras em volta da base dos objetos |
-| `room.vanishing_x`, `room.ray_spacing` | Ponto de fuga e espaçamento das linhas do chão |
+| `room.vanishing_x`, `room.ray_spacing` | Ponto de fuga (entre `0` e `room.width`) e espaçamento das linhas do chão |
 | `floor.lines` | Quatro frações entre 0 e 1 para as linhas horizontais de perspectiva |
 
 As cores são RGBA, com quatro inteiros entre 0 e 255. As chaves são

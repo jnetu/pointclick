@@ -12,7 +12,10 @@ class Renderer {
 public:
     bool initialize(SDL_Window* window);
     void setSpriteRoot(std::filesystem::path root);
-    [[nodiscard]] bool windowToWorld(float x, float y, SDL_FPoint& result) const;
+    [[nodiscard]] bool windowToViewport(float x, float y, SDL_FPoint& result) const;
+    [[nodiscard]] bool windowToWorld(float x, float y, SDL_FPoint& result,
+                                     SDL_FPoint cameraOffset = {}) const;
+    [[nodiscard]] static bool containsViewportPoint(SDL_FPoint viewportPoint);
     void render(const Game& game, float interpolation, const DebugEditor* editor = nullptr);
     void shutdown();
 

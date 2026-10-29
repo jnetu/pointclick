@@ -5,15 +5,20 @@
 #include <SDL3/SDL.h>
 #include <algorithm>
 
-void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game, const DebugEditor& editor) {
+void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
+                        const DebugEditor& editor, const float interpolation) {
     if (!editor.active()) return;
+    const SDL_FPoint cameraOffset = game.camera().interpolatedPosition(interpolation);
     SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
     for (const auto& object : game.room().scenery) {
         if (object.type == SceneObjectType::solid) {
-            const auto base = object.worldCollisionFootprint();
+            auto base = object.worldCollisionFootprint();
+            base.x -= cameraOffset.x;
+            base.y -= cameraOffset.y;
             SDL_RenderRect(renderer, &base);
         }
-        SDL_RenderDebugText(renderer, object.bounds.x, object.bounds.y - 12, object.id.c_str());
+        SDL_RenderDebugText(renderer, object.bounds.x - cameraOffset.x,
+                            object.bounds.y - 12 - cameraOffset.y, object.id.c_str());
     }
     if (!editor.panelVisible()) {
         const SDL_FRect badge{844, 12, 424, 28};

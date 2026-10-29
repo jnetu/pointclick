@@ -108,10 +108,10 @@ void Application::mainLoop() {
         }
 
         if (currentTime >= nextRenderTime) {
-            const float interpolation = static_cast<float>(
+            renderInterpolation_ = static_cast<float>(
                     tickAccumulator / kTickSeconds
             );
-            renderer_.render(game_, interpolation, &debugEditor_);
+            renderer_.render(game_, renderInterpolation_, &debugEditor_);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {
@@ -144,15 +144,20 @@ void Application::processEvents() {
             }
         } else if (event.type == SDL_EVENT_MOUSE_MOTION
                    || event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-            SDL_FPoint point{};
+            SDL_FPoint viewportPoint{};
             const float x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
             const float y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
-            if (renderer_.windowToWorld(x, y, point)) {
-                game_.onPointerMove(point);
-                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
+            if (renderer_.windowToViewport(x, y, viewportPoint)) {
+                const bool insideViewport = Renderer::containsViewportPoint(viewportPoint);
+                const SDL_FPoint worldPoint = game_.camera().viewportToWorld(
+                        viewportPoint, renderInterpolation_);
+                game_.onPointerMove(worldPoint, insideViewport);
+                if (insideViewport
+                    && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN
                     && event.button.button == SDL_BUTTON_LEFT) {
-                    if (!debugEditor_.panelVisible() || !SDL_PointInRectFloat(&point, &DebugOverlay::panel)) {
-                        game_.onClick(point);
+                    if (!debugEditor_.panelVisible()
+                        || !SDL_PointInRectFloat(&viewportPoint, &DebugOverlay::panel)) {
+                        game_.onClick(worldPoint);
                     }
                 }
             }

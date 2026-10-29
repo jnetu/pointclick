@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/Camera.hpp"
 #include "game/FloatingText.hpp"
 #include "game/Navigation.hpp"
 #include "game/ObjectAnimations.hpp"
@@ -20,12 +21,14 @@ public:
                              bool restart, std::string& error);
 
     void onTextInput(std::string_view text);
-    void onPointerMove(SDL_FPoint position);
+    void onPointerMove(SDL_FPoint position, bool insideViewport = true);
     void onClick(SDL_FPoint position);
     void tick(float deltaSeconds);
 
     [[nodiscard]] const FloatingText& floatingText() const;
     [[nodiscard]] const Player& player() const;
+    [[nodiscard]] const Camera& camera() const;
+    [[nodiscard]] const Navigation& navigation() const;
     [[nodiscard]] SDL_FPoint pointer() const;
     [[nodiscard]] bool pointerInside() const;
     [[nodiscard]] const Room& room() const;
@@ -36,7 +39,9 @@ private:
     FloatingText floatingText_;
     Room room_;
     Navigation navigation_;
+    Navigation scratchNavigation_;
     Player player_;
+    Camera camera_;
     SDL_FPoint pointer_{};
     bool pointerInside_ = false;
     ObjectAnimations objectAnimations_;

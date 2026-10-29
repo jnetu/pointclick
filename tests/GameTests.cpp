@@ -274,6 +274,323 @@ void testPanoramicRoomCameraAndNavigation() {
     assert(near(game.camera().position().x, 1260.0F));
     assert(near(game.camera().position().y, 640.0F));
 }
+
+void testWalkToInteractAndDepthPicking() {
+    Room room = RoomPresets::firstRoom();
+    room.playerStart = {220.0F, 520.0F};
+    // Overlap two interactive objects at x = 700..800, y = 430..500:
+    // back_statue has depth 510; front_banner has depth 550 (drawn in front).
+    room.scenery = {
+        {{680.0F, 390.0F, 120.0F, 120.0F}, {120, 120, 160, 255}, SceneObjectType::decoration,
+         {}, "back_statue", {}, "idle"},
+        {{700.0F, 430.0F, 110.0F, 120.0F}, {200, 160, 80, 255}, SceneObjectType::decoration,
+         {}, "front_banner", {}, "idle"},
+        // Painting mounted high on the wall (above wallBottomY = 280) must also be clickable.
+        {{420.0F, 120.0F, 90.0F, 110.0F}, {180, 140, 110, 255}, SceneObjectType::decoration,
+         {}, "wall_painting", {}, "idle"},
+    };
+
+    Game game(room);
+    game.setInteractions(RoomInteractions{{
+        {
+            .trigger = InteractionTrigger::interact("back_statue"),
+            .conditions = {},
+            .effects = {
+                InteractionEffect::setFlag("inspected_statue"),
+                InteractionEffect::say("Uma estatua antiga."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::interact("front_banner"),
+            .conditions = {InteractionCondition::flagNotSet("took_banner")},
+            .effects = {
+                InteractionEffect::setFlag("took_banner"),
+                InteractionEffect::hideObject("front_banner"),
+                InteractionEffect::say("Retirei o estandarte da frente."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::interact("wall_painting"),
+            .conditions = {},
+            .effects = {
+                InteractionEffect::setFlag("saw_painting"),
+                InteractionEffect::say("Um retrato na parede."),
+            },
+        },
+    }});
+
+    // 1. Click in the overlapping region (740, 470): must pick front_banner (higher depth),
+    // start walking, and NOT trigger the effect before arrival.
+    game.onClick({740.0F, 470.0F});
+    assert(game.player().moving());
+    assert(game.pendingInteraction().has_value());
+    assert(game.pendingInteraction()->objectId == "front_banner");
+    assert(!game.session().hasFlag("took_banner"));
+    assert(!game.floatingText().isVisible());
+
+    game.tick(0.25F);
+    assert(game.player().moving());
+    assert(!game.session().hasFlag("took_banner"));
+
+    // 2. Clicking empty floor mid-walk cancels the pending interaction and reroutes.
+    game.onClick({320.0F, 600.0F});
+    assert(!game.pendingInteraction().has_value());
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.player().moving());
+    assert(near(game.player().feet().x, 320.0F) && near(game.player().feet().y, 600.0F));
+    assert(!game.session().hasFlag("took_banner"));
+    assert(game.isObjectVisible("front_banner"));
+
+    // 3. Click the overlapping spot again and walk all the way to arrival: front_banner fires and hides.
+    game.onClick({740.0F, 470.0F});
+    assert(game.pendingInteraction().has_value());
+    assert(game.pendingInteraction()->objectId == "front_banner");
+    for (int i = 0; i < 100; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.player().moving());
+    assert(!game.pendingInteraction().has_value());
+    assert(game.session().hasFlag("took_banner"));
+    assert(!game.isObjectVisible("front_banner"));
+    assert(game.floatingText().text() == "Retirei o estandarte da frente.");
+    assert(!game.session().hasFlag("inspected_statue"));
+
+    // 4. Clicking the exact same spot (740, 470) now ignores hidden front_banner and picks back_statue.
+    game.onClick({740.0F, 470.0F});
+    for (int i = 0; i < 60; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.player().moving());
+    assert(game.session().hasFlag("inspected_statue"));
+    assert(game.floatingText().text() == "Uma estatua antiga.");
+
+    // 5. Clicking back_statue while ALREADY standing at its interaction point fires immediately.
+    game.session().clearFlag("inspected_statue");
+    game.onClick({740.0F, 470.0F});
+    assert(!game.player().moving());
+    assert(!game.pendingInteraction().has_value());
+    assert(game.session().hasFlag("inspected_statue"));
+
+    // 6. Clicking wall_painting above wallBottomY walks to walkableTopY beneath it and interacts.
+    game.onClick({465.0F, 175.0F});
+    assert(game.player().moving());
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.player().moving());
+    assert(near(game.player().feet().y, room.walkableTopY));
+    assert(game.session().hasFlag("saw_painting"));
+    assert(game.floatingText().text() == "Um retrato na parede.");
+}
+
+void testItemPickupAndHiddenCollision() {
+    Room room = RoomPresets::firstRoom();
+    room.playerStart = {250.0F, 520.0F};
+    // Solid crate with collectible behavior: picking it up adds to inventory, hides it,
+    // and frees its blocked navigation cells.
+    room.scenery = {
+        {{580.0F, 470.0F, 90.0F, 90.0F}, {210, 175, 65, 255}, SceneObjectType::solid,
+         {10.0F, 60.0F, 70.0F, 30.0F}, "supply_crate", {}, "idle"},
+    };
+    const SDL_FPoint crateCenter{625.0F, 545.0F};
+
+    Game game(room);
+    assert(!game.navigation().canStandAt(crateCenter));
+
+    game.setInteractions(RoomInteractions{{
+        {
+            .trigger = InteractionTrigger::interact("supply_crate"),
+            .conditions = {InteractionCondition::objectVisible("supply_crate")},
+            .effects = {
+                InteractionEffect::giveItem("crowbar"),
+                InteractionEffect::hideObject("supply_crate"),
+                InteractionEffect::say("Peguei o pe de cabra e recolhi a caixa."),
+            },
+        },
+    }});
+
+    game.onClick({625.0F, 515.0F});
+    assert(game.player().moving());
+    assert(!game.session().hasItem("crowbar"));
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.player().moving());
+    assert(game.session().hasItem("crowbar"));
+    assert(game.session().items().size() == 1);
+    assert(game.session().items()[0] == "crowbar");
+    assert(!game.isObjectVisible("supply_crate"));
+    assert(!game.isObjectSolid(game.room().scenery[0]));
+    // Hidden solid object no longer blocks navigation, and clicking its old bounds walks onto the floor.
+    assert(game.navigation().canStandAt(crateCenter));
+
+    game.onTextInput("");
+    game.onClick(crateCenter);
+    assert(!game.pendingInteraction().has_value());
+    for (int i = 0; i < 40; ++i) {
+        game.tick(0.05F);
+    }
+    assert(near(game.player().feet().x, crateCenter.x));
+    assert(near(game.player().feet().y, crateCenter.y));
+    assert(!game.floatingText().isVisible());
+}
+
+void testConditionalNpcPuzzleAndRoomPersistence() {
+    Room room = RoomPresets::firstRoom();
+    room.id = "courtyard";
+    room.playerStart = {200.0F, 520.0F};
+    SpriteClip closedClip{.file = "door_closed.png"};
+    SpriteClip openClip{.file = "door_open.png"};
+    AnimationSet doorAnims{{"idle", closedClip}, {"open", openClip}};
+
+    // Gate spans the entire walkable height at x = 700, partitioning the room until unlocked!
+    room.scenery = {
+        {{360.0F, 470.0F, 60.0F, 50.0F}, {240, 210, 80, 255}, SceneObjectType::decoration,
+         {}, "silver_key", {}, "idle"},
+        {{500.0F, 360.0F, 70.0F, 140.0F}, {90, 140, 200, 255}, SceneObjectType::solid,
+         {10.0F, 110.0F, 50.0F, 30.0F}, "guard", {}, "idle"},
+        {{700.0F, 280.0F, 80.0F, 440.0F}, {140, 95, 65, 255}, SceneObjectType::solid,
+         {10.0F, 0.0F, 60.0F, 440.0F}, "iron_gate", doorAnims, "idle"},
+        {{1020.0F, 480.0F, 70.0F, 70.0F}, {90, 220, 180, 255}, SceneObjectType::decoration,
+         {}, "relic", {}, "idle"},
+    };
+
+    Game game(room);
+    game.setInteractions(RoomInteractions{{
+        {
+            .trigger = InteractionTrigger::interact("silver_key"),
+            .conditions = {InteractionCondition::objectVisible("silver_key")},
+            .effects = {
+                InteractionEffect::giveItem("silver_key"),
+                InteractionEffect::hideObject("silver_key"),
+                InteractionEffect::say("Peguei a chave prateada."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::interact("guard"),
+            .conditions = {InteractionCondition::flagSet("gate_open")},
+            .effects = {InteractionEffect::say("O portao esta aberto. Boa sorte la dentro.")},
+        },
+        {
+            .trigger = InteractionTrigger::interact("guard"),
+            .conditions = {
+                InteractionCondition::hasItem("silver_key"),
+                InteractionCondition::flagSet("talked_to_guard"),
+            },
+            .effects = {
+                InteractionEffect::takeItem("silver_key"),
+                InteractionEffect::setFlag("gate_open"),
+                InteractionEffect::setSolid("iron_gate", false),
+                InteractionEffect::playAnimation("iron_gate", "open"),
+                InteractionEffect::say("Essa e a chave! Vou abrir o portao."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::useItem("silver_key", "iron_gate"),
+            .conditions = {InteractionCondition::flagNotSet("gate_open")},
+            .effects = {
+                InteractionEffect::takeItem("silver_key"),
+                InteractionEffect::setFlag("gate_open"),
+                InteractionEffect::setSolid("iron_gate", false),
+                InteractionEffect::playAnimation("iron_gate", "open"),
+                InteractionEffect::say("Abri o portao com a chave."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::interact("guard"),
+            .conditions = {InteractionCondition::lacksItem("silver_key")},
+            .effects = {
+                InteractionEffect::setFlag("talked_to_guard"),
+                InteractionEffect::say("Sem a chave prateada ninguem passa."),
+            },
+        },
+        {
+            .trigger = InteractionTrigger::interact("relic"),
+            .conditions = {},
+            .effects = {
+                InteractionEffect::giveItem("relic"),
+                InteractionEffect::hideObject("relic"),
+                InteractionEffect::changeRoom("sanctuary"),
+                InteractionEffect::say("Encontrei a reliquia!"),
+            },
+        },
+    }});
+
+    // 1. Before unlocking iron_gate, clicking relic behind the gate walks only up to the gate
+    // and MUST NOT collect relic through the solid wall.
+    game.onClick({1055.0F, 515.0F});
+    for (int i = 0; i < 100; ++i) {
+        game.tick(0.05F);
+    }
+    assert(game.player().feet().x < 700.0F);
+    assert(!game.session().hasItem("relic"));
+    assert(game.isObjectVisible("relic"));
+    assert(!game.pendingRoomTransition().has_value());
+
+    // 2. Talk to guard before having silver_key: sets talked_to_guard flag, gate stays solid.
+    game.onClick({535.0F, 430.0F});
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(game.session().hasFlag("talked_to_guard"));
+    assert(!game.session().hasFlag("gate_open"));
+    assert(game.floatingText().text() == "Sem a chave prateada ninguem passa.");
+    assert(!game.navigation().canStandAt({730.0F, 520.0F}));
+    assert(game.objectAnimation("iron_gate")->name() == "idle");
+
+    // 3. Pick up silver_key on the floor.
+    game.onClick({390.0F, 495.0F});
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(game.session().hasItem("silver_key"));
+    assert(!game.isObjectVisible("silver_key"));
+
+    // 4. Talk to guard again now that we have silver_key AND talked_to_guard:
+    // consumes silver_key, sets gate_open, switches iron_gate animation to "open",
+    // and rebuilds Navigation so iron_gate is passable!
+    game.onClick({535.0F, 430.0F});
+    for (int i = 0; i < 80; ++i) {
+        game.tick(0.05F);
+    }
+    assert(!game.session().hasItem("silver_key"));
+    assert(game.session().hasFlag("gate_open"));
+    assert(game.floatingText().text() == "Essa e a chave! Vou abrir o portao.");
+    assert(game.objectAnimation("iron_gate")->name() == "open");
+    assert(game.navigation().canStandAt({730.0F, 520.0F}));
+
+    // Talking to guard a third time (already standing next to him) reflects the new state.
+    game.onClick({535.0F, 430.0F});
+    assert(game.floatingText().text() == "O portao esta aberto. Boa sorte la dentro.");
+
+    // 5. Walk through the unlocked gate to collect relic and trigger change_room "sanctuary".
+    game.onClick({1055.0F, 515.0F});
+    for (int i = 0; i < 120; ++i) {
+        game.tick(0.05F);
+    }
+    assert(game.player().feet().x > 950.0F);
+    assert(game.session().hasItem("relic"));
+    assert(!game.isObjectVisible("relic"));
+    assert(game.pendingRoomTransition().has_value());
+    assert(*game.pendingRoomTransition() == "sanctuary");
+    assert(*game.consumeRoomTransition() == "sanctuary");
+    assert(!game.pendingRoomTransition().has_value());
+
+    // 6. Transitioning to another room and returning preserves SessionState (inventory, flags,
+    // hidden items, and unlocked iron_gate).
+    Room sanctuary = RoomPresets::firstRoom();
+    sanctuary.id = "sanctuary";
+    game.loadRoom(sanctuary);
+    assert(game.session().hasItem("relic"));
+    assert(game.session().hasFlag("gate_open"));
+
+    game.loadRoom(room);
+    assert(!game.isObjectVisible("silver_key"));
+    assert(!game.isObjectVisible("relic"));
+    assert(game.navigation().canStandAt({730.0F, 520.0F}));
+}
 }
 
 int main() {
@@ -284,4 +601,7 @@ int main() {
     testSolidObjectFootprint();
     testStandardRoomCameraFixed();
     testPanoramicRoomCameraAndNavigation();
+    testWalkToInteractAndDepthPicking();
+    testItemPickupAndHiddenCollision();
+    testConditionalNpcPuzzleAndRoomPersistence();
 }

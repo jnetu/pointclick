@@ -15,6 +15,8 @@ public:
 
 private:
     bool initialize();
+    bool loadRoomWithRules(std::string_view roomFilename);
+    void processPendingRoomTransition();
     void mainLoop();
     void processEvents();
     void syncTextInputState();

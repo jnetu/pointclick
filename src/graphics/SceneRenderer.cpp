@@ -28,6 +28,7 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
     items.clear();
     items.reserve(scenery.size() + 1);
     for (std::size_t i = 0; i < scenery.size(); ++i) {
+        if (!game.isObjectVisible(scenery[i].id)) continue;
         items.push_back({scenery[i].depth(), static_cast<int>(i)});
     }
     items.push_back({feet.y, -1});
@@ -40,7 +41,8 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
         } else {
             const SceneObject& object = scenery[static_cast<std::size_t>(item.objectIndex)];
             EntityRenderer::drawObject(renderer, sprites, object,
-                                       game.objectAnimation(object.id), cameraOffset);
+                                       game.objectAnimation(object.id), cameraOffset,
+                                       game.isObjectSolid(object));
         }
     }
 

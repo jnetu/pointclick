@@ -11,14 +11,22 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
     const SDL_FPoint cameraOffset = game.camera().interpolatedPosition(interpolation);
     SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
     for (const auto& object : game.room().scenery) {
-        if (object.type == SceneObjectType::solid) {
-            auto base = object.worldCollisionFootprint();
+        if (game.isObjectSolid(object)) {
+            auto base = effectiveCollisionFootprint(object);
             base.x -= cameraOffset.x;
             base.y -= cameraOffset.y;
             SDL_RenderRect(renderer, &base);
         }
-        SDL_RenderDebugText(renderer, object.bounds.x - cameraOffset.x,
-                            object.bounds.y - 12 - cameraOffset.y, object.id.c_str());
+        if (game.isObjectVisible(object.id)) {
+            SDL_RenderDebugText(renderer, object.bounds.x - cameraOffset.x,
+                                object.bounds.y - 12 - cameraOffset.y, object.id.c_str());
+        } else {
+            SDL_SetRenderDrawColor(renderer, 150, 155, 165, 255);
+            SDL_RenderDebugTextFormat(renderer, object.bounds.x - cameraOffset.x,
+                                      object.bounds.y - 12 - cameraOffset.y, "%s (oculto)",
+                                      object.id.c_str());
+            SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
+        }
     }
     if (!editor.panelVisible()) {
         const SDL_FRect badge{844, 12, 424, 28};

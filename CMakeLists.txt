@@ -1,7 +1,14 @@
 cmake_minimum_required(VERSION 3.26)
 project(pointclick VERSION 0.1.0 LANGUAGES CXX)
 
-include(cmake/CPM.cmake)
+if(NOT CMAKE_C_COMPILER_LAUNCHER AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
+    find_program(POINTCLICK_COMPILER_CACHE NAMES sccache ccache)
+    if(POINTCLICK_COMPILER_CACHE)
+        set(CMAKE_C_COMPILER_LAUNCHER "${POINTCLICK_COMPILER_CACHE}")
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${POINTCLICK_COMPILER_CACHE}")
+    endif()
+endif()
+
 include(cmake/Dependencies.cmake)
 
 # Shared game code: the executable and the tests use the same implementation.
@@ -10,12 +17,15 @@ add_library(pointclick_core STATIC
         src/game/Camera.cpp
         src/game/FloatingText.cpp
         src/game/Game.cpp
+        src/game/Interaction.cpp
         src/game/Navigation.cpp
         src/game/ObjectAnimations.cpp
         src/game/Player.cpp
         src/game/Room.cpp
+        src/game/SessionState.cpp
         src/game/SpriteClip.cpp
         src/game/RoomParameters.cpp
+        src/content/InteractionFiles.cpp
         src/content/RoomPresets.cpp
         src/content/RoomFiles.cpp
         src/content/SpriteFields.cpp
@@ -46,6 +56,7 @@ foreach(target pointclick_core pointclick_graphics pointclick)
     endif()
 endforeach()
 
+set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 include(CTest)
 if(BUILD_TESTING)
     add_executable(pointclick_tests tests/GameTests.cpp)
@@ -59,15 +70,13 @@ if(BUILD_TESTING)
     target_compile_definitions(pointclick_sprite_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     # The regression checks must also run in Release builds.
-    if(MSVC)
-        target_compile_options(pointclick_tests PRIVATE /UNDEBUG)
-        target_compile_options(pointclick_editor_tests PRIVATE /UNDEBUG)
-        target_compile_options(pointclick_sprite_tests PRIVATE /UNDEBUG)
-    else()
-        target_compile_options(pointclick_tests PRIVATE -UNDEBUG)
-        target_compile_options(pointclick_editor_tests PRIVATE -UNDEBUG)
-        target_compile_options(pointclick_sprite_tests PRIVATE -UNDEBUG)
-    endif()
+    foreach(test_target pointclick_tests pointclick_editor_tests pointclick_sprite_tests)
+        if(MSVC)
+            target_compile_options(${test_target} PRIVATE /W4 /permissive- /UNDEBUG)
+        else()
+            target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
+        endif()
+    endforeach()
     add_test(NAME pointclick_tests COMMAND pointclick_tests)
     add_test(NAME pointclick_editor_tests COMMAND pointclick_editor_tests)
     add_test(NAME pointclick_sprite_tests COMMAND pointclick_sprite_tests)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/Interaction.hpp"
 #include "game/Room.hpp"
 
 namespace RoomPresets {
@@ -7,4 +8,5 @@ namespace RoomPresets {
 // outside the generic room data type.
 [[nodiscard]] Room defaults();
 [[nodiscard]] Room firstRoom();
+[[nodiscard]] RoomInteractions firstRoomInteractions();
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include "game/Interaction.hpp"
 #include "game/Room.hpp"
 #include <filesystem>
 #include <optional>
@@ -40,7 +41,8 @@ public:
 private:
     void activate(Game& game);
     void submit(Game& game);
-    bool commit(Game& game, Room room, bool resetPlayer = false);
+    bool commit(Game& game, Room room, bool resetPlayer = false,
+                std::optional<RoomInteractions> nextInteractions = std::nullopt);
     void setParameter(Game& game, std::string_view key, float value);
 
     bool active_ = false;
@@ -51,5 +53,7 @@ private:
     std::string status_;
     std::filesystem::path roomDirectory_;
     std::optional<Room> baseline_;
+    std::optional<RoomInteractions> baselineInteractions_;
     std::optional<Room> undo_;
+    std::optional<RoomInteractions> undoInteractions_;
 };

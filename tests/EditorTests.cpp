@@ -1,3 +1,4 @@
+#include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
 #include "game/RoomParameters.hpp"
@@ -93,7 +94,7 @@ void testEditing(const std::filesystem::path& directory) {
 
     Room blocked = game.room();
     blocked.scenery = {{{0, 0, 1280, 720}, {255, 0, 0, 255}, SceneObjectType::solid,
-                       {0, 0, 1280, 720}, "wall"}};
+                       {0, 0, 1280, 720}, "wall", {}}};
     std::string error;
     assert(!game.applyRoom(blocked, false, error));
     assert(game.room().scenery.size() == 2);
@@ -661,6 +662,252 @@ void testMultiplatformInputAndRouting() {
     SDL_DestroyWindow(window);
     SDL_Quit();
 }
+
+void testEditorPreservesSessionState(const std::filesystem::path& directory) {
+    Room room = RoomPresets::firstRoom();
+    const SDL_Color pickupColor{251, 31, 189, 255};
+    room.scenery.push_back({{500.0F, 480.0F, 60.0F, 60.0F}, pickupColor,
+                            SceneObjectType::decoration, {}, "magenta_gem", {}, "idle"});
+
+    Game game(room);
+    RoomInteractions rules = RoomPresets::firstRoomInteractions();
+    rules.rules.push_back({
+        .trigger = InteractionTrigger::interact("magenta_gem"),
+        .conditions = {InteractionCondition::objectVisible("magenta_gem")},
+        .effects = {
+            InteractionEffect::giveItem("magenta_gem"),
+            InteractionEffect::hideObject("magenta_gem"),
+            InteractionEffect::say("Peguei a gema magenta!"),
+        },
+    });
+    game.setInteractions(rules);
+
+    // 1. Collect brass_key from blue_box, unlock solid red_box via useItemOnObject, and pick up magenta_gem.
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 80; ++i) game.tick(0.05F);
+    assert(game.session().hasFlag("found_brass_key"));
+    assert(game.session().hasItem("brass_key"));
+
+    assert(game.useItemOnObject("brass_key", "red_box"));
+    for (int i = 0; i < 100; ++i) game.tick(0.05F);
+    assert(!game.session().hasItem("brass_key"));
+    assert(game.session().hasFlag("red_box_unlocked"));
+    assert(!game.isObjectSolid(game.room().scenery[1]));
+    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+
+    game.onClick({530.0F, 510.0F});
+    for (int i = 0; i < 80; ++i) game.tick(0.05F);
+    assert(game.session().hasItem("magenta_gem"));
+    assert(!game.isObjectVisible("magenta_gem"));
+
+    // 2. Live edits in DebugEditor (set, move, undo, reset) MUST preserve SessionState!
+    DebugEditor editor;
+    editor.setRoomDirectory(directory);
+    assert(editor.onTextInput("DEBUG", game));
+    assert(editor.active());
+
+    command(editor, game, "set player.far_speed 180");
+    assert(game.room().playerFarSpeed == 180.0F);
+    assert(game.session().hasItem("magenta_gem"));
+    assert(game.session().hasFlag("found_brass_key"));
+    assert(game.session().hasFlag("red_box_unlocked"));
+    assert(!game.isObjectVisible("magenta_gem"));
+    assert(!game.isObjectSolid(game.room().scenery[1]));
+    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+
+    command(editor, game, "move blue_box 300 350");
+    assert(game.room().scenery[0].bounds.x == 300.0F);
+    assert(game.session().hasItem("magenta_gem"));
+    assert(!game.isObjectVisible("magenta_gem"));
+    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+
+    command(editor, game, "undo");
+    assert(game.room().scenery[0].bounds.x == 380.0F);
+    assert(game.session().hasItem("magenta_gem"));
+    assert(game.session().hasFlag("red_box_unlocked"));
+    assert(!game.isObjectVisible("magenta_gem"));
+    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+
+    command(editor, game, "reset");
+    assert(game.room().playerFarSpeed == 110.0F);
+    assert(game.session().hasItem("magenta_gem"));
+    assert(game.session().hasFlag("red_box_unlocked"));
+    assert(!game.isObjectVisible("magenta_gem"));
+    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    editor.onKey(DebugKey::close, game);
+
+    // 3. Headless SceneRenderer check: hidden magenta_gem is NOT drawn; showing it draws it again!
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    assert(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Visibility render test", 1280, 720, SDL_WINDOW_HIDDEN);
+    assert(window);
+    Renderer renderer;
+    assert(renderer.initialize(window));
+
+    renderer.render(game, 1.0F, nullptr);
+    SDL_Surface* hiddenFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(hiddenFrame);
+    assert(!surfaceContainsColor(hiddenFrame, pickupColor));
+    SDL_DestroySurface(hiddenFrame);
+
+    game.session().setObjectVisible(game.room().id, "magenta_gem", true);
+    renderer.render(game, 1.0F, nullptr);
+    SDL_Surface* shownFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(shownFrame);
+    assert(surfaceContainsColor(shownFrame, pickupColor));
+    SDL_DestroySurface(shownFrame);
+
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+void testInteractionRulesFilesAndValidation(const std::filesystem::path& directory) {
+    // 1. Validate shipped companion .rules files against shipped .room files.
+    const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+    const auto firstRoom = RoomFiles::load(roomsDir / "first.room");
+    assert(firstRoom.room);
+    const auto firstRules = InteractionFiles::loadOptionalForRoom(
+            roomsDir / "first.room", &*firstRoom.room);
+    assert(firstRules.interactions && firstRules.error.empty());
+    assert(!firstRules.interactions->empty());
+    assert(firstRules.interactions->hasRulesForObject("blue_box"));
+    assert(firstRules.interactions->hasRulesForObject("red_box"));
+
+    const auto galleryRoom = RoomFiles::load(roomsDir / "gallery.room");
+    assert(galleryRoom.room);
+    const auto galleryRules = InteractionFiles::loadOptionalForRoom(
+            roomsDir / "gallery.room", &*galleryRoom.room);
+    assert(galleryRules.interactions && galleryRules.error.empty());
+    assert(galleryRules.interactions->hasRulesForObject("plant"));
+    assert(galleryRules.interactions->hasRulesForObject("table"));
+
+    // 2. Optional companion loading succeeds with empty rules when no .rules exists.
+    const auto lonelyRoomPath = directory / "no_rules_here.room";
+    std::string saveError;
+    assert(RoomFiles::save(lonelyRoomPath, *firstRoom.room, saveError));
+    const auto optionalMissing = InteractionFiles::loadOptionalForRoom(
+            lonelyRoomPath, &*firstRoom.room);
+    assert(optionalMissing.interactions && optionalMissing.interactions->empty());
+    assert(optionalMissing.error.empty());
+
+    // Direct load on a missing .rules file returns a clear open error.
+    const auto directMissing = InteractionFiles::load(directory / "missing.rules");
+    assert(!directMissing.interactions);
+    assert(directMissing.error == "Nao foi possivel abrir missing.rules");
+
+    // 3. Full save/load roundtrip covering all triggers, conditions, effects, quotes, and '#' in strings.
+    Room testRoom = RoomPresets::firstRoom();
+    testRoom.scenery[1].animations["idle"] = SpriteClip{.file = "red_idle.png"};
+    testRoom.scenery[1].animations["open"] = SpriteClip{.file = "red_open.png"};
+
+    const std::string authoredRulesText =
+        "# Comentario de topo\r\n"
+        "[interact blue_box] # inspecao\r\n"
+        "flag_not_set opened_once\r\n"
+        "lacks_item golden_token\r\n"
+        "object_visible blue_box\r\n"
+        "set_flag opened_once\r\n"
+        "give_item golden_token\r\n"
+        "say \"Item #1: \\\"ficha dourada\\\" encontrada!\" # comentario no fim\r\n"
+        "\r\n"
+        "[use_item golden_token red_box]\r\n"
+        "flag_set opened_once\r\n"
+        "has_item golden_token\r\n"
+        "object_visible red_box\r\n"
+        "take_item golden_token\r\n"
+        "clear_flag opened_once\r\n"
+        "hide_object blue_box\r\n"
+        "show_object red_box\r\n"
+        "set_solid red_box 0\r\n"
+        "play_animation red_box open\r\n"
+        "change_room gallery\r\n"
+        "say \"Passagem liberada!\"\r\n"
+        "\r\n"
+        "[interact red_box]\r\n"
+        "object_hidden blue_box\r\n"
+        "say \"Ja passamos por aqui.\"\r\n";
+
+    const auto parsed = InteractionFiles::parse(authoredRulesText, &testRoom);
+    assert(parsed.interactions && parsed.error.empty());
+    assert(parsed.interactions->rules.size() == 3);
+    assert(parsed.interactions->rules[0].effects[2].value == "Item #1: \"ficha dourada\" encontrada!");
+
+    const auto rulesPath = directory / "roundtrip.rules";
+    assert(InteractionFiles::save(rulesPath, *parsed.interactions, saveError, &testRoom));
+    const auto reloaded = InteractionFiles::load(rulesPath, &testRoom);
+    assert(reloaded.interactions && reloaded.error.empty());
+    assert(reloaded.interactions->rules.size() == 3);
+    assert(reloaded.interactions->rules[0].effects[2].value == "Item #1: \"ficha dourada\" encontrada!");
+    assert(reloaded.interactions->rules[1].trigger.kind == InteractionTriggerKind::useItem);
+    assert(reloaded.interactions->rules[1].trigger.itemId == "golden_token");
+    assert(reloaded.interactions->rules[1].trigger.objectId == "red_box");
+    assert(reloaded.interactions->rules[1].effects.size() == 8);
+
+    // 4. DebugEditor 'load' rejects a room if its companion .rules file has a syntax error,
+    // preserving the active simulation!
+    const auto brokenCompanionRoom = directory / "broken_rules.room";
+    assert(RoomFiles::save(brokenCompanionRoom, testRoom, saveError));
+    {
+        std::ofstream badCompanion(directory / "broken_rules.rules", std::ios::binary);
+        badCompanion << "[interact blue_box]\nsay \"sem fechar aspas\n";
+    }
+    Game editorGame(testRoom);
+    DebugEditor editor;
+    editor.setRoomDirectory(directory);
+    assert(editor.onTextInput("DEBUG", editorGame));
+    command(editor, editorGame, "set player.far_speed 155");
+    assert(editorGame.room().playerFarSpeed == 155.0F);
+    command(editor, editorGame, "load broken_rules.room");
+    assert(editor.status() == "Linha 2: Texto entre aspas nao fechado");
+    assert(editorGame.room().playerFarSpeed == 155.0F); // Rolled back!
+
+    // 5. Clear line-by-line error messages for invalid rule syntax and invalid room references.
+    const struct {
+        const char* text;
+        const char* expectedError;
+    } invalidCases[]{
+        {"say \"fora de bloco\"",
+         "Linha 1: Regra deve comecar com [interact <objeto>] ou [use_item <item> <objeto>]"},
+        {"[interact blue_box",
+         "Linha 1: Cabecalho de gatilho malformado"},
+        {"[touch blue_box]\nsay \"oi\"",
+         "Linha 1: Gatilho desconhecido: touch"},
+        {"[interact]\nsay \"oi\"",
+         "Linha 1: Use [interact <objeto>]"},
+        {"[use_item key]\nsay \"oi\"",
+         "Linha 1: Use [use_item <item> <objeto>]"},
+        {"[interact blue_box]\nflag_set ok\n",
+         "Linha 1: Regra sem efeitos"},
+        {"[interact blue_box]\nsay \"oi\"\nflag_set tarde_demais",
+         "Linha 3: Condicao deve vir antes dos efeitos"},
+        {"[interact blue_box]\nsay sem_aspas",
+         "Linha 2: Use say \"texto\""},
+        {"[interact blue_box]\nsay \"\"",
+         "Linha 2: Texto de fala vazio"},
+        {"[interact blue_box]\nsay \"ok\" lixo",
+         "Linha 2: Caracteres extras apos aspas em say"},
+        {"[interact blue_box]\nset_solid red_box 2",
+         "Linha 2: Use set_solid <objeto> <0|1>"},
+        {"[interact blue_box]\ncomando_inexistente 123",
+         "Linha 2: Comando de regra desconhecido: comando_inexistente"},
+        {"[interact blue_box]\nset_flag flag$invalida",
+         "Linha 2: Identificador invalido: flag$invalida"},
+        {"[interact fantasma]\nsay \"oi\"",
+         "Linha 1: Objeto desconhecido na sala: fantasma"},
+        {"[interact blue_box]\nhide_object fantasma",
+         "Linha 2: Objeto desconhecido na sala: fantasma"},
+        {"[interact blue_box]\nplay_animation red_box danca",
+         "Linha 2: Animacao desconhecida 'danca' no objeto: red_box"},
+    };
+
+    for (const auto& testCase : invalidCases) {
+        const auto bad = InteractionFiles::parse(testCase.text, &testRoom);
+        assert(!bad.interactions);
+        assert(bad.error == testCase.expectedError);
+    }
+}
 }
 
 int main() {
@@ -672,5 +919,7 @@ int main() {
     testRoomFiles(directory);
     testDebugRendering();
     testMultiplatformInputAndRouting();
+    testEditorPreservesSessionState(directory);
+    testInteractionRulesFilesAndValidation(directory);
     std::filesystem::remove_all(directory);
 }

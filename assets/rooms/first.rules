@@ -1,0 +1,32 @@
+# Regras declarativas da sala inicial (first.room).
+# Avaliadas em ordem: a primeira regra cujas condicoes forem verdadeiras e executada.
+
+[interact blue_box]
+flag_not_set found_brass_key
+set_flag found_brass_key
+give_item brass_key
+say "Encontrei uma chave de latao escondida na caixa azul!"
+
+[interact blue_box]
+say "A caixa azul ja foi vasculhada."
+
+[use_item brass_key red_box]
+flag_not_set red_box_unlocked
+take_item brass_key
+set_flag red_box_unlocked
+set_solid red_box 0
+say "A chave destravou a caixa vermelha! O caminho esta livre."
+
+[interact red_box]
+flag_set red_box_unlocked
+say "A trava foi aberta. A caixa nao bloqueia mais a passagem."
+
+[interact red_box]
+has_item brass_key
+take_item brass_key
+set_flag red_box_unlocked
+set_solid red_box 0
+say "Usei a chave de latao e liberei a passagem da caixa vermelha!"
+
+[interact red_box]
+say "Esta pesada e trancada no chao. Talvez haja uma chave por perto."

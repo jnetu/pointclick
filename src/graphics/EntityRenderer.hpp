@@ -2,6 +2,8 @@
 
 #include <SDL3/SDL_rect.h>
 
+#include <optional>
+
 struct SDL_Renderer;
 class SpriteLibrary;
 class Player;
@@ -12,7 +14,8 @@ struct SceneObject;
 namespace EntityRenderer {
 void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                 const SceneObject& object, const AnimationPlayback* playback,
-                SDL_FPoint cameraOffset = {});
+                SDL_FPoint cameraOffset = {},
+                std::optional<bool> solidOverride = std::nullopt);
 void drawPlayer(SpriteLibrary& sprites, const Room& room,
                 const Player& player, SDL_FPoint feet,
                 SDL_FPoint cameraOffset = {});

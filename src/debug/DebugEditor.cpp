@@ -1,4 +1,5 @@
 #include "debug/DebugEditor.hpp"
+#include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "game/RoomParameters.hpp"
 #include "game/Game.hpp"
@@ -27,7 +28,9 @@ void DebugEditor::activate(Game& game) {
     active_ = true;
     panelVisible_ = true;
     baseline_ = game.room();
+    baselineInteractions_ = game.interactions();
     undo_.reset();
+    undoInteractions_.reset();
     activation_.clear();
     command_.clear();
     status_ = "Editor ativo. Alteracoes so persistem com save.";
@@ -56,10 +59,21 @@ bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
     return consumed;
 }
 
-bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer) {
+bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer,
+                         std::optional<RoomInteractions> nextInteractions) {
+    if (nextInteractions) {
+        status_ = nextInteractions->validationError(&room);
+        if (!status_.empty()) return false;
+    }
     Room previous = game.room();
+    RoomInteractions previousInteractions = game.interactions();
     if (!game.applyRoom(std::move(room), resetPlayer, status_)) return false;
+    if (nextInteractions) {
+        std::string rulesError;
+        (void)game.setInteractions(std::move(*nextInteractions), rulesError);
+    }
     undo_ = std::move(previous);
+    undoInteractions_ = std::move(previousInteractions);
     status_ = "Aplicado. Rota reiniciada; save para gravar.";
     return true;
 }
@@ -135,15 +149,25 @@ void DebugEditor::submit(Game& game) {
         if (verb == "save") {
             if (RoomFiles::save(roomDirectory_ / name, game.room(), status_)) status_ = "Salvo: " + name;
         } else {
-            auto result = RoomFiles::load(roomDirectory_ / name);
-            if (!result.room) status_ = result.error;
-            else if (commit(game, std::move(*result.room), true)) status_ = "Sala carregada: " + name;
+            const auto roomPath = roomDirectory_ / name;
+            auto result = RoomFiles::load(roomPath);
+            if (!result.room) {
+                status_ = result.error;
+            } else {
+                auto rulesResult = InteractionFiles::loadOptionalForRoom(roomPath, &*result.room);
+                if (!rulesResult.interactions) {
+                    status_ = rulesResult.error;
+                } else if (commit(game, std::move(*result.room), true,
+                                  std::move(*rulesResult.interactions))) {
+                    status_ = "Sala carregada: " + name;
+                }
+            }
         }
     } else if (verb == "undo" && finished(input)) {
-        if (undo_) commit(game, *undo_);
+        if (undo_) commit(game, *undo_, false, undoInteractions_);
         else status_ = "Nenhuma edicao para desfazer";
     } else if (verb == "reset" && finished(input)) {
-        if (baseline_) commit(game, *baseline_, true);
+        if (baseline_) commit(game, *baseline_, true, baselineInteractions_);
     } else if (verb == "move" || verb == "size" || verb == "base" || verb == "solid") {
         std::string id;
         input >> id;

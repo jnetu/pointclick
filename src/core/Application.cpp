@@ -1,6 +1,8 @@
 #include "core/Application.hpp"
+#include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
+#include "game/Identifier.hpp"
 
 #include <SDL3/SDL.h>
 
@@ -31,6 +33,41 @@ int Application::run() {
     mainLoop();
     shutdown();
     return 0;
+}
+
+bool Application::loadRoomWithRules(const std::string_view roomFilename) {
+    const auto roomPath = debugEditor_.roomDirectory() / std::string(roomFilename);
+    auto loaded = RoomFiles::load(roomPath);
+    if (!loaded.room) {
+        SDL_Log("Could not load room: %s", loaded.error.c_str());
+        return false;
+    }
+    auto rulesLoaded = InteractionFiles::loadOptionalForRoom(roomPath, &*loaded.room);
+    if (!rulesLoaded.interactions) {
+        SDL_Log("Could not load room rules: %s", rulesLoaded.error.c_str());
+        return false;
+    }
+    std::string roomError;
+    if (!game_.applyRoom(std::move(*loaded.room), true, roomError)) {
+        SDL_Log("Could not apply room: %s", roomError.c_str());
+        return false;
+    }
+    std::string rulesError;
+    if (!game_.setInteractions(std::move(*rulesLoaded.interactions), rulesError)) {
+        SDL_Log("Could not apply room rules: %s", rulesError.c_str());
+        return false;
+    }
+    return true;
+}
+
+void Application::processPendingRoomTransition() {
+    const auto nextRoomId = game_.consumeRoomTransition();
+    if (!nextRoomId) return;
+    if (!validIdentifier(*nextRoomId)) {
+        SDL_Log("Invalid room transition target: %s", nextRoomId->c_str());
+        return;
+    }
+    (void)loadRoomWithRules(*nextRoomId + ".room");
 }
 
 bool Application::initialize() {
@@ -64,10 +101,7 @@ bool Application::initialize() {
         debugEditor_.setRoomDirectory(std::filesystem::path(basePath) / "assets" / "rooms");
     }
     renderer_.setSpriteRoot(debugEditor_.roomDirectory().parent_path() / "sprites");
-    auto loaded = RoomFiles::load(debugEditor_.roomDirectory() / "first.room");
-    std::string roomError;
-    if (!loaded.room || !game_.applyRoom(std::move(*loaded.room), true, roomError)) {
-        SDL_Log("Could not load room: %s", loaded.room ? roomError.c_str() : loaded.error.c_str());
+    if (!loadRoomWithRules("first.room")) {
         return false;
     }
 
@@ -97,6 +131,7 @@ void Application::mainLoop() {
         if (!running_) {
             break;
         }
+        processPendingRoomTransition();
         if (suspended_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             continue;
@@ -119,6 +154,7 @@ void Application::mainLoop() {
 
         while (tickAccumulator >= kTickSeconds) {
             game_.tick(static_cast<float>(kTickSeconds));
+            processPendingRoomTransition();
             tickAccumulator -= kTickSeconds;
         }
 

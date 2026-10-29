@@ -191,12 +191,12 @@ animation.open.fps = 8
 animation.open.loop = 0
 ```
 
-O jogo guarda o tempo de animação de cada objeto separadamente. Uma regra C++
-pode chamar `Game::playObjectAnimation("porta", "open", true, error)` para
-iniciar ou reiniciar a ação. O clip com `loop = 0` permanece no último quadro;
-`AnimationPlayback::finished(clip)` informa quando terminou. O clique para
-abrir a porta e as condições dessa interação ainda precisam ser implementados.
-`bounds` continua definindo a posição e o tamanho visual padrão; `collision`
+O jogo guarda o tempo de animação de cada objeto separadamente. Uma regra
+declarativa pode usar `play_animation porta open` (ou em C++ chamar
+`Game::playObjectAnimation("porta", "open", true, error)`) para iniciar ou
+reiniciar a ação. O clip com `loop = 0` permanece no último quadro;
+`AnimationPlayback::finished(clip)` informa quando terminou. `bounds` continua
+definindo a posição, o hit-test de clique e o tamanho visual padrão; `collision`
 continua definindo a área sólida. O sprite não altera a navegação.
 
 ```ini
@@ -226,7 +226,7 @@ collision = 10, 120, 160, 30
 ao canto superior esquerdo do objeto**. A base da mesa acima ocupa X=710,
 Y=490, largura=160 e altura=30. A parte superior continua visual: o personagem
 pode aparecer atrás dela. `type = decoration` desativa a colisão. Cada objeto
-tem um ID estável, como `mesa`, usado nos comandos e em futuras regras de interação.
+tem um ID estável, como `mesa`, usado nos comandos e nas regras de interação.
 
 ## Parâmetros e relações
 
@@ -260,10 +260,78 @@ e as células que elas tocam; por isso o afastamento pode ser maior que o
 retângulo desenhado. Se mudar o tamanho do player, confira também as margens.
 Um clique na área bloqueada procura o ponto de grade alcançável mais próximo.
 
-## Novas regras de jogo
+## Objetos clicáveis, itens e puzzles (`<sala>.rules`)
 
-Os arquivos já permitem definir as regras de deslocamento, perspectiva,
-colisão e composição de cada sala. Para novos comportamentos — conversar,
-pegar itens, abrir portas, testar condições de quests — consulte
-[ARCHITECTURE.md](ARCHITECTURE.md). Esses comportamentos ainda exigem C++;
-não há uma linguagem de scripts de gameplay no formato `.room`.
+Para manter o arquivo `.room` limpo (focado apenas em geometria, cores, colisões
+base e sprites), a lógica interativa da cena fica em um arquivo companheiro
+**opcional** com o mesmo nome e extensão `.rules` na pasta `assets/rooms/` — por
+exemplo, `first.rules` ao lado de `first.room`, ou `gallery.rules` ao lado de
+`gallery.room`.
+
+Quando o jogador clica em um objeto visível que possui regras:
+1. Se dois objetos interativos se sobrepõem, o jogo escolhe automaticamente o que
+   está **na frente** pela profundidade visual (`bounds.y + bounds.h`).
+2. O personagem caminha até o ponto alcançável mais próximo da base do objeto
+   (*Walk-to-Interact*). Clicar no chão vazio durante o trajeto cancela a ação.
+3. Ao chegar (ou imediatamente, se já estiver parado junto ao objeto), as regras
+   daquele objeto são avaliadas **de cima para baixo**: a **primeira** regra cujas
+   condições forem todas verdadeiras executa seus efeitos em ordem.
+
+### Formato do arquivo `.rules`
+
+Comentários começam com `#` (fora de aspas). Cada bloco de regra inicia com um
+gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeitos:
+
+| Elemento | Sintaxe | Descrição |
+| --- | --- | --- |
+| **Gatilho** | `[interact <objectId>]` | Clique direto no objeto da sala |
+| **Gatilho** | `[use_item <itemId> <objectId>]` | Uso de um item do inventário sobre o objeto |
+| **Condição** | `flag_set <flag>` / `flag_not_set <flag>` | Testa se uma flag de progresso está ativa ou não |
+| **Condição** | `has_item <itemId>` / `lacks_item <itemId>` | Testa se o jogador possui (ou não) o item no inventário |
+| **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
+| **Efeito** | `say "<texto>"` | Exibe a fala/observação na tela (suporta `\"` e `\n`) |
+| **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
+| **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
+| **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
+| **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |
+| **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
+| **Efeito** | `change_room <roomId>` | Solicita transição para `<roomId>.room` |
+
+### Exemplo prático: chave coletável, NPC condicional e porta trancada
+
+```ini
+# Coletar item: desaparece da cena e entra no inventario
+[interact chave_antiga]
+object_visible chave_antiga
+give_item chave_antiga
+hide_object chave_antiga
+say "Peguei uma chave antiga no chao."
+
+# Porta ja aberta: atravessa para outra sala
+[interact porta]
+flag_set porta_aberta
+change_room gallery
+
+# Porta trancada, mas jogador ja tem a chave: destranca, anima e libera colisao
+[interact porta]
+has_item chave_antiga
+take_item chave_antiga
+set_flag porta_aberta
+set_solid porta 0
+play_animation porta open
+say "A chave girou! A passagem esta livre."
+
+# Fallback quando ainda nao tem a chave
+[interact porta]
+say "Esta trancada."
+```
+
+### Edição ao vivo sem perder o progresso (`SessionState`)
+
+Todo o progresso da partida (flags, itens no inventário, objetos escondidos e
+portas destrancadas) fica salvo em `SessionState`, separado da definição `Room`.
+Isso significa que você pode abrir o modo **DEBUG**, ajustar velocidades (`set`),
+mover objetos (`move`), desfazer ajustes visuais (`undo`) ou trocar de sala sem
+perder os itens coletados nem resetar puzzles já resolvidos. Caso edite o arquivo
+`.rules` no disco, basta executar `load nome_da_sala.room` no painel DEBUG para
+revalidar (com indicação do número da linha em caso de erro) e recarregar as regras.

@@ -1,0 +1,18 @@
+# Regras declarativas de gallery.room.
+
+[interact plant]
+object_visible plant
+flag_not_set inspected_plant
+set_flag inspected_plant
+give_item gallery_note
+say "Havia um bilhete escondido entre as folhas!"
+
+[interact plant]
+say "Apenas uma planta bem cuidada no canto da galeria."
+
+[interact table]
+has_item gallery_note
+say "Coloquei o bilhete sobre a mesa para ler melhor."
+
+[interact table]
+say "Uma mesa de madeira solida no centro da galeria."

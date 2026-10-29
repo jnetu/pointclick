@@ -17,31 +17,43 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
 | Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` | `src/graphics/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
-| Diálogo / Inventário futuro | novo módulo em `src/game/` para estado e regras | `ViewportUiConsumer` em `src/input/InputRouter.hpp`, interface em `graphics/` |
-| Transição de sala futura | definição em `content/`, troca de estado em `Game` | efeito visual em `graphics/` |
+| Regras de interação, itens e puzzles | `assets/rooms/*.rules`, `src/game/Interaction.*`, `src/content/InteractionFiles.*` | `src/game/Game.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
+| Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp` |
+| UI de Diálogo / Inventário futuro | novo módulo UI consumindo `SessionState` / `Game::useItemOnObject` | `ViewportUiConsumer` em `src/input/InputRouter.hpp`, interface em `graphics/` |
+| Efeitos visuais de transição de sala | `Game::consumeRoomTransition()` em `src/core/Application.cpp` | efeito visual temporizado em `graphics/` |
 
 ## Contratos
 
-- `Room`, `SceneObject`, `SpriteClip` e `AnimationSet` são definições editáveis.
-  Não guarde neles progresso de diálogo, estado de interação ou tempo corrente.
+- `Room`, `SceneObject`, `SpriteClip`, `AnimationSet` e `RoomInteractions` são
+  definições autoradas/editáveis. Não guarde neles progresso de diálogo, itens
+  coletados, flags ou tempo corrente.
+- `SessionState` guarda o progresso persistente da sessão (flags/contadores,
+  itens de inventário e overrides por `roomId + objectId` de visibilidade e
+  colisão `solidOverride`). Editar a sala em tempo real no `DebugEditor`
+  (`Game::applyRoom(room, false, error)`) ou trocar de sala **nunca** apaga o
+  `SessionState`.
 - `World::width` × `World::height` (`1280 × 720`) definem o campo de visão fixo da
   câmera/viewport lógica; o tamanho total da cena pertence a `Room::width` e
   `Room::height`. UI e overlays usam coordenadas de viewport; o mundo usa coordenadas
   da sala deslocadas por `Camera`.
-- `Game`, `Player`, `Camera` e `AnimationPlayback` guardam estado de execução. Regras
-  de gameplay não devem carregar texturas nem fazer chamadas de desenho.
+- `Game`, `Player`, `Camera`, `PendingInteraction` e `AnimationPlayback` guardam
+  estado de execução da cena. Regras de gameplay não devem carregar texturas nem
+  fazer chamadas de desenho.
 - `input/` traduz eventos brutos de mouse/teclado, toque (ignorando mouse sintético)
   e gamepad (hotplug, eixo analógico com *deadzone* e cursor virtual) para a viewport
   lógica, roteando por prioridade (`Ciclo de Vida → DebugEditor → ViewportUiConsumer → Game`)
   sem depender de `graphics/`.
-- `graphics/` lê o estado do jogo e desenha. Não decide resultados de interação,
+- `graphics/` lê o estado do jogo (`const Game&`, respeitando `Game::isObjectVisible`
+  e `Game::isObjectSolid`) e desenha. Não decide resultados de interação,
   hit-test de UI, colisão, diálogo ou transição de sala.
-- `content/` traduz arquivos `.room` em definições e de volta para arquivos.
-  Preserve a leitura de chaves antigas ao evoluir o formato.
+- `content/` traduz arquivos `.room` (estética/espaço) e arquivos companheiros
+  opcionais `.rules` (regras declarativas de interação) em definições validadas por
+  linha e de volta para arquivos. Preserve a leitura de chaves antigas ao evoluir.
 - `debug/` altera a definição da sala para teste e define sua própria geometria de
-  captura na viewport (`DebugEditor::panelRect`). Não é o sistema de gameplay.
-- IDs de objetos e nomes de animação são estáveis, com letras, números, `_` e
-  `-`. Use esses nomes nas regras, sem depender da posição no vetor da sala.
+  captura na viewport (`DebugEditor::panelRect`), preservando `SessionState`.
+  Não é o sistema de gameplay.
+- IDs de objetos, itens, flags e nomes de animação são estáveis, com letras,
+  números, `_` e `-`. Use esses nomes nas regras, sem depender da posição no vetor da sala.
 
 ## Verificar mudanças
 

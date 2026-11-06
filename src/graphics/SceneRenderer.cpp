@@ -37,12 +37,13 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
     });
     for (const DrawItem item : items) {
         if (item.objectIndex < 0) {
-            EntityRenderer::drawPlayer(sprites, room, scene.player(), feet, cameraOffset);
+            EntityRenderer::drawPlayer(sprites, room, scene.player(), feet, cameraOffset,
+                                       interpolation);
         } else {
             const SceneObject& object = scenery[static_cast<std::size_t>(item.objectIndex)];
             EntityRenderer::drawObject(renderer, sprites, object,
                                        scene.objectAnimation(object.id), cameraOffset,
-                                       scene.isObjectSolid(object));
+                                       scene.isObjectSolid(object), interpolation);
         }
     }
 

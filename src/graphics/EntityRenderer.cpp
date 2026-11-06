@@ -11,14 +11,15 @@ void EntityRenderer::drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                                 const SceneObject& object,
                                 const AnimationPlayback* playback,
                                 const SDL_FPoint cameraOffset,
-                                const std::optional<bool> solidOverride) {
+                                const std::optional<bool> solidOverride,
+                                const float interpolation) {
     if (playback) {
         const SpriteClip* clip = findAnimation(object.animations, playback->name());
         if (!clip) return;
         const SDL_FPoint foot{object.bounds.x + object.bounds.w * 0.5F - cameraOffset.x,
                               object.bounds.y + object.bounds.h - cameraOffset.y};
         (void)sprites.draw(*clip, clip->targetRect(foot, object.bounds.w, object.bounds.h),
-                           playback->elapsed());
+                           playback->interpolatedElapsed(interpolation));
         return;
     }
     const SDL_FRect bounds{object.bounds.x - cameraOffset.x,
@@ -40,11 +41,11 @@ void EntityRenderer::drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
 
 void EntityRenderer::drawPlayer(SpriteLibrary& sprites, const Room& room,
                                 const Player& player, const SDL_FPoint feet,
-                                const SDL_FPoint cameraOffset) {
+                                const SDL_FPoint cameraOffset, const float interpolation) {
     const SpriteClip* clip = findAnimation(room.playerAnimations, player.animationName());
     if (!clip) return;
     const SDL_FPoint screenFeet{feet.x - cameraOffset.x, feet.y - cameraOffset.y};
     (void)sprites.draw(*clip, clip->targetRect(screenFeet, room.playerBaseSize.x,
                                                room.playerBaseSize.y, room.scaleAt(feet.y)),
-                       player.animationTime());
+                       player.interpolatedAnimationTime(interpolation));
 }

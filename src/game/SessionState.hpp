@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/StringMap.hpp"
+
 #include <cstddef>
 #include <functional>
 #include <optional>
@@ -52,21 +54,6 @@ public:
                                            std::string_view choiceId) const;
 
 private:
-    struct TransparentStringHash {
-        using is_transparent = void;
-
-        [[nodiscard]] std::size_t operator()(const std::string_view value) const noexcept {
-            return std::hash<std::string_view>{}(value);
-        }
-
-        [[nodiscard]] std::size_t operator()(const std::string& value) const noexcept {
-            return std::hash<std::string_view>{}(value);
-        }
-    };
-
-    template <typename Value>
-    using StringMap = std::unordered_map<std::string, Value, TransparentStringHash, std::equal_to<>>;
-
     [[nodiscard]] const ObjectStateOverride* findOverride(std::string_view roomId,
                                                           std::string_view objectId) const;
 

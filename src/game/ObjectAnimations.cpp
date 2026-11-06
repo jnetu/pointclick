@@ -6,7 +6,7 @@
 #include <utility>
 
 void ObjectAnimations::rebuild(const Room& room, const ObjectAnimations* previous) {
-    std::unordered_map<std::string, AnimationPlayback> next;
+    StringMap<AnimationPlayback> next;
     for (const SceneObject& object : room.scenery) {
         if (object.animations.empty()) continue;
         AnimationPlayback playback(object.initialAnimation);
@@ -41,6 +41,6 @@ void ObjectAnimations::tick(const float deltaSeconds) {
 }
 
 const AnimationPlayback* ObjectAnimations::find(const std::string_view objectId) const {
-    const auto found = active_.find(std::string(objectId));
+    const auto found = active_.find(objectId); // transparent: no temporary string
     return found == active_.end() ? nullptr : &found->second;
 }

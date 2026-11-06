@@ -15,7 +15,9 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `content/DialogueFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.dlg` |
 | `content/TextFormat` | Tokenizer comum (comentários, aspas, instruções do catálogo), leitura SDL e gravação atômica |
 | `content/SpriteFields` | Leitura e gravação dos campos de um clip, independente da sala |
-| `content/RoomPresets` | Sprites, sala e regras padrão embutidos usados por testes e instanciação direta |
+| `content/RoomPresets` | Sala, sprites e regras de exemplo embutidos **só para testes** (o leitor de salas não os usa) |
+| `content/ActorFiles` | Leitura de `assets/actors/<id>.actor`: clips de um ator compartilhados por todas as salas |
+| `content/RoomLibrary` | Layout dos assets (`rooms/`, `actors/`, `sprites/`) e carga de sala + `.rules` + `.dlg` validados juntos; usado pelo jogo e pelo editor |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
@@ -31,27 +33,43 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Scene` | Sala em jogo: conteúdo carregado (sala, regras, diálogos) e simulação local (navegação, jogador, câmera, animações, fala, Walk-to-Interact, picking) |
 | `game/GameEvent` | Notificações para fora do domínio (`RoomEntered`, `RoomChangeRequested`, `LineSpoken`, `CutsceneStarted`/`Ended`) |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
-| `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas |
-| `debug/DebugEditor` | Reconhece DEBUG/F1/Select, decide hit-test do painel na viewport, processa comandos e gerencia edição/undo |
+| `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas; destino inalcançável = um flood-fill + um A* |
+| `game/StringMap` | Mapa por `std::string` com hash transparente (consulta por `string_view` sem alocar) |
+| `debug/DebugEditor` | Ferramenta opcional (`POINTCLICK_ENABLE_TOOLS`): `ToolInputConsumer` que reconhece DEBUG/F1/Select, faz o hit-test do painel, processa comandos e gerencia edição/undo |
+| `debug/DebugOverlay` | `RenderOverlay` da ferramenta: guias de objetos no mundo e painel consultando `DebugEditor::panelRect()` |
 | `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
-| `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `DebugEditor` → `ViewportUiConsumer` (UIs de gameplay) → `Game` |
+| `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `ToolInputConsumer` opcional → `ViewportUiConsumer` (UIs de gameplay) → `Game` |
 | `ui/DialogueMenu` | Menu de escolhas: layout na viewport, hit-test, destaque por ponteiro/setas e `Game::chooseDialogueOption` |
 | `graphics/DialogueMenuRenderer` | Desenho do menu de escolhas com o layout de `DialogueMenu` |
 | `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera |
 | `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena (filtrando objetos ocultos em `SessionState`) |
-| `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas, corte e imagem quadriculada de substituição |
+| `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas por arquivo (mantido nas edições; descarta o que ficou duas trocas de sala sem uso), corte e quadriculado de substituição |
+| `graphics/RenderOverlay` | Ponto de extensão para camadas desenhadas por cima (a ferramenta de debug se registra aqui) |
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
-| `graphics/DebugOverlay` | Guias de objetos no mundo e desenho do painel consultando `DebugEditor::panelRect()` |
 | `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox, cursor virtual do controle e conversão janela/toque/viewport |
 | `core/Application` | Janela, ciclo de vida mobile/console, carregamento `.room` + `.rules` + `.dlg`, transições de sala e loop em passo fixo |
 
-O executável e os testes compartilham `pointclick_core`. As rotinas de desenho
-ficam em `pointclick_graphics`. Uma correção no jogo ou na entrada chega aos dois
-consumidores. As dependências seguem `core` → `graphics`/`input`/`debug`/`content` → `game`.
-`input` não depende de `graphics` (recebe `ViewportCoordinateMapper` injetado);
-`graphics` e `content` leem tipos de `game`; o domínio do jogo não carrega
-arquivos de arte nem chama funções de desenho.
+Cada camada é uma biblioteca estática, e o linker recusa dependências proibidas:
+
+| Target | Pasta | Depende de |
+| --- | --- | --- |
+| `pointclick_game` | `src/game/` | SDL (só tipos de valor e helpers de `SDL_rect.h`) |
+| `pointclick_content` | `src/content/` | `game` |
+| `pointclick_input` | `src/input/` | `game` |
+| `pointclick_ui` | `src/ui/` | `input`, `game` |
+| `pointclick_graphics` | `src/graphics/` | `ui`, `input`, `game` |
+| `pointclick_tools` (opcional) | `src/debug/` | `content`, `graphics` |
+| `pointclick` | `src/core/`, `main.cpp` | todos; `pointclick_tools` só com `POINTCLICK_ENABLE_TOOLS=ON` |
+
+`POINTCLICK_ENABLE_TOOLS` (padrão `ON`) liga o editor; com `OFF`, como numa build de
+loja, o executável não contém `DebugEditor` e os testes do editor não são compilados.
+`input/` emite ações abstratas (`ToolAction`, `UiNavAction`) e não conhece o editor: a
+ferramenta se registra como `ToolInputConsumer` no `InputRouter` e como `RenderOverlay` no
+`Renderer`. `pointclick_tests` linka só `content` + `game`, provando que o jogo roda sem
+renderização. O teste `pointclick_layer_includes` (`cmake/CheckLayerIncludes.cmake`) falha
+se uma pasta incluir uma camada proibida ou se `game/` incluir SDL além de `SDL_rect.h` e
+`SDL_pixels.h`.
 
 ## Fluxos principais
 
@@ -66,7 +84,7 @@ arquivos de arte nem chama funções de desenho.
    (`SDL_EVENT_RENDER_DEVICE_RESET` / `SDL_EVENT_RENDER_TARGETS_RESET` / `SDL_EVENT_LOW_MEMORY`,
    invalidando texturas em `Renderer`).
 2. **Ferramentas (`DebugEditor`)**: ativado por `DEBUG`, `F1` ou botão `BACK`/`Select`
-   do controle; consome comandos (`DebugKey` via setas, D-Pad ou ombros), texto e
+   do controle; consome ações (`ToolAction` via setas, D-Pad ou ombros), texto e
    cliques dentro de `DebugEditor::panelRect()` quando visível (`consumesViewportPoint`).
 3. **UIs de Gameplay (`ViewportUiConsumer`)**: ponto de extensão na viewport fixa
    `0..1280 × 0..720` antes da câmera. `ui/DialogueMenu` é o primeiro: enquanto
@@ -256,9 +274,15 @@ deixam de bloquear `Navigation` e são ignorados no clique (`pickInteractiveObje
 Para adicionar arte, configure um `SpriteClip` no conjunto de animações da sala
 ou do objeto. A definição guarda o caminho relativo e o corte da imagem, sem carregar texturas. O
 `SpriteLibrary` carrega PNGs sob `assets/sprites`, mantém as texturas em cache e
-desenha o quadriculado de substituição quando o PNG ou corte falha. Mudanças em
-`SessionState` (coletar itens, abrir portas, ativar flags) não incrementam
-`roomRevision()`, preservando o cache de texturas da GPU.
+desenha o quadriculado de substituição quando o PNG ou corte falha. O cache é por
+arquivo: edições no editor e mudanças de `SessionState` não o apagam. Ao entrar em outra
+sala, `SpriteLibrary::beginRoom` descarta só as texturas que nenhuma das duas últimas salas
+usou (ir e voltar entre duas salas não recarrega nada); `clear()` fica para reset do
+dispositivo de render. Os clips são validados quando a sala é aplicada, então o desenho só
+confere, em O(1), se o corte cabe no PNG carregado.
+
+O jogo simula a 60 Hz e o render interpola posição, câmera e tempo de animação
+(`AnimationPlayback::interpolatedElapsed`) entre os dois últimos ticks.
 
 ## Evoluir diálogos, inventário visual e transições
 

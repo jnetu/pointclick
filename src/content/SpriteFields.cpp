@@ -1,5 +1,7 @@
 #include "content/SpriteFields.hpp"
 
+#include "game/Identifier.hpp"
+
 #include <cmath>
 #include <locale>
 #include <ostream>
@@ -66,4 +68,19 @@ void SpriteFields::write(std::ostream& out, const std::string_view prefix,
     out << prefix << "display_height = " << clip.displayHeight << '\n';
     out << prefix << "offset_x = " << clip.offsetX << '\n';
     out << prefix << "offset_y = " << clip.offsetY << '\n';
+}
+
+bool SpriteFields::parseNamed(AnimationSet& animations, const std::string_view key,
+                              const std::string_view prefix, const std::string& value) {
+    if (!key.starts_with(prefix)) return false;
+    const auto rest = key.substr(prefix.size());
+    const auto separator = rest.find('.');
+    if (separator == std::string_view::npos) return false;
+    const auto name = rest.substr(0, separator);
+    if (!validIdentifier(name)) return false;
+    const SpriteClip* current = findAnimation(animations, name);
+    SpriteClip clip = current ? *current : SpriteClip{};
+    if (!SpriteFields::parse(clip, rest.substr(separator + 1), value)) return false;
+    animations[std::string(name)] = std::move(clip);
+    return true;
 }

@@ -66,6 +66,19 @@ bool Navigation::walkable(const int column, const int row) const {
            && blocked_[static_cast<std::size_t>(row * columns_ + column)] == 0U;
 }
 
+bool Navigation::canStep(const int column, const int row, const int (&move)[2]) const {
+    if (!walkable(column + move[0], row + move[1])) return false;
+    return move[0] == 0 || move[1] == 0
+           || (walkable(column + move[0], row) && walkable(column, row + move[1]));
+}
+
+SDL_FPoint Navigation::cellPoint(const int cell) const {
+    return {std::min(static_cast<float>((cell % columns_) * cellSize) + cellSize * 0.5F,
+                     width_ - 1.0F),
+            std::clamp(static_cast<float>((cell / columns_) * cellSize) + cellSize * 0.5F,
+                       walkableTopY_, height_ - 1.0F)};
+}
+
 bool Navigation::canStandAt(const SDL_FPoint point) const {
     if (!std::isfinite(point.x) || !std::isfinite(point.y)
         || point.x < 0.0F || point.x >= width_
@@ -132,10 +145,7 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
     const auto center = [this, start, goal, from, to](const int cell) -> SDL_FPoint {
         if (cell == start) return from;
         if (cell == goal) return to;
-        return {std::min(static_cast<float>((cell % columns_) * cellSize) + cellSize * 0.5F,
-                         width_ - 1.0F),
-                std::clamp(static_cast<float>((cell / columns_) * cellSize) + cellSize * 0.5F,
-                           walkableTopY_, height_ - 1.0F)};
+        return cellPoint(cell);
     };
 
     const auto totalCells = static_cast<std::size_t>(columns_ * rows_);
@@ -146,8 +156,6 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
     cost_[static_cast<std::size_t>(start)] = 0.0F;
     open.push({distance(center(start), center(goal)), start});
 
-    constexpr int offsets[8][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1},
-                                    {-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
     while (!open.empty()) {
         const Entry current = open.top();
         open.pop();
@@ -160,17 +168,11 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
         }
         const int x = current.cell % columns_;
         const int y = current.cell / columns_;
-        for (const auto& offset : offsets) {
-            const int nx = x + offset[0];
-            const int ny = y + offset[1];
-            if (!walkable(nx, ny)) {
+        for (const auto& move : kMoves) {
+            if (!canStep(x, y, move)) {
                 continue;
             }
-            if (offset[0] != 0 && offset[1] != 0
-                && (!walkable(x + offset[0], y) || !walkable(x, y + offset[1]))) {
-                continue;
-            }
-            const int next = ny * columns_ + nx;
+            const int next = (y + move[1]) * columns_ + (x + move[0]);
             if (!clearLine(center(current.cell), center(next))) continue;
             const float nextCost = cost_[currentIndex] + distance(center(current.cell), center(next));
             const auto nextIndex = static_cast<std::size_t>(next);
@@ -212,33 +214,47 @@ std::vector<SDL_FPoint> Navigation::findPath(const SDL_FPoint from, const SDL_FP
 std::vector<SDL_FPoint> Navigation::findPathToNearestReachable(
         const SDL_FPoint from, const SDL_FPoint desired) const {
     if (!canStandAt(from) || !std::isfinite(desired.x) || !std::isfinite(desired.y)) return {};
-    if (const auto direct = findPath(from, desired); !direct.empty()) {
-        return direct;
+
+    // Flood fill with exactly the moves A* accepts (corner rule + clear segment between the
+    // points A* would use), so the chosen cell is one A* can reach.
+    const int start = cellAt(from);
+    const auto point = [this, start, from](const int cell) {
+        return cell == start ? from : cellPoint(cell);
+    };
+    const int desiredCell = canStandAt(desired) ? cellAt(desired) : -1;
+    reached_.assign(static_cast<std::size_t>(columns_ * rows_), 0U);
+    frontier_.clear();
+    frontier_.push_back(start);
+    reached_[static_cast<std::size_t>(start)] = 1U;
+
+    bool desiredReachable = false;
+    int best = start;
+    float bestDistance = std::numeric_limits<float>::infinity();
+    for (std::size_t index = 0; index < frontier_.size(); ++index) {
+        const int cell = frontier_[index];
+        desiredReachable = desiredReachable || cell == desiredCell;
+        const SDL_FPoint stand = cellPoint(cell);
+        const float dx = stand.x - desired.x;
+        const float dy = stand.y - desired.y;
+        const float squared = dx * dx + dy * dy;
+        if (squared < bestDistance || (squared == bestDistance && cell < best)) {
+            bestDistance = squared;
+            best = cell;
+        }
+        const int x = cell % columns_;
+        const int y = cell / columns_;
+        for (const auto& move : kMoves) {
+            if (!canStep(x, y, move)) continue;
+            const int next = (y + move[1]) * columns_ + (x + move[0]);
+            auto& seen = reached_[static_cast<std::size_t>(next)];
+            if (seen != 0U || !clearLine(point(cell), cellPoint(next))) continue;
+            seen = 1U;
+            frontier_.push_back(next);
+        }
     }
 
-    candidates_.clear();
-    candidates_.reserve(static_cast<std::size_t>(columns_ * rows_));
-    for (int row = 0; row < rows_; ++row) {
-        for (int column = 0; column < columns_; ++column) {
-            if (!walkable(column, row)) {
-                continue;
-            }
-            const SDL_FPoint position{std::min(column * cellSize + cellSize * 0.5F, width_ - 1.0F),
-                                      std::clamp(row * cellSize + cellSize * 0.5F,
-                                                 walkableTopY_,
-                                                 height_ - 1.0F)};
-            const float dx = position.x - desired.x;
-            const float dy = position.y - desired.y;
-            candidates_.push_back({dx * dx + dy * dy, position});
-        }
+    if (desiredReachable) {
+        if (auto direct = findPath(from, desired); !direct.empty()) return direct;
     }
-    std::sort(candidates_.begin(), candidates_.end(), [](const Candidate& a, const Candidate& b) {
-        return a.distanceSquared < b.distanceSquared;
-    });
-    for (const Candidate& candidate : candidates_) {
-        if (const auto route = findPath(from, candidate.position); !route.empty()) {
-            return route;
-        }
-    }
-    return {};
+    return findPath(from, cellPoint(best));
 }

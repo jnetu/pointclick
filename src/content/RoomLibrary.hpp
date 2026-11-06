@@ -1,0 +1,52 @@
+#pragma once
+
+#include "content/RoomFiles.hpp"
+#include "game/Animation.hpp"
+#include "game/Dialogue.hpp"
+#include "game/Interaction.hpp"
+#include "game/Room.hpp"
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+
+// A room ready to apply: definition plus its optional .rules and .dlg companions, validated
+// against each other (rule objects, start_dialogue targets).
+struct RoomBundle {
+    Room room;
+    RoomInteractions interactions;
+    RoomDialogues dialogues;
+};
+
+struct RoomBundleResult {
+    std::optional<RoomBundle> bundle;
+    std::string error;
+};
+
+// The asset layout in one place:
+//   <assets>/rooms/<id>.room|.rules|.dlg
+//   <assets>/actors/player.actor   shared player art every room inherits
+//   <assets>/sprites/              PNGs, relative paths in clips
+// The game and the tools load and save rooms through it, so both see the same inherited art.
+class RoomLibrary {
+public:
+    // roomsDirectory is <assets>/rooms. A missing player.actor is allowed (rooms then declare
+    // their own player clips); an invalid one is an error.
+    [[nodiscard]] bool open(std::filesystem::path roomsDirectory, std::string& error);
+
+    [[nodiscard]] const std::filesystem::path& roomsDirectory() const { return roomsDirectory_; }
+    [[nodiscard]] std::filesystem::path spritesDirectory() const;
+    [[nodiscard]] std::filesystem::path playerActorPath() const;
+    [[nodiscard]] const AnimationSet& playerArt() const { return playerArt_; }
+
+    [[nodiscard]] RoomLoadResult loadRoom(std::string_view filename) const;
+    [[nodiscard]] RoomBundleResult loadBundle(std::string_view filename) const;
+    // Leaves out clips equal to the shared player art.
+    [[nodiscard]] bool saveRoom(std::string_view filename, const Room& room,
+                                std::string& error) const;
+
+private:
+    std::filesystem::path roomsDirectory_;
+    AnimationSet playerArt_;
+};

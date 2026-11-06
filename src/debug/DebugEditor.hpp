@@ -1,5 +1,7 @@
 #pragma once
 
+#include "content/RoomLibrary.hpp"
+#include "input/InputRouter.hpp"
 #include "game/Dialogue.hpp"
 #include "game/Interaction.hpp"
 #include "game/Room.hpp"
@@ -8,28 +10,20 @@
 #include <string_view>
 
 class Game;
-enum class DebugKey {
-    previous,
-    next,
-    decrease,
-    increase,
-    submit,
-    backspace,
-    close,
-    togglePanel,
-    toggleEditor,
-};
 
-// Input, viewport hit-testing, and editing only. Drawing lives in graphics/DebugOverlay.cpp.
-class DebugEditor {
+// Input, viewport hit-testing, and editing only. Drawing lives in debug/DebugOverlay.cpp.
+// Optional tools layer: built only with POINTCLICK_ENABLE_TOOLS and registered on InputRouter.
+class DebugEditor final : public ToolInputConsumer {
 public:
     static constexpr SDL_FRect kPanelRect{724.0F, 12.0F, 544.0F, 696.0F};
 
-    void setRoomDirectory(std::filesystem::path path);
+    // save/load go through the same library the game uses (shared player art, layout).
+    // The library must outlive the editor.
+    void setLibrary(const RoomLibrary& library) { library_ = &library; }
     // Returns true when the editor consumed the text/key/click.
-    bool onTextInput(std::string_view text, Game& game);
-    bool onKey(DebugKey key, Game& game);
-    [[nodiscard]] bool consumesViewportPoint(SDL_FPoint viewportPoint) const;
+    bool onTextInput(std::string_view text, Game& game) override;
+    bool onToolAction(ToolAction action, Game& game) override;
+    [[nodiscard]] bool consumesViewportPoint(SDL_FPoint viewportPoint) const override;
 
     [[nodiscard]] static constexpr SDL_FRect panelRect() { return kPanelRect; }
     [[nodiscard]] bool active() const { return active_; }
@@ -37,7 +31,9 @@ public:
     [[nodiscard]] std::size_t selected() const { return selected_; }
     [[nodiscard]] const std::string& command() const { return command_; }
     [[nodiscard]] const std::string& status() const { return status_; }
-    [[nodiscard]] const std::filesystem::path& roomDirectory() const { return roomDirectory_; }
+    [[nodiscard]] std::filesystem::path roomDirectory() const {
+        return library_ ? library_->roomsDirectory() : std::filesystem::path{};
+    }
 
 private:
     void activate(Game& game);
@@ -53,7 +49,7 @@ private:
     std::string activation_;
     std::string command_;
     std::string status_;
-    std::filesystem::path roomDirectory_;
+    const RoomLibrary* library_ = nullptr;
     std::optional<Room> baseline_;
     std::optional<RoomInteractions> baselineInteractions_;
     std::optional<RoomDialogues> baselineDialogues_;

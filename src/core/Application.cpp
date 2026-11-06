@@ -1,7 +1,4 @@
 #include "core/Application.hpp"
-#include "content/DialogueFiles.hpp"
-#include "content/InteractionFiles.hpp"
-#include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
 #include "game/Identifier.hpp"
 
@@ -15,16 +12,23 @@
 #include <variant>
 
 namespace {
-constexpr double kTicksPerSecond = 20.0;
+// 60 Hz keeps click latency low and gives clips up to 60 fps a frame per tick; the renderer
+// still interpolates positions, camera and animation time between ticks.
+constexpr double kTicksPerSecond = 60.0;
 constexpr double kFramesPerSecond = 60.0;
 constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
 }
 
+// The preset only fills the Game until initialize() loads first.room from disk.
 Application::Application(std::filesystem::path roomDirectory)
-        : game_(RoomPresets::firstRoom()) {
-    debugEditor_.setRoomDirectory(std::move(roomDirectory));
+        : roomDirectory_(std::move(roomDirectory)), game_(RoomPresets::firstRoom()) {
     inputRouter_.addUiConsumer(&dialogueMenu_);
+#if POINTCLICK_TOOLS
+    debugEditor_.setLibrary(library_);
+    inputRouter_.setToolConsumer(&debugEditor_);
+    renderer_.addOverlay(&debugOverlay_);
+#endif
 }
 
 int Application::run() {
@@ -39,41 +43,17 @@ int Application::run() {
 }
 
 bool Application::loadRoomWithRules(const std::string_view roomFilename) {
-    const auto roomPath = debugEditor_.roomDirectory() / std::string(roomFilename);
-    auto loaded = RoomFiles::load(roomPath);
-    if (!loaded.room) {
-        SDL_Log("Could not load room: %s", loaded.error.c_str());
+    RoomBundleResult loaded = library_.loadBundle(roomFilename);
+    if (!loaded.bundle) {
+        SDL_Log("Could not load room %.*s: %s", static_cast<int>(roomFilename.size()),
+                roomFilename.data(), loaded.error.c_str());
         return false;
     }
-    auto rulesLoaded = InteractionFiles::loadOptionalForRoom(roomPath, &*loaded.room);
-    if (!rulesLoaded.interactions) {
-        SDL_Log("Could not load room rules: %s", rulesLoaded.error.c_str());
-        return false;
-    }
-    auto dialoguesLoaded = DialogueFiles::loadOptionalForRoom(roomPath, &*loaded.room);
-    if (!dialoguesLoaded.dialogues) {
-        SDL_Log("Could not load room dialogues: %s", dialoguesLoaded.error.c_str());
-        return false;
-    }
-    if (const std::string references = dialogueReferencesError(*rulesLoaded.interactions,
-                                                               *dialoguesLoaded.dialogues);
-        !references.empty()) {
-        SDL_Log("Room rules reference a missing dialogue: %s", references.c_str());
-        return false;
-    }
-    std::string roomError;
-    if (!game_.applyRoom(std::move(*loaded.room), true, roomError)) {
-        SDL_Log("Could not apply room: %s", roomError.c_str());
-        return false;
-    }
-    std::string rulesError;
-    if (!game_.setInteractions(std::move(*rulesLoaded.interactions), rulesError)) {
-        SDL_Log("Could not apply room rules: %s", rulesError.c_str());
-        return false;
-    }
-    std::string dialoguesError;
-    if (!game_.setDialogues(std::move(*dialoguesLoaded.dialogues), dialoguesError)) {
-        SDL_Log("Could not apply room dialogues: %s", dialoguesError.c_str());
+    std::string error;
+    if (!game_.applyRoom(std::move(loaded.bundle->room), true, error)
+        || !game_.setInteractions(std::move(loaded.bundle->interactions), error)
+        || !game_.setDialogues(std::move(loaded.bundle->dialogues), error)) {
+        SDL_Log("Could not apply room: %s", error.c_str());
         return false;
     }
     return true;
@@ -120,14 +100,18 @@ bool Application::initialize() {
         return false;
     }
 
-    if (debugEditor_.roomDirectory().empty()) {
+    if (roomDirectory_.empty()) {
         const char* base = SDL_GetBasePath();
         if (!base) { SDL_Log("Could not locate assets: %s", SDL_GetError()); return false; }
         // SDL owns this cached UTF-8 path; on Android it is "./" for APK assets.
         const std::u8string basePath(base, base + SDL_strlen(base));
-        debugEditor_.setRoomDirectory(std::filesystem::path(basePath) / "assets" / "rooms");
+        roomDirectory_ = std::filesystem::path(basePath) / "assets" / "rooms";
     }
-    renderer_.setSpriteRoot(debugEditor_.roomDirectory().parent_path() / "sprites");
+    if (std::string error; !library_.open(roomDirectory_, error)) {
+        SDL_Log("Could not load shared actors: %s", error.c_str());
+        return false;
+    }
+    renderer_.setSpriteRoot(library_.spritesDirectory());
     if (!loadRoomWithRules("first.room")) {
         return false;
     }
@@ -186,12 +170,11 @@ void Application::mainLoop() {
         }
 
         renderInterpolation_ = static_cast<float>(tickAccumulator / kTickSeconds);
-        inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_,
-                            debugEditor_, game_, renderInterpolation_);
+        inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_, game_,
+                            renderInterpolation_);
 
         if (currentTime >= nextRenderTime) {
-            renderer_.render(game_, renderInterpolation_, &debugEditor_, &inputSystem_,
-                             &dialogueMenu_);
+            renderer_.render(game_, renderInterpolation_, &inputSystem_, &dialogueMenu_);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {
@@ -208,7 +191,7 @@ void Application::processEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         const InputRouteResult result = inputRouter_.handleEvent(
-                event, inputSystem_, debugEditor_, game_, mapper, renderInterpolation_);
+                event, inputSystem_, game_, mapper, renderInterpolation_);
         if (result.quitRequested) {
             running_ = false;
         }
@@ -230,8 +213,13 @@ void Application::syncTextInputState() {
     if (window_ == nullptr || !SDL_HasScreenKeyboardSupport()) {
         return;
     }
+    // Only the tools take free text today; store builds never open the on-screen keyboard.
+#if POINTCLICK_TOOLS
     const bool wantTextInput = debugEditor_.panelVisible()
                                && inputSystem_.activeDevice() != InputDevice::gamepad;
+#else
+    const bool wantTextInput = false;
+#endif
     if (wantTextInput && !SDL_TextInputActive(window_)) {
         SDL_StartTextInput(window_);
     } else if (!wantTextInput && SDL_TextInputActive(window_)) {

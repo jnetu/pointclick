@@ -1,7 +1,7 @@
 #include "graphics/Renderer.hpp"
 #include "graphics/SceneRenderer.hpp"
 #include "graphics/DiagnosticsOverlay.hpp"
-#include "graphics/DebugOverlay.hpp"
+#include "graphics/RenderOverlay.hpp"
 #include "graphics/DialogueMenuRenderer.hpp"
 #include "game/World.hpp"
 #include "game/Game.hpp"
@@ -78,19 +78,24 @@ bool Renderer::containsViewportPoint(const SDL_FPoint viewportPoint) {
     return World::containsViewportPoint(viewportPoint);
 }
 
+void Renderer::addOverlay(const RenderOverlay* overlay) {
+    if (overlay != nullptr) overlays_.push_back(overlay);
+}
+
 void Renderer::render(const Game& game, const float interpolation,
-                      const DebugEditor* editor, const InputSystem* input,
-                      const DialogueMenu* dialogueMenu) {
+                      const InputSystem* input, const DialogueMenu* dialogueMenu) {
     SDL_SetRenderDrawColor(renderer_, 8, 10, 16, 255);
     SDL_RenderClear(renderer_);
-    if (lastRoomRevision_ != game.scene().roomRevision()) {
-        sprites_.clear();
-        lastRoomRevision_ = game.scene().roomRevision();
+    // Edits bump roomRevision but reuse the same files: keep the cache. A different room
+    // starts a cache generation instead of wiping it.
+    if (game.scene().room().id != lastRoomId_) {
+        lastRoomId_ = game.scene().room().id;
+        sprites_.beginRoom();
     }
     SceneRenderer::draw(renderer_, sprites_, game.scene(), interpolation);
     DiagnosticsOverlay::draw(renderer_, window_, game.scene(), interpolation);
     if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, game, *dialogueMenu);
-    if (editor) DebugOverlay::draw(renderer_, game, *editor, interpolation);
+    for (const RenderOverlay* overlay : overlays_) overlay->draw(renderer_, game, interpolation);
     if (input && input->activeDevice() == InputDevice::gamepad) {
         const SDL_FPoint cursor = input->cursorViewport();
         SDL_SetRenderDrawColor(renderer_, 12, 18, 28, 220);

@@ -231,38 +231,38 @@ TranslatedInput InputSystem::translateEvent(const SDL_Event& event,
         activeDevice_ = InputDevice::mouseKeyboard;
         switch (event.key.key) {
         case SDLK_F1:
-            if (!event.key.repeat) out.debugKey = DebugKey::toggleEditor;
+            if (!event.key.repeat) out.toolAction = ToolAction::toggleEditor;
             break;
         case SDLK_UP:
-            out.debugKey = DebugKey::previous;
+            out.toolAction = ToolAction::previous;
             out.navAction = UiNavAction::up;
             break;
         case SDLK_DOWN:
-            out.debugKey = DebugKey::next;
+            out.toolAction = ToolAction::next;
             out.navAction = UiNavAction::down;
             break;
         case SDLK_LEFT:
-            out.debugKey = DebugKey::decrease;
+            out.toolAction = ToolAction::decrease;
             out.navAction = UiNavAction::left;
             break;
         case SDLK_RIGHT:
-            out.debugKey = DebugKey::increase;
+            out.toolAction = ToolAction::increase;
             out.navAction = UiNavAction::right;
             break;
         case SDLK_RETURN:
         case SDLK_KP_ENTER:
-            out.debugKey = DebugKey::submit;
+            out.toolAction = ToolAction::submit;
             out.navAction = UiNavAction::confirm;
             break;
         case SDLK_BACKSPACE:
-            out.debugKey = DebugKey::backspace;
+            out.toolAction = ToolAction::backspace;
             break;
         case SDLK_ESCAPE:
-            out.debugKey = DebugKey::close;
+            out.toolAction = ToolAction::close;
             out.navAction = UiNavAction::cancel;
             break;
         case SDLK_TAB:
-            if (!event.key.repeat) out.debugKey = DebugKey::togglePanel;
+            if (!event.key.repeat) out.toolAction = ToolAction::togglePanel;
             break;
         default:
             break;
@@ -363,39 +363,39 @@ TranslatedInput InputSystem::translateEvent(const SDL_Event& event,
             out.insideViewport = World::containsViewportPoint(cursorViewport_);
             break;
         case SDL_GAMEPAD_BUTTON_BACK:
-            out.debugKey = DebugKey::toggleEditor;
+            out.toolAction = ToolAction::toggleEditor;
             break;
         case SDL_GAMEPAD_BUTTON_DPAD_UP:
-            out.debugKey = DebugKey::previous;
+            out.toolAction = ToolAction::previous;
             out.navAction = UiNavAction::up;
             break;
         case SDL_GAMEPAD_BUTTON_DPAD_DOWN:
-            out.debugKey = DebugKey::next;
+            out.toolAction = ToolAction::next;
             out.navAction = UiNavAction::down;
             break;
         case SDL_GAMEPAD_BUTTON_DPAD_LEFT:
-            out.debugKey = DebugKey::decrease;
+            out.toolAction = ToolAction::decrease;
             out.navAction = UiNavAction::left;
             break;
         case SDL_GAMEPAD_BUTTON_DPAD_RIGHT:
-            out.debugKey = DebugKey::increase;
+            out.toolAction = ToolAction::increase;
             out.navAction = UiNavAction::right;
             break;
         case SDL_GAMEPAD_BUTTON_LEFT_SHOULDER:
-            out.debugKey = DebugKey::decrease;
+            out.toolAction = ToolAction::decrease;
             break;
         case SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER:
-            out.debugKey = DebugKey::increase;
+            out.toolAction = ToolAction::increase;
             break;
         case SDL_GAMEPAD_BUTTON_WEST:
-            out.debugKey = DebugKey::togglePanel;
+            out.toolAction = ToolAction::togglePanel;
             break;
         case SDL_GAMEPAD_BUTTON_EAST:
-            out.debugKey = DebugKey::close;
+            out.toolAction = ToolAction::close;
             out.navAction = UiNavAction::cancel;
             break;
         case SDL_GAMEPAD_BUTTON_START:
-            out.debugKey = DebugKey::submit;
+            out.toolAction = ToolAction::submit;
             out.navAction = UiNavAction::confirm;
             break;
         default:

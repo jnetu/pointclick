@@ -24,11 +24,51 @@ void SpriteLibrary::clear() {
     images_.clear();
 }
 
+namespace {
+std::string pathToUtf8(const std::filesystem::path& path) {
+    const auto utf8 = path.u8string();
+    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
+}
+
+// The sheet slots a clip uses are row-major from firstFrame; checking the furthest column and
+// row they reach is equivalent to checking every frame, in O(1).
+bool clipFitsImage(const SpriteClip& clip, const int columns, const int imageWidth,
+                   const int imageHeight) {
+    const int strideX = clip.frameWidth + clip.spacingX;
+    const int strideY = clip.frameHeight + clip.spacingY;
+    const int firstSlot = clip.firstFrame;
+    const int lastSlot = clip.firstFrame + clip.frames - 1;
+    const int lastRow = lastSlot / columns;
+    const int furthestColumn = firstSlot / columns == lastRow
+                               ? lastSlot % columns
+                               : columns - 1;
+    return clip.marginX + furthestColumn * strideX + clip.frameWidth <= imageWidth
+           && clip.marginY + lastRow * strideY + clip.frameHeight <= imageHeight;
+}
+} // namespace
+
+void SpriteLibrary::beginRoom() {
+    ++roomGeneration_;
+    for (auto it = images_.begin(); it != images_.end();) {
+        // Keep what the current and the previous room used: A -> B -> A reloads nothing.
+        if (it->second.lastUsedRoom + 2 < roomGeneration_) {
+            if (it->second.texture) SDL_DestroyTexture(it->second.texture);
+            it = images_.erase(it);
+        } else {
+            ++it;
+        }
+    }
+}
+
 SpriteLibrary::Image& SpriteLibrary::imageFor(const std::string& file) {
-    if (const auto found = images_.find(file); found != images_.end()) return found->second;
+    if (const auto found = images_.find(file); found != images_.end()) {
+        found->second.lastUsedRoom = roomGeneration_;
+        return found->second;
+    }
     Image image;
-    const auto path = root_ / file;
-    SDL_Surface* surface = SDL_LoadPNG(path.string().c_str());
+    const std::string path = pathToUtf8(root_ / file);
+    SDL_Surface* surface = SDL_LoadPNG(path.c_str());
+    image.lastUsedRoom = roomGeneration_;
     if (surface) {
         image.width = surface->w;
         image.height = surface->h;
@@ -37,7 +77,7 @@ SpriteLibrary::Image& SpriteLibrary::imageFor(const std::string& file) {
         if (image.texture) SDL_SetTextureBlendMode(image.texture, SDL_BLENDMODE_BLEND);
     }
     if (!image.texture && missingLogged_.insert(file).second) {
-        SDL_Log("Sprite PNG unavailable: %s (%s)", path.string().c_str(), SDL_GetError());
+        SDL_Log("Sprite PNG unavailable: %s (%s)", path.c_str(), SDL_GetError());
     }
     return images_.emplace(file, image).first->second;
 }
@@ -60,7 +100,8 @@ void SpriteLibrary::drawMissing(const SDL_FRect target) const {
 bool SpriteLibrary::draw(const SpriteClip& clip, const SDL_FRect target,
                          const float elapsedSeconds, const bool flipHorizontally) {
     if (!renderer_ || target.w <= 0 || target.h <= 0) return false;
-    if (!clip.validationError().empty()) { drawMissing(target); return false; }
+    // Clips were validated when the room was applied (Room::validationError); drawing only
+    // checks what depends on the loaded PNG.
     if (clip.file.empty()) { drawMissing(target); return false; }
     Image& image = imageFor(clip.file);
     if (!image.texture) { drawMissing(target); return false; }
@@ -78,14 +119,9 @@ bool SpriteLibrary::draw(const SpriteClip& clip, const SDL_FRect target,
                     static_cast<float>(clip.marginY + (slot / columns) * strideY),
                     static_cast<float>(clip.frameWidth), static_cast<float>(clip.frameHeight)};
         };
-        for (int frame = 0; frame < clip.frames; ++frame) {
-            const auto rectangle = frameRect(frame);
-            if (rectangle.x < 0 || rectangle.y < 0
-                || rectangle.x + rectangle.w > image.width
-                || rectangle.y + rectangle.h > image.height) {
-                drawMissing(target);
-                return false;
-            }
+        if (!clipFitsImage(clip, columns, image.width, image.height)) {
+            drawMissing(target);
+            return false;
         }
         source = frameRect(clip.frameAt(elapsedSeconds));
     }

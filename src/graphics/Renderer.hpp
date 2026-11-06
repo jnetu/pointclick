@@ -4,11 +4,14 @@
 #include "graphics/SpriteLibrary.hpp"
 #include "input/InputSystem.hpp"
 
+#include <string>
+#include <vector>
+
 struct SDL_Renderer;
 struct SDL_Window;
 class Game;
-class DebugEditor;
 class DialogueMenu;
+class RenderOverlay;
 
 class Renderer {
 public:
@@ -22,13 +25,16 @@ public:
                                      SDL_FPoint cameraOffset = {}) const;
     [[nodiscard]] ViewportCoordinateMapper viewportMapper() const noexcept;
     [[nodiscard]] static bool containsViewportPoint(SDL_FPoint viewportPoint);
-    void render(const Game& game, float interpolation, const DebugEditor* editor = nullptr,
-                const InputSystem* input = nullptr, const DialogueMenu* dialogueMenu = nullptr);
+    // Overlays draw in registration order after the scene and dialogue menu; not owned.
+    void addOverlay(const RenderOverlay* overlay);
+    void render(const Game& game, float interpolation, const InputSystem* input = nullptr,
+                const DialogueMenu* dialogueMenu = nullptr);
     void shutdown();
 
 private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Window* window_ = nullptr;
     SpriteLibrary sprites_;
-    unsigned long long lastRoomRevision_ = 0;
+    std::string lastRoomId_;
+    std::vector<const RenderOverlay*> overlays_;
 };

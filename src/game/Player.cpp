@@ -79,3 +79,7 @@ PlayerPose Player::pose() const { return pose_; }
 std::string_view Player::animationName() const { return animation_.name(); }
 
 float Player::animationTime() const { return animation_.elapsed(); }
+
+float Player::interpolatedAnimationTime(const float alpha) const {
+    return animation_.interpolatedElapsed(alpha);
+}

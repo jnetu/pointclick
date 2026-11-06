@@ -1,7 +1,4 @@
 #include "debug/DebugEditor.hpp"
-#include "content/DialogueFiles.hpp"
-#include "content/InteractionFiles.hpp"
-#include "content/RoomFiles.hpp"
 #include "game/RoomParameters.hpp"
 #include "game/Game.hpp"
 #include "game/Identifier.hpp"
@@ -15,15 +12,14 @@
 namespace {
 bool finished(std::istringstream& input) { input >> std::ws; return input.eof(); }
 
-bool validFilename(const std::string& name) {
-    const std::filesystem::path path(name);
-    return path.extension() == ".room" && !path.stem().empty()
-           && validIdentifier(path.stem().string())
-           && path.filename() == path;
+// "<id>.room" with no folders; checked on the typed text, never through a native path string.
+bool validFilename(const std::string_view name) {
+    constexpr std::string_view extension = ".room";
+    return name.size() > extension.size() && name.ends_with(extension)
+           && validIdentifier(name.substr(0, name.size() - extension.size()));
 }
 }
 
-void DebugEditor::setRoomDirectory(std::filesystem::path path) { roomDirectory_ = std::move(path); }
 
 void DebugEditor::activate(Game& game) {
     active_ = true;
@@ -104,8 +100,8 @@ void DebugEditor::setParameter(Game& game, const std::string_view key, const flo
     commit(game, std::move(room));
 }
 
-bool DebugEditor::onKey(const DebugKey key, Game& game) {
-    if (key == DebugKey::toggleEditor) {
+bool DebugEditor::onToolAction(const ToolAction key, Game& game) {
+    if (key == ToolAction::toggleEditor) {
         if (active_) {
             active_ = false;
             command_.clear();
@@ -116,23 +112,23 @@ bool DebugEditor::onKey(const DebugKey key, Game& game) {
         return true;
     }
     if (!active_) return false;
-    if (!panelVisible_ && key != DebugKey::togglePanel && key != DebugKey::close) return true;
+    if (!panelVisible_ && key != ToolAction::togglePanel && key != ToolAction::close) return true;
     const auto parameters = roomParameters();
     switch (key) {
-    case DebugKey::toggleEditor: break;
-    case DebugKey::togglePanel: panelVisible_ = !panelVisible_; command_.clear(); break;
-    case DebugKey::close: active_ = false; command_.clear(); activation_.clear(); break;
-    case DebugKey::previous: selected_ = (selected_ + parameters.size() - 1) % parameters.size(); break;
-    case DebugKey::next: selected_ = (selected_ + 1) % parameters.size(); break;
-    case DebugKey::decrease:
-    case DebugKey::increase: {
+    case ToolAction::toggleEditor: break;
+    case ToolAction::togglePanel: panelVisible_ = !panelVisible_; command_.clear(); break;
+    case ToolAction::close: active_ = false; command_.clear(); activation_.clear(); break;
+    case ToolAction::previous: selected_ = (selected_ + parameters.size() - 1) % parameters.size(); break;
+    case ToolAction::next: selected_ = (selected_ + 1) % parameters.size(); break;
+    case ToolAction::decrease:
+    case ToolAction::increase: {
         const auto& parameter = parameters[selected_];
         setParameter(game, parameter.key, parameter.read(game.scene().room())
-                     + (key == DebugKey::increase ? parameter.step : -parameter.step));
+                     + (key == ToolAction::increase ? parameter.step : -parameter.step));
         break;
     }
-    case DebugKey::backspace: if (!command_.empty()) command_.pop_back(); break;
-    case DebugKey::submit: submit(game); command_.clear(); break;
+    case ToolAction::backspace: if (!command_.empty()) command_.pop_back(); break;
+    case ToolAction::submit: submit(game); command_.clear(); break;
     }
     return true;
 }
@@ -160,30 +156,16 @@ void DebugEditor::submit(Game& game) {
             status_ = "Use: " + verb + " nome.room (sem pastas)";
             return;
         }
-        if (verb == "save") {
-            if (RoomFiles::save(roomDirectory_ / name, game.scene().room(), status_)) status_ = "Salvo: " + name;
-        } else {
-            const auto roomPath = roomDirectory_ / name;
-            auto result = RoomFiles::load(roomPath);
-            if (!result.room) {
-                status_ = result.error;
-            } else {
-                auto rulesResult = InteractionFiles::loadOptionalForRoom(roomPath, &*result.room);
-                auto dialoguesResult = DialogueFiles::loadOptionalForRoom(roomPath, &*result.room);
-                if (!rulesResult.interactions) {
-                    status_ = rulesResult.error;
-                } else if (!dialoguesResult.dialogues) {
-                    status_ = dialoguesResult.error;
-                } else if (const std::string missing = dialogueReferencesError(
-                                   *rulesResult.interactions, *dialoguesResult.dialogues);
-                           !missing.empty()) {
-                    status_ = missing;
-                } else if (commit(game, std::move(*result.room), true,
-                                  std::move(*rulesResult.interactions),
-                                  std::move(*dialoguesResult.dialogues))) {
-                    status_ = "Sala carregada: " + name;
-                }
-            }
+        if (!library_) {
+            status_ = "Pasta de salas nao configurada";
+        } else if (verb == "save") {
+            if (library_->saveRoom(name, game.scene().room(), status_)) status_ = "Salvo: " + name;
+        } else if (auto loaded = library_->loadBundle(name); !loaded.bundle) {
+            status_ = std::move(loaded.error);
+        } else if (commit(game, std::move(loaded.bundle->room), true,
+                          std::move(loaded.bundle->interactions),
+                          std::move(loaded.bundle->dialogues))) {
+            status_ = "Sala carregada: " + name;
         }
     } else if (verb == "undo" && finished(input)) {
         if (undo_) commit(game, *undo_, false, undoInteractions_, undoDialogues_);

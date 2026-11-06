@@ -1,4 +1,4 @@
-#include "graphics/DebugOverlay.hpp"
+#include "debug/DebugOverlay.hpp"
 #include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
@@ -6,7 +6,8 @@
 #include <algorithm>
 
 void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
-                        const DebugEditor& editor, const float interpolation) {
+                        const float interpolation) const {
+    const DebugEditor& editor = editor_;
     if (!editor.active()) return;
     const SDL_FPoint cameraOffset = game.scene().camera().interpolatedPosition(interpolation);
     SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
@@ -84,7 +85,8 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
         SDL_RenderDebugText(renderer, x, y + 596 + static_cast<float>(offset / 60) * 16,
                             editor.status().substr(offset, 60).c_str());
     }
-    auto directory = editor.roomDirectory().string();
+    const auto utf8 = editor.roomDirectory().u8string();
+    std::string directory(reinterpret_cast<const char*>(utf8.data()), utf8.size());
     if (directory.size() > 55) directory = "..." + directory.substr(directory.size() - 52);
     SDL_SetRenderDrawColor(renderer, 142, 161, 180, 255);
     SDL_RenderDebugTextFormat(renderer, x, y + 654, "Pasta: %s", directory.c_str());

@@ -1,5 +1,4 @@
 #include "input/InputRouter.hpp"
-#include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
 
 void InputRouter::setUiConsumers(const std::span<ViewportUiConsumer* const> consumers) {
@@ -17,7 +16,6 @@ void InputRouter::clearUiConsumers() noexcept {
 }
 
 InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
-                                              DebugEditor& debugEditor,
                                               Game& game,
                                               const float interpolation) const {
     InputRouteResult result{};
@@ -40,15 +38,15 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
         return result;
     }
 
-    // Layer 2: Tools (DebugEditor) - navigation/control keys and text input.
+    // Layer 2: Tools - actions and text input.
     bool navConsumed = false;
-    if (translated.debugKey && debugEditor.onKey(*translated.debugKey, game)) {
+    if (translated.toolAction && tools_ && tools_->onToolAction(*translated.toolAction, game)) {
         result.consumedByDebug = true;
         navConsumed = true;
     }
 
     if (translated.textInput) {
-        if (debugEditor.onTextInput(*translated.textInput, game)) {
+        if (tools_ && tools_->onTextInput(*translated.textInput, game)) {
             result.consumedByDebug = true;
         } else {
             // Layer 3: Gameplay UI text input.
@@ -97,8 +95,8 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
         }
 
         if (translated.primaryPressed && translated.insideViewport) {
-            // Layer 2: DebugEditor viewport panel hit-test.
-            if (debugEditor.consumesViewportPoint(translated.viewportPoint)) {
+            // Layer 2: tools panel hit-test.
+            if (tools_ && tools_->consumesViewportPoint(translated.viewportPoint)) {
                 result.consumedByDebug = true;
                 return result;
             }
@@ -123,20 +121,18 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
 
 InputRouteResult InputRouter::handleEvent(const SDL_Event& event,
                                           InputSystem& input,
-                                          DebugEditor& debugEditor,
                                           Game& game,
                                           const ViewportCoordinateMapper& mapper,
                                           const float interpolation) const {
     const TranslatedInput translated = input.translateEvent(event, mapper);
-    return routeTranslated(translated, debugEditor, game, interpolation);
+    return routeTranslated(translated, game, interpolation);
 }
 
 void InputRouter::update(const float deltaSeconds,
                          InputSystem& input,
-                         DebugEditor& debugEditor,
                          Game& game,
                          const float interpolation) const {
     if (const auto cursorStep = input.advanceCursor(deltaSeconds)) {
-        (void)routeTranslated(*cursorStep, debugEditor, game, interpolation);
+        (void)routeTranslated(*cursorStep, game, interpolation);
     }
 }

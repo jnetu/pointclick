@@ -1,7 +1,5 @@
 #pragma once
 
-#include "debug/DebugEditor.hpp"
-
 #include <SDL3/SDL_events.h>
 
 #include <cstddef>
@@ -21,6 +19,20 @@ enum class SystemSignal {
     enterBackground,
     enterForeground,
     invalidateGraphics,
+};
+
+// Abstract actions for an optional tools layer (in-game editor). input/ only names them; the
+// tool consumer registered on InputRouter decides what they do.
+enum class ToolAction {
+    previous,
+    next,
+    decrease,
+    increase,
+    submit,
+    backspace,
+    close,
+    togglePanel,
+    toggleEditor,
 };
 
 enum class UiNavAction {
@@ -49,7 +61,7 @@ struct ViewportCoordinateMapper {
 
 struct TranslatedInput {
     SystemSignal systemSignal = SystemSignal::none;
-    std::optional<DebugKey> debugKey;
+    std::optional<ToolAction> toolAction;
     std::optional<UiNavAction> navAction;
     std::optional<std::string> textInput;
     bool pointerMoved = false;

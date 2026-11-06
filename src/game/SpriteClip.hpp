@@ -24,6 +24,7 @@ struct SpriteClip {
     float offsetX = 0.0F;        // base units, relative to feet/bottom center
     float offsetY = 0.0F;
 
+    [[nodiscard]] bool operator==(const SpriteClip&) const = default;
     [[nodiscard]] std::string validationError() const;
     [[nodiscard]] int frameAt(float elapsedSeconds) const;
     [[nodiscard]] SDL_FRect targetRect(SDL_FPoint feet, float baseWidth,

@@ -1,0 +1,49 @@
+# Arte do player, herdada por todas as salas (assets/rooms/*.room).
+# PNGs relativos a assets/sprites. Cada quadro do player mede 32x48.
+# Caminhada: 7 quadros em uma linha, com 1 pixel entre quadros.
+# Parado: 8 quadros em uma coluna, sem espacamento.
+# Uma sala pode sobrescrever um campo com player.<clip>.<campo> (ex.: player.idle.fps = 4).
+
+idle.file = player_idle.png
+idle.frame_width = 32
+idle.frame_height = 48
+idle.frames = 8
+idle.columns = 1
+idle.fps = 6
+idle.display_width = 53.333333
+
+left.file = player_esquerda.png
+left.frame_width = 32
+left.frame_height = 48
+left.frames = 7
+left.columns = 7
+left.spacing_x = 1
+left.fps = 8
+left.display_width = 53.333333
+
+right.file = player_direita.png
+right.frame_width = 32
+right.frame_height = 48
+right.frames = 7
+right.columns = 7
+right.spacing_x = 1
+right.fps = 8
+right.display_width = 53.333333
+
+up.file = player_cima.png
+up.frame_width = 32
+up.frame_height = 48
+up.frames = 7
+up.columns = 7
+up.spacing_x = 1
+up.fps = 8
+up.display_width = 53.333333
+
+down.file = player_baixo.png
+down.frame_width = 32
+down.frame_height = 48
+down.frames = 7
+down.columns = 7
+down.spacing_x = 1
+down.fps = 8
+down.display_width = 53.333333

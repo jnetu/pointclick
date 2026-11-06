@@ -1,5 +1,4 @@
 #include "content/RoomFiles.hpp"
-#include "content/RoomPresets.hpp"
 #include "content/SpriteFields.hpp"
 #include "game/RoomParameters.hpp"
 
@@ -64,20 +63,6 @@ bool parseRect(const std::string& text, SDL_FRect& rect) {
     return true;
 }
 
-bool parseNamedClip(AnimationSet& animations, const std::string_view key,
-                    const std::string_view prefix, const std::string& value) {
-    if (!key.starts_with(prefix)) return false;
-    const auto rest = key.substr(prefix.size());
-    const auto separator = rest.find('.');
-    if (separator == std::string_view::npos) return false;
-    const auto name = rest.substr(0, separator);
-    if (!validIdentifier(name)) return false;
-    const SpriteClip* current = findAnimation(animations, name);
-    SpriteClip clip = current ? *current : SpriteClip{};
-    if (!SpriteFields::parse(clip, rest.substr(separator + 1), value)) return false;
-    animations[std::string(name)] = std::move(clip);
-    return true;
-}
 
 void writeColor(std::ostream& out, const SDL_Color color) {
     out << static_cast<int>(color.r) << ", " << static_cast<int>(color.g) << ", "
@@ -89,7 +74,8 @@ void writeRect(std::ostream& out, const SDL_FRect rect) {
 }
 }
 
-RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
+RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
+                              const AnimationSet* inheritedPlayerArt) {
     const auto filename = pathToUtf8(path);
     std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> file(
             SDL_IOFromFile(filename.c_str(), "rb"), SDL_CloseIO);
@@ -103,7 +89,9 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
         return {{}, "Falha de leitura"};
     }
     std::istringstream input(std::string(static_cast<const char*>(data.get()), dataSize));
-    Room room = RoomPresets::defaults();
+    // Defaults come from Room itself; art never comes from C++ (RoomPresets is for tests).
+    Room room;
+    if (inheritedPlayerArt) room.playerAnimations = *inheritedPlayerArt;
     SceneObject* object = nullptr;
     std::string section = "room";
     std::set<std::string> keys;
@@ -149,7 +137,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
                 parsed = SpriteFields::parse(object->animations["idle"],
                                              std::string_view(key).substr(7), value);
             } else if (key.starts_with("animation.")) {
-                parsed = parseNamedClip(object->animations, key, "animation.", value);
+                parsed = SpriteFields::parseNamed(object->animations, key, "animation.", value);
             }
         } else if (key == "id") {
             room.id = value;
@@ -170,7 +158,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
                 if (key == color.key) parsed = parseColor(value, room.*(color.member));
             }
             if (!parsed && key.starts_with("player.")) {
-                parsed = parseNamedClip(room.playerAnimations, key, "player.", value);
+                parsed = SpriteFields::parseNamed(room.playerAnimations, key, "player.", value);
             }
         }
         if (!parsed) return fail("Chave ou valor invalido: " + key);
@@ -180,12 +168,14 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path) {
     return {std::move(room), {}};
 }
 
-bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::string& error) {
+bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::string& error,
+                     const AnimationSet* inheritedPlayerArt) {
     error = room.validationError();
     if (!error.empty()) return false;
-    const auto temporary = std::filesystem::path(path.string() + ".tmp");
+    auto temporary = path;
+    temporary += ".tmp";
     std::ofstream out(temporary);
-    if (!out) { error = "Nao foi possivel salvar " + path.filename().string(); return false; }
+    if (!out) { error = "Nao foi possivel salvar " + pathToUtf8(path.filename()); return false; }
     out.imbue(std::locale::classic());
     out << std::setprecision(std::numeric_limits<float>::max_digits10);
     out << "# PointClick: coordenadas logicas; cores RGBA; retangulos x,y,w,h\n[room]\nid = " << room.id << '\n';
@@ -194,6 +184,12 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
     }
     for (const auto& color : colors) { out << color.key << " = "; writeColor(out, room.*(color.member)); }
     for (const auto& [name, clip] : room.playerAnimations) {
+        if (inheritedPlayerArt) {
+            if (const SpriteClip* shared = findAnimation(*inheritedPlayerArt, name);
+                shared && *shared == clip) {
+                continue;
+            }
+        }
         SpriteFields::write(out, "player." + name + ".", clip);
     }
     out << "floor.lines = ";

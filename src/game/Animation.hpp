@@ -24,9 +24,12 @@ public:
 
     [[nodiscard]] std::string_view name() const;
     [[nodiscard]] float elapsed() const;
+    // Render time between the last two ticks (alpha in [0,1]); restarts never blend backwards.
+    [[nodiscard]] float interpolatedElapsed(float alpha) const;
     [[nodiscard]] bool finished(const SpriteClip& clip) const;
 
 private:
     std::string name_;
+    float previousElapsed_ = 0.0F;
     float elapsed_ = 0.0F;
 };

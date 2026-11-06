@@ -10,7 +10,13 @@ struct RoomLoadResult {
 };
 
 namespace RoomFiles {
-[[nodiscard]] RoomLoadResult load(const std::filesystem::path& path);
-// Writes via a temporary file so a failed write preserves the previous room.
-[[nodiscard]] bool save(const std::filesystem::path& path, const Room& room, std::string& error);
+// inheritedPlayerArt (assets/actors/player.actor) seeds Room::playerAnimations; player.<clip>.*
+// keys in the room add clips or override fields of inherited ones. Without it the room must
+// declare every locomotion clip itself.
+[[nodiscard]] RoomLoadResult load(const std::filesystem::path& path,
+                                  const AnimationSet* inheritedPlayerArt = nullptr);
+// Writes via a temporary file so a failed write preserves the previous room. Clips equal to
+// inheritedPlayerArt are left out, so saving never copies the shared art into the room.
+[[nodiscard]] bool save(const std::filesystem::path& path, const Room& room, std::string& error,
+                        const AnimationSet* inheritedPlayerArt = nullptr);
 }

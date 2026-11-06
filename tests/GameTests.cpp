@@ -864,6 +864,30 @@ void testGameEventQueue() {
     assert(game.pendingEvents().empty());
 }
 
+// A click on a point the player can never reach: a single flood fill picks the nearest
+// reachable cell and one A* walks there, even in the largest room the format allows.
+void testNearestReachableInLargeRoom() {
+    Navigation navigation(Room::maxDimension, 2048.0F);
+    // A closed ring: walls on columns 1 and 7 and rows 1 and 7; the player stands inside.
+    for (int i = 1; i <= 7; ++i) {
+        navigation.setBlocked(1, i, true);
+        navigation.setBlocked(7, i, true);
+        navigation.setBlocked(i, 1, true);
+        navigation.setBlocked(i, 7, true);
+    }
+    const SDL_FPoint inside{112.0F, 112.0F}; // cell (3, 3)
+    const SDL_FPoint farAway{8000.0F, 170.0F};
+    const auto route = navigation.findPathToNearestReachable(inside, farAway);
+    assert(!route.empty());
+    // Nearest interior cell to the target: column 6, row 5 (centre 208, 176).
+    assert(near(route.back().x, 208.0F) && near(route.back().y, 176.0F));
+    for (const SDL_FPoint step : route) assert(navigation.canStandAt(step));
+
+    // A reachable target still gets the exact point.
+    const auto direct = navigation.findPathToNearestReachable(inside, {200.0F, 90.0F});
+    assert(!direct.empty() && near(direct.back().x, 200.0F) && near(direct.back().y, 90.0F));
+}
+
 void testCameraTargetFor() {
     Camera camera(2000.0F, 1000.0F);
 
@@ -921,5 +945,6 @@ int main() {
     testScriptedSequenceAndCutscene();
     testDialogueWithChoices();
     testGameEventQueue();
+    testNearestReachableInLargeRoom();
     testCameraTargetFor();
 }

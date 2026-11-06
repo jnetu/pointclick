@@ -34,6 +34,7 @@ public:
     [[nodiscard]] PlayerPose pose() const;
     [[nodiscard]] std::string_view animationName() const;
     [[nodiscard]] float animationTime() const;
+    [[nodiscard]] float interpolatedAnimationTime(float alpha) const;
 
 private:
     SDL_FPoint previousFeet_;

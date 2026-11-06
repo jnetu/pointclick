@@ -1,3 +1,4 @@
+#include "content/ActorFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
 #include "game/Game.hpp"
@@ -10,8 +11,19 @@
 #include <cmath>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 namespace {
+const AnimationSet& sharedPlayerArt() {
+    static const AnimationSet art = [] {
+        const auto loaded = ActorFiles::load(std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                                             / "assets/actors/player.actor");
+        assert(loaded.animations);
+        return *loaded.animations;
+    }();
+    return art;
+}
+
 SDL_Color pixel(SDL_Surface* surface, const int x, const int y) {
     SDL_Color result{};
     assert(SDL_ReadSurfacePixel(surface, x, y, &result.r, &result.g, &result.b, &result.a));
@@ -110,18 +122,32 @@ void testClipDefinition(const std::filesystem::path& directory) {
     assert(!RoomFiles::save(path, room, error));
     assert(RoomFiles::load(path).room->playerAnimations.at("left").frameHeight == 4);
 
-    const auto oldFormat = directory / "legacy.room";
+    const auto oldFormat = directory / "legacy_flag.room";
     std::ofstream out(oldFormat);
     out << "[room]\nid = legacy\n[object flag]\nbounds = 10, 10, 40, 40\n"
            "type = decoration\nsprite.file = props/flag.png\n";
     out.close();
-    const auto legacy = RoomFiles::load(oldFormat);
+    // A room without player clips inherits the shared actor art, like the shipped rooms.
+    assert(!RoomFiles::load(oldFormat).room);
+    const auto legacy = RoomFiles::load(oldFormat, &sharedPlayerArt());
     assert(legacy.room);
     assert(legacy.room->scenery[0].animations.at("idle").file == "props/flag.png");
     std::ofstream duplicate(oldFormat, std::ios::app);
     duplicate << "animation.idle.file = props/other.png\n";
     duplicate.close();
-    assert(!RoomFiles::load(oldFormat).room);
+    assert(!RoomFiles::load(oldFormat, &sharedPlayerArt()).room);
+
+    // Inherited clips stay out of a saved room; a field the room overrides is kept.
+    Room inherits = *legacy.room;
+    inherits.playerAnimations["idle"].fps = 3.0F;
+    const auto inheritsPath = directory / "inherits.room";
+    assert(RoomFiles::save(inheritsPath, inherits, error, &sharedPlayerArt()));
+    std::ifstream saved(inheritsPath);
+    const std::string savedText((std::istreambuf_iterator<char>(saved)), {});
+    assert(savedText.find("player.left.") == std::string::npos);
+    assert(savedText.find("player.idle.fps = 3") != std::string::npos);
+    const auto reloaded = RoomFiles::load(inheritsPath, &sharedPlayerArt());
+    assert(reloaded.room && reloaded.room->playerAnimations == inherits.playerAnimations);
 }
 
 void testPngRendering(const std::filesystem::path& directory) {
@@ -206,6 +232,15 @@ void testPngRendering(const std::filesystem::path& directory) {
     SDL_RenderPresent(renderer);
     expectColor(pixel(output, 6, 6), 145, 0, 190);
 
+    // Room changes keep what the current and previous rooms used; only stale files go.
+    assert(sprites.cachedImageCount() == 2); // sheet.png + the failed future.png
+    sprites.beginRoom();
+    sprites.beginRoom();
+    assert(sprites.cachedImageCount() == 2); // A -> B -> A must not reload
+    assert(sprites.draw(clip, {0, 0, 40, 40}, 0));
+    sprites.beginRoom();
+    assert(sprites.cachedImageCount() == 1); // future.png unused for two room changes
+
     sprites.clear();
     SDL_DestroyRenderer(renderer);
     SDL_DestroySurface(output);
@@ -256,7 +291,9 @@ void testEntityAnimationSelection(const std::filesystem::path& directory) {
 
 void testPlayerArtwork() {
     const auto assets = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets";
-    const auto loaded = RoomFiles::load(assets / "rooms" / "first.room");
+    const auto art = ActorFiles::load(assets / "actors" / "player.actor");
+    assert(art.animations);
+    const auto loaded = RoomFiles::load(assets / "rooms" / "first.room", &*art.animations);
     assert(loaded.room);
     const auto& clips = loaded.room->playerAnimations;
     const SpriteClip* animations[]{&clips.at("idle"), &clips.at("left"),

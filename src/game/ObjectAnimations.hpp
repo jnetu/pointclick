@@ -1,6 +1,7 @@
 #pragma once
 
 #include "game/Animation.hpp"
+#include "game/StringMap.hpp"
 
 #include <string_view>
 #include <unordered_map>
@@ -17,5 +18,5 @@ public:
     [[nodiscard]] const AnimationPlayback* find(std::string_view objectId) const;
 
 private:
-    std::unordered_map<std::string, AnimationPlayback> active_;
+    StringMap<AnimationPlayback> active_;
 };

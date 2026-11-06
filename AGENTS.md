@@ -8,14 +8,17 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Parâmetro de sala | `src/game/Room.hpp`, `src/game/RoomParameters.cpp` | `Room::validationError`, `docs/GAME_DESIGN.md` |
 | Chave nova do formato `.room` | `src/content/RoomFiles.cpp` | `tests/EditorTests.cpp` |
 | Campo de corte de spritesheet | `src/game/SpriteClip.hpp`, `src/content/SpriteFields.cpp` | `src/graphics/SpriteLibrary.cpp`, `tests/SpriteTests.cpp` |
-| Novo clip de player ou objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md`; padrões em `src/content/RoomPresets.cpp` |
+| Novo clip de player | `assets/actors/player.actor` (ou `player.<clip>.*` numa sala, para sobrescrever) | `assets/sprites`, `docs/GAME_DESIGN.md`; `src/content/ActorFiles.*`, `src/content/RoomLibrary.*` |
+| Novo clip de objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md` |
 | Regra que escolhe animação | `src/game/Animation.*`, `src/game/ObjectAnimations.*` ou `src/game/Player.*` | `src/graphics/EntityRenderer.cpp` apenas se mudar a apresentação |
 | Nova direção de locomoção | `PlayerPose` e `playerLocomotionAnimations` em `src/game/Player.hpp` | regra em `Player.cpp` e clip no `.room` |
 | Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Scene.cpp` | `tests/GameTests.cpp` |
 | Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
-| Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` | `src/graphics/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
+| Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` (opcional, `POINTCLICK_ENABLE_TOOLS`) | `src/debug/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
+| Carregar/salvar salas, layout dos assets | `src/content/RoomLibrary.*` | `core/Application.cpp` e `DebugEditor` usam a mesma biblioteca |
+| Dependência entre camadas, targets CMake | `CMakeLists.txt` (um target por pasta) | `cmake/CheckLayerIncludes.cmake`, `docs/ARCHITECTURE.md` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
 | Regras de interação, itens e puzzles | `assets/rooms/*.rules`, `src/game/Interaction.*`, `src/content/InteractionFiles.*` | `src/game/Game.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Efeito ou condição nova em `.rules` | uma entrada + uma função (`start`, e `update` se bloquear) em `src/game/ActionCatalog.cpp` | método em `src/game/ScriptHost.hpp` + `Game::Host` só se precisar de capacidade nova da cena; tabela em `docs/GAME_DESIGN.md`; `tests/EditorTests.cpp` (round-trip do catálogo) |
@@ -49,8 +52,10 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   fazer chamadas de desenho.
 - `input/` traduz eventos brutos de mouse/teclado, toque (ignorando mouse sintético)
   e gamepad (hotplug, eixo analógico com *deadzone* e cursor virtual) para a viewport
-  lógica, roteando por prioridade (`Ciclo de Vida → DebugEditor → ViewportUiConsumer → Game`)
-  sem depender de `graphics/`.
+  lógica e ações abstratas (`ToolAction`, `UiNavAction`), roteando por prioridade
+  (`Ciclo de Vida → ToolInputConsumer opcional → ViewportUiConsumer → Game`) sem depender
+  de `graphics/`, `ui/` ou `debug/`. A ferramenta de debug é opcional no build
+  (`POINTCLICK_ENABLE_TOOLS`) e entra como consumidor e como `RenderOverlay`.
 - `graphics/` lê o estado do jogo (`const Scene&` para a cena, `const Game&` só para o
   estado de diálogo e ferramentas, respeitando `Scene::isObjectVisible` e
   `Scene::isObjectSolid`) e desenha. Não decide resultados de interação,

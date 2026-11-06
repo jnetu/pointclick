@@ -7,7 +7,6 @@
 #include <vector>
 
 class Game;
-class DebugEditor;
 
 // Extension point for future gameplay UIs (Dialogue, Inventory, Pause Menu)
 // operating in the fixed 1280x720 logical viewport before world conversion.
@@ -21,6 +20,16 @@ public:
     virtual bool onTextInput([[maybe_unused]] std::string_view text) { return false; }
 };
 
+// Optional tools layer (the in-game editor). Registered on InputRouter when the build has
+// tools; the router never knows the concrete class.
+class ToolInputConsumer {
+public:
+    virtual ~ToolInputConsumer() = default;
+    virtual bool onToolAction(ToolAction action, Game& game) = 0;
+    virtual bool onTextInput(std::string_view text, Game& game) = 0;
+    [[nodiscard]] virtual bool consumesViewportPoint(SDL_FPoint viewportPoint) const = 0;
+};
+
 struct InputRouteResult {
     bool quitRequested = false;
     bool enteredBackground = false;
@@ -32,7 +41,7 @@ struct InputRouteResult {
 
 // Priority Consumer Chain:
 //   1. Lifecycle & System (quit, background/foreground, render device/targets reset)
-//   2. Tools (DebugEditor keys, text, and viewport panel hit-test)
+//   2. Tools (optional ToolInputConsumer: actions, text, and its viewport panel hit-test)
 //   3. Gameplay UI (ViewportUiConsumer instances in 1280x720 viewport space)
 //   4. World (Camera::viewportToWorld -> Game::onPointerMove / Game::onClick)
 class InputRouter {
@@ -40,26 +49,26 @@ public:
     void setUiConsumers(std::span<ViewportUiConsumer* const> consumers);
     void addUiConsumer(ViewportUiConsumer* consumer);
     void clearUiConsumers() noexcept;
+    // nullptr (the default) = no tools layer, as in store builds.
+    void setToolConsumer(ToolInputConsumer* tools) noexcept { tools_ = tools; }
 
     [[nodiscard]] InputRouteResult routeTranslated(const TranslatedInput& translated,
-                                                   DebugEditor& debugEditor,
                                                    Game& game,
                                                    float interpolation = 1.0F) const;
 
     [[nodiscard]] InputRouteResult handleEvent(
             const SDL_Event& event,
             InputSystem& input,
-            DebugEditor& debugEditor,
             Game& game,
             const ViewportCoordinateMapper& mapper = ViewportCoordinateMapper::identity(),
             float interpolation = 1.0F) const;
 
     void update(float deltaSeconds,
                 InputSystem& input,
-                DebugEditor& debugEditor,
                 Game& game,
                 float interpolation = 1.0F) const;
 
 private:
     std::vector<ViewportUiConsumer*> uiConsumers_;
+    ToolInputConsumer* tools_ = nullptr;
 };

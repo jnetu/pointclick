@@ -13,8 +13,12 @@ endif()
 
 include(cmake/Dependencies.cmake)
 
-# Shared game code: the executable and the tests use the same implementation.
-add_library(pointclick_core STATIC
+option(POINTCLICK_ENABLE_TOOLS "In-game DEBUG editor and its overlay (OFF for store builds)" ON)
+
+# One static library per layer, so the linker rejects a forbidden dependency:
+#   game <- content, input <- ui <- graphics <- tools (optional) <- executable
+# Domain: rules, definitions and state. No rendering, no file I/O.
+add_library(pointclick_game STATIC
         src/game/ActionCatalog.cpp
         src/game/Animation.cpp
         src/game/Camera.cpp
@@ -30,21 +34,36 @@ add_library(pointclick_core STATIC
         src/game/ScriptRunner.cpp
         src/game/SessionState.cpp
         src/game/SpriteClip.cpp
-        src/game/RoomParameters.cpp
+        src/game/RoomParameters.cpp)
+target_compile_features(pointclick_game PUBLIC cxx_std_20)
+target_include_directories(pointclick_game PUBLIC src ${POINTCLICK_SDL3_INCLUDE_DIRS})
+# The domain calls non-inline SDL_rect.h helpers; the include check below keeps it to value types.
+target_link_libraries(pointclick_game PUBLIC SDL3::SDL3)
+
+# Content files <-> validated definitions, asset layout.
+add_library(pointclick_content STATIC
+        src/content/ActorFiles.cpp
         src/content/DialogueFiles.cpp
         src/content/InteractionFiles.cpp
-        src/content/RoomPresets.cpp
         src/content/RoomFiles.cpp
+        src/content/RoomLibrary.cpp
+        src/content/RoomPresets.cpp
         src/content/SpriteFields.cpp
-        src/content/TextFormat.cpp
-        src/debug/DebugEditor.cpp
-        src/input/InputSystem.cpp
-        src/input/InputRouter.cpp
-        src/ui/DialogueMenu.cpp)
-target_compile_features(pointclick_core PUBLIC cxx_std_20)
-target_include_directories(pointclick_core PUBLIC src ${POINTCLICK_SDL3_INCLUDE_DIRS})
-target_link_libraries(pointclick_core PUBLIC SDL3::SDL3)
+        src/content/TextFormat.cpp)
+target_link_libraries(pointclick_content PUBLIC pointclick_game)
 
+# Devices -> abstract actions and viewport points; consumer chain.
+add_library(pointclick_input STATIC
+        src/input/InputSystem.cpp
+        src/input/InputRouter.cpp)
+target_link_libraries(pointclick_input PUBLIC pointclick_game)
+
+# Gameplay UI consumers in viewport space.
+add_library(pointclick_ui STATIC
+        src/ui/DialogueMenu.cpp)
+target_link_libraries(pointclick_ui PUBLIC pointclick_input)
+
+# Read-only presentation.
 add_library(pointclick_graphics STATIC
         src/graphics/EntityRenderer.cpp
         src/graphics/Renderer.cpp
@@ -52,13 +71,29 @@ add_library(pointclick_graphics STATIC
         src/graphics/SceneRenderer.cpp
         src/graphics/SpriteLibrary.cpp
         src/graphics/DiagnosticsOverlay.cpp
-        src/graphics/DebugOverlay.cpp
         src/graphics/DialogueMenuRenderer.cpp)
-target_link_libraries(pointclick_graphics PUBLIC pointclick_core)
-add_executable(pointclick src/main.cpp src/core/Application.cpp)
-target_link_libraries(pointclick PRIVATE pointclick_graphics)
+target_link_libraries(pointclick_graphics PUBLIC pointclick_ui)
 
-foreach(target pointclick_core pointclick_graphics pointclick)
+set(POINTCLICK_LAYER_TARGETS pointclick_game pointclick_content pointclick_input
+        pointclick_ui pointclick_graphics)
+if(POINTCLICK_ENABLE_TOOLS)
+    # Optional editor: another input consumer and another render overlay.
+    add_library(pointclick_tools STATIC
+            src/debug/DebugEditor.cpp
+            src/debug/DebugOverlay.cpp)
+    target_link_libraries(pointclick_tools PUBLIC pointclick_content pointclick_graphics)
+    target_compile_definitions(pointclick_tools PUBLIC POINTCLICK_TOOLS=1)
+    list(APPEND POINTCLICK_LAYER_TARGETS pointclick_tools)
+endif()
+
+add_executable(pointclick src/main.cpp src/core/Application.cpp)
+if(POINTCLICK_ENABLE_TOOLS)
+    target_link_libraries(pointclick PRIVATE pointclick_tools) # brings content + graphics
+else()
+    target_link_libraries(pointclick PRIVATE pointclick_content pointclick_graphics)
+endif()
+
+foreach(target ${POINTCLICK_LAYER_TARGETS} pointclick)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive-)
     else()
@@ -69,27 +104,33 @@ endforeach()
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 include(CTest)
 if(BUILD_TESTING)
+    # GameTests links the domain and content only: gameplay runs without any renderer.
     add_executable(pointclick_tests tests/GameTests.cpp)
-    target_link_libraries(pointclick_tests PRIVATE pointclick_core)
-    add_executable(pointclick_editor_tests tests/EditorTests.cpp)
-    target_link_libraries(pointclick_editor_tests PRIVATE pointclick_graphics)
+    target_link_libraries(pointclick_tests PRIVATE pointclick_content)
     add_executable(pointclick_sprite_tests tests/SpriteTests.cpp)
-    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_graphics)
-    target_compile_definitions(pointclick_editor_tests PRIVATE
-            POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_content pointclick_graphics)
     target_compile_definitions(pointclick_sprite_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests)
+    if(POINTCLICK_ENABLE_TOOLS)
+        add_executable(pointclick_editor_tests tests/EditorTests.cpp)
+        target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools)
+        target_compile_definitions(pointclick_editor_tests PRIVATE
+                POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+        list(APPEND POINTCLICK_TEST_TARGETS pointclick_editor_tests)
+    endif()
     # The regression checks must also run in Release builds.
-    foreach(test_target pointclick_tests pointclick_editor_tests pointclick_sprite_tests)
+    foreach(test_target IN LISTS POINTCLICK_TEST_TARGETS)
         if(MSVC)
             target_compile_options(${test_target} PRIVATE /W4 /permissive- /UNDEBUG)
         else()
             target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
         endif()
+        add_test(NAME ${test_target} COMMAND ${test_target})
     endforeach()
-    add_test(NAME pointclick_tests COMMAND pointclick_tests)
-    add_test(NAME pointclick_editor_tests COMMAND pointclick_editor_tests)
-    add_test(NAME pointclick_sprite_tests COMMAND pointclick_sprite_tests)
+    add_test(NAME pointclick_layer_includes
+            COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerIncludes.cmake)
 endif()
 
 add_custom_command(TARGET pointclick POST_BUILD

@@ -1,11 +1,16 @@
 #pragma once
 
-#include "debug/DebugEditor.hpp"
+#include "content/RoomLibrary.hpp"
 #include "game/Game.hpp"
 #include "graphics/Renderer.hpp"
 #include "input/InputRouter.hpp"
 #include "input/InputSystem.hpp"
 #include "ui/DialogueMenu.hpp"
+
+#if POINTCLICK_TOOLS
+#include "debug/DebugEditor.hpp"
+#include "debug/DebugOverlay.hpp"
+#endif
 
 #include <vector>
 
@@ -27,11 +32,16 @@ private:
     void shutdown();
 
     SDL_Window* window_ = nullptr;
+    std::filesystem::path roomDirectory_;
+    RoomLibrary library_;
     Game game_;
     std::vector<GameEvent> gameEvents_; // reused drain buffer
     DialogueMenu dialogueMenu_{game_};
     Renderer renderer_;
+#if POINTCLICK_TOOLS
     DebugEditor debugEditor_;
+    DebugOverlay debugOverlay_{debugEditor_};
+#endif
     InputSystem inputSystem_;
     InputRouter inputRouter_;
     float renderInterpolation_ = 1.0F;

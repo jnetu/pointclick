@@ -80,8 +80,8 @@ A pasta do editor aparece na parte inferior do painel.
 
 O formato aceita comentários iniciados por `#`. Chaves não reconhecidas,
 valores inválidos e IDs repetidos são rejeitados. Os valores numéricos omitidos
-usam os padrões de `Room.hpp`; os sprites padrão do jogador ficam em
-`src/content/RoomPresets.cpp`. Os objetos devem ser declarados no arquivo.
+usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.actor`
+(veja abaixo). Nenhum dado de arte vem do C++. Os objetos devem ser declarados no arquivo.
 
 ## Sprites e animações
 
@@ -90,13 +90,22 @@ subpastas também funcionam, por exemplo `personagens/player_idle.png`. O jogo
 procura os sprites ao carregar a sala. Se o arquivo faltar ou o corte não couber
 na imagem, ele desenha um quadriculado roxo e preto no lugar.
 
-Cada direção do jogador tem seu próprio conjunto de valores: `player.idle`,
-`player.left`, `player.right`, `player.up` e `player.down`. Esses cinco nomes
-são usados pelo movimento atual. Outras animações podem ser cadastradas com
-`player.NOME.file`, `player.NOME.frames` e os mesmos sufixos abaixo, sem alterar
-o leitor de salas. A regra que aciona uma nova animação ainda precisa ser
-implementada no jogo. A animação `idle` é usada quando o jogador para.
-Edite as chaves abaixo no bloco `[room]` de cada sala:
+### Arte do jogador (`assets/actors/player.actor`)
+
+Os clips do jogador ficam **uma vez só** em `assets/actors/player.actor`, e todas as salas
+os herdam. Cada direção tem seu conjunto de valores: `idle`, `left`, `right`, `up` e
+`down`. Esses cinco nomes são usados pelo movimento atual; `idle` é usado quando o
+jogador para. Outras animações podem ser cadastradas com `NOME.file`, `NOME.frames` e os
+mesmos sufixos abaixo, sem alterar o leitor. A regra que aciona uma nova animação ainda
+precisa ser implementada no jogo.
+
+Uma sala pode sobrescrever só o que muda, no bloco `[room]`, com o prefixo `player.`:
+`player.idle.fps = 4` troca apenas o fps do `idle` herdado, e `player.NOME.*` acrescenta um
+clip só daquela sala. Ao salvar pelo editor, os clips iguais aos do ator ficam fora do
+`.room`. Uma sala lida sem o ator (por exemplo, numa pasta sem `actors/`) precisa declarar
+os cinco clips.
+
+Sufixos de um clip (no `.actor` sem prefixo, na sala com `player.` ou `animation.`):
 
 | Sufixo | Significado |
 | --- | --- |
@@ -116,48 +125,26 @@ Edite as chaves abaixo no bloco `[room]` de cada sala:
 Os quadros são lidos da esquerda para a direita, depois de cima para baixo.
 Para uma imagem simples, use `.frames = 1` e deixe `.frame_width` e
 `.frame_height` em 0. Para uma spritesheet, defina os dois tamanhos e a
-quantidade de quadros. As outras salas usam os mesmos cortes padrão quando não
-definem suas próprias chaves `player.*`. A primeira sala usa estes cortes reais:
+quantidade de quadros. O `player.actor` atual usa estes cortes reais:
 
 ```ini
-player.idle.file = player_idle.png
-player.idle.frame_width = 32
-player.idle.frame_height = 48
-player.idle.frames = 8
-player.idle.columns = 1
-player.idle.fps = 6
+idle.file = player_idle.png
+idle.frame_width = 32
+idle.frame_height = 48
+idle.frames = 8
+idle.columns = 1
+idle.fps = 6
 
-player.left.file = player_esquerda.png
-player.left.frame_width = 32
-player.left.frame_height = 48
-player.left.frames = 7
-player.left.columns = 7
-player.left.spacing_x = 1
-player.left.fps = 8
+left.file = player_esquerda.png
+left.frame_width = 32
+left.frame_height = 48
+left.frames = 7
+left.columns = 7
+left.spacing_x = 1
+left.fps = 8
 
-player.right.file = player_direita.png
-player.right.frame_width = 32
-player.right.frame_height = 48
-player.right.frames = 7
-player.right.columns = 7
-player.right.spacing_x = 1
-player.right.fps = 8
-
-player.up.file = player_cima.png
-player.up.frame_width = 32
-player.up.frame_height = 48
-player.up.frames = 7
-player.up.columns = 7
-player.up.spacing_x = 1
-player.up.fps = 8
-
-player.down.file = player_baixo.png
-player.down.frame_width = 32
-player.down.frame_height = 48
-player.down.frames = 7
-player.down.columns = 7
-player.down.spacing_x = 1
-player.down.fps = 8
+# right, up e down seguem o mesmo corte de left com player_direita.png,
+# player_cima.png e player_baixo.png.
 ```
 
 O tamanho visual e os deslocamentos são medidos nas coordenadas da sala. A

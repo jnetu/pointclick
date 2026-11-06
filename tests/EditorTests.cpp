@@ -4,7 +4,10 @@
 #include "content/RoomPresets.hpp"
 #include "game/ActionCatalog.hpp"
 #include "game/RoomParameters.hpp"
+#include "content/ActorFiles.hpp"
+#include "content/RoomLibrary.hpp"
 #include "debug/DebugEditor.hpp"
+#include "debug/DebugOverlay.hpp"
 #include "game/Game.hpp"
 #include "graphics/Renderer.hpp"
 #include "input/InputRouter.hpp"
@@ -17,25 +20,45 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <iterator>
 #include <set>
 #include <stdexcept>
 
 namespace {
+// The shipped assets declare player art once, in assets/actors/player.actor.
+const AnimationSet* sharedPlayerArt() {
+    static const AnimationSet art = [] {
+        const auto loaded = ActorFiles::load(std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                                             / "assets/actors/player.actor");
+        assert(loaded.animations);
+        return *loaded.animations;
+    }();
+    return &art;
+}
+
+RoomLibrary openLibrary(const std::filesystem::path& roomsDirectory) {
+    RoomLibrary library;
+    std::string error;
+    assert(library.open(roomsDirectory, error));
+    return library;
+}
+
 void command(DebugEditor& editor, Game& game, const std::string_view text) {
     assert(editor.onTextInput(text, game));
-    assert(editor.onKey(DebugKey::submit, game));
+    assert(editor.onToolAction(ToolAction::submit, game));
 }
 
 void testEditing(const std::filesystem::path& directory) {
     Game game(RoomPresets::firstRoom());
     DebugEditor editor;
-    editor.setRoomDirectory(directory);
-    assert(!editor.onKey(DebugKey::increase, game));
+    const RoomLibrary library = openLibrary(directory);
+    editor.setLibrary(library);
+    assert(!editor.onToolAction(ToolAction::increase, game));
     assert(!editor.onTextInput("DE", game));
     assert(!editor.active());
     assert(editor.onTextInput("bug", game));
     assert(editor.active());
-    editor.onKey(DebugKey::increase, game);
+    editor.onToolAction(ToolAction::increase, game);
     assert(game.scene().room().playerFarSpeed == 120);
     command(editor, game, "set player.near_speed 400");
     assert(game.scene().room().playerNearSpeed == 400);
@@ -83,18 +106,18 @@ void testEditing(const std::filesystem::path& directory) {
     assert(game.scene().room().playerFarSpeed == 110);
     assert(game.scene().room().scenery[1].bounds.x == 810);
 
-    editor.onKey(DebugKey::togglePanel, game);
+    editor.onToolAction(ToolAction::togglePanel, game);
     assert(editor.active() && !editor.panelVisible());
-    editor.onKey(DebugKey::increase, game);
+    editor.onToolAction(ToolAction::increase, game);
     assert(game.scene().room().playerFarSpeed == 110);
     assert(editor.onTextInput("set player.far_speed 500", game));
     assert(editor.command().empty());
-    editor.onKey(DebugKey::togglePanel, game);
+    editor.onToolAction(ToolAction::togglePanel, game);
     assert(editor.panelVisible());
 
-    editor.onKey(DebugKey::close, game);
+    editor.onToolAction(ToolAction::close, game);
     assert(!editor.active());
-    assert(!editor.onKey(DebugKey::increase, game));
+    assert(!editor.onToolAction(ToolAction::increase, game));
     assert(game.scene().room().playerFarSpeed == 110);
 
     Room blocked = game.scene().room();
@@ -107,7 +130,7 @@ void testEditing(const std::filesystem::path& directory) {
 
 void testRoomFiles(const std::filesystem::path& directory) {
     const auto source = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms/first.room";
-    const auto loaded = RoomFiles::load(source);
+    const auto loaded = RoomFiles::load(source, sharedPlayerArt());
     assert(loaded.room);
     assert(loaded.room->width == 1280.0F && loaded.room->height == 720.0F);
     assert(loaded.room->scenery.size() == 2);
@@ -123,14 +146,14 @@ void testRoomFiles(const std::filesystem::path& directory) {
         out << "# comentario\r\n[room] # secao\r\n\r\nid = commented # id\r\n"
                "player.far_speed = 123.5 # velocidade";
     }
-    const auto commented = RoomFiles::load(commentedPath);
+    const auto commented = RoomFiles::load(commentedPath, sharedPlayerArt());
     assert(commented.room && commented.error.empty());
     assert(commented.room->id == "commented");
     assert(commented.room->playerFarSpeed == 123.5F);
 
     const auto emptyPath = directory / "empty.room";
     { std::ofstream out(emptyPath, std::ios::binary); }
-    const auto empty = RoomFiles::load(emptyPath);
+    const auto empty = RoomFiles::load(emptyPath, sharedPlayerArt());
     assert(empty.room && empty.error.empty());
     assert(empty.room->id == RoomPresets::defaults().id);
 
@@ -144,7 +167,7 @@ void testRoomFiles(const std::filesystem::path& directory) {
     const auto nul = RoomFiles::load(nulPath);
     assert(!nul.room && nul.error == "Linha 3: Esperado chave = valor");
 
-    const auto gallery = RoomFiles::load(source.parent_path() / "gallery.room");
+    const auto gallery = RoomFiles::load(source.parent_path() / "gallery.room", sharedPlayerArt());
     assert(gallery.room);
     Game other(*gallery.room);
     assert(other.scene().room().id == "gallery");
@@ -226,8 +249,10 @@ void testDebugRendering() {
     assert(renderer.initialize(window));
     Game game(RoomPresets::firstRoom());
     DebugEditor editor;
+    const DebugOverlay overlay(editor);
+    renderer.addOverlay(&overlay);
     editor.onTextInput("DEBUG", game);
-    renderer.render(game, 1.0F, &editor);
+    renderer.render(game, 1.0F);
     SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(pixels);
     if (const char* capture = std::getenv("POINTCLICK_DEBUG_CAPTURE")) assert(SDL_SaveBMP(pixels, capture));
@@ -235,7 +260,7 @@ void testDebugRendering() {
     // Resizing preserves the logical center used by the mouse and editor.
     assert(SDL_SetWindowSize(window, 1000, 1000));
     SDL_PumpEvents();
-    renderer.render(game, 1.0F, &editor);
+    renderer.render(game, 1.0F);
     SDL_FPoint center{};
     assert(renderer.windowToWorld(500, 500, center));
     assert(std::abs(center.x - 640) < 0.1F && std::abs(center.y - 360) < 0.1F);
@@ -364,6 +389,7 @@ void testMultiplatformInputAndRouting() {
     DebugEditor editor;
     InputSystem input;
     InputRouter router;
+    router.setToolConsumer(&editor);
     const ViewportCoordinateMapper mapper = renderer.viewportMapper();
 
     // 1. DebugEditor panel hit-test: blocks clicks when visible, releases when hidden or closed.
@@ -382,7 +408,7 @@ void testMultiplatformInputAndRouting() {
     panelClick.button.down = true;
     panelClick.button.x = 440.0F + 900.0F * 2.0F;
     panelClick.button.y = 500.0F * 2.0F;
-    auto routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
+    auto routeResult = router.handleEvent(panelClick, input, game, mapper);
     assert(routeResult.consumedByDebug);
     assert(!game.scene().player().moving());
 
@@ -390,7 +416,7 @@ void testMultiplatformInputAndRouting() {
     SDL_Event outsidePanelClick = panelClick;
     outsidePanelClick.button.x = 440.0F + 300.0F * 2.0F;
     outsidePanelClick.button.y = 520.0F * 2.0F;
-    routeResult = router.handleEvent(outsidePanelClick, input, editor, game, mapper);
+    routeResult = router.handleEvent(outsidePanelClick, input, game, mapper);
     assert(!routeResult.consumedByDebug);
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1210.0F) < 0.5F);
@@ -404,11 +430,11 @@ void testMultiplatformInputAndRouting() {
     tabKey.type = SDL_EVENT_KEY_DOWN;
     tabKey.key.key = SDLK_TAB;
     tabKey.key.down = true;
-    assert(router.handleEvent(tabKey, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(tabKey, input, game, mapper).consumedByDebug);
     assert(editor.active() && !editor.panelVisible());
     assert(!editor.consumesViewportPoint({900.0F, 500.0F}));
 
-    routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
+    routeResult = router.handleEvent(panelClick, input, game, mapper);
     assert(!routeResult.consumedByDebug);
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
@@ -421,9 +447,9 @@ void testMultiplatformInputAndRouting() {
     escKey.type = SDL_EVENT_KEY_DOWN;
     escKey.key.key = SDLK_ESCAPE;
     escKey.key.down = true;
-    assert(router.handleEvent(escKey, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(escKey, input, game, mapper).consumedByDebug);
     assert(!editor.active());
-    routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
+    routeResult = router.handleEvent(panelClick, input, game, mapper);
     assert(!routeResult.consumedByDebug);
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
@@ -438,13 +464,13 @@ void testMultiplatformInputAndRouting() {
     pillarboxTouch.tfinger.fingerID = 1;
     pillarboxTouch.tfinger.x = 0.02F;
     pillarboxTouch.tfinger.y = 0.75F;
-    (void)router.handleEvent(pillarboxTouch, input, editor, game, mapper);
+    (void)router.handleEvent(pillarboxTouch, input, game, mapper);
     assert(!game.scene().player().moving());
     assert(!game.scene().pointerInside());
 
     SDL_Event pillarboxTouchUp = pillarboxTouch;
     pillarboxTouchUp.type = SDL_EVENT_FINGER_UP;
-    (void)router.handleEvent(pillarboxTouchUp, input, editor, game, mapper);
+    (void)router.handleEvent(pillarboxTouchUp, input, game, mapper);
 
     // Touch at window center (normalized 0.5, 0.75) -> Viewport (640, 540) -> World (1550, 540).
     // Let's tap slightly right of center: window x = 440 + 800 * 2 = 2040 -> nx = 2040 / 3440.
@@ -454,7 +480,7 @@ void testMultiplatformInputAndRouting() {
     worldTouch.tfinger.fingerID = 2;
     worldTouch.tfinger.x = (440.0F + 800.0F * 2.0F) / 3440.0F;
     worldTouch.tfinger.y = 540.0F / 720.0F;
-    (void)router.handleEvent(worldTouch, input, editor, game, mapper);
+    (void)router.handleEvent(worldTouch, input, game, mapper);
     assert(input.activeDevice() == InputDevice::touch);
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F); // 800 + 910
@@ -468,7 +494,7 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseClick.button.down = true;
     syntheticMouseClick.button.x = 440.0F + 200.0F * 2.0F;
     syntheticMouseClick.button.y = 600.0F * 2.0F;
-    (void)router.handleEvent(syntheticMouseClick, input, editor, game, mapper);
+    (void)router.handleEvent(syntheticMouseClick, input, game, mapper);
     assert(input.activeDevice() == InputDevice::touch);
     assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
@@ -478,12 +504,12 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseTouch.tfinger.fingerID = 3;
     syntheticMouseTouch.tfinger.x = 0.3F;
     syntheticMouseTouch.tfinger.y = 0.8F;
-    (void)router.handleEvent(syntheticMouseTouch, input, editor, game, mapper);
+    (void)router.handleEvent(syntheticMouseTouch, input, game, mapper);
     assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
     SDL_Event worldTouchUp = worldTouch;
     worldTouchUp.type = SDL_EVENT_FINGER_UP;
-    (void)router.handleEvent(worldTouchUp, input, editor, game, mapper);
+    (void)router.handleEvent(worldTouchUp, input, game, mapper);
 
     assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
@@ -491,7 +517,7 @@ void testMultiplatformInputAndRouting() {
     SDL_Event padAdded{};
     padAdded.type = SDL_EVENT_GAMEPAD_ADDED;
     padAdded.gdevice.which = 77;
-    (void)router.handleEvent(padAdded, input, editor, game, mapper);
+    (void)router.handleEvent(padAdded, input, game, mapper);
     assert(input.gamepadCount() == 1);
 
     input.setCursorViewport({640.0F, 360.0F});
@@ -503,34 +529,34 @@ void testMultiplatformInputAndRouting() {
     smallTilt.gaxis.which = 77;
     smallTilt.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTX;
     smallTilt.gaxis.value = 3000; // ~0.09 < 0.24 deadzone
-    (void)router.handleEvent(smallTilt, input, editor, game, mapper);
+    (void)router.handleEvent(smallTilt, input, game, mapper);
     assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
-    router.update(0.5F, input, editor, game);
+    router.update(0.5F, input, game);
     assert(std::abs(input.cursorViewport().x - 640.0F) < 0.01F);
 
     // Full stick deflection right & down moves the virtual cursor smoothly in viewport space.
     SDL_Event stickRight = smallTilt;
     stickRight.gaxis.value = 32767;
-    (void)router.handleEvent(stickRight, input, editor, game, mapper);
+    (void)router.handleEvent(stickRight, input, game, mapper);
     assert(std::abs(input.moveAxis().x - 1.0F) < 0.01F);
 
     SDL_Event stickDown = smallTilt;
     stickDown.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTY;
     stickDown.gaxis.value = 32767;
-    (void)router.handleEvent(stickDown, input, editor, game, mapper);
+    (void)router.handleEvent(stickDown, input, game, mapper);
     assert(std::hypot(input.moveAxis().x, input.moveAxis().y) <= 1.001F);
 
     // Zero Y, move purely right by 200px (0.5s * 400px/s) and down by 100px: cursor -> (840, 460).
     stickDown.gaxis.value = 0;
-    (void)router.handleEvent(stickDown, input, editor, game, mapper);
-    router.update(0.5F, input, editor, game);
+    (void)router.handleEvent(stickDown, input, game, mapper);
+    router.update(0.5F, input, game);
     assert(std::abs(input.cursorViewport().x - 840.0F) < 0.1F);
 
     stickRight.gaxis.value = 0;
-    (void)router.handleEvent(stickRight, input, editor, game, mapper);
+    (void)router.handleEvent(stickRight, input, game, mapper);
     stickDown.gaxis.value = 32767;
-    (void)router.handleEvent(stickDown, input, editor, game, mapper);
-    router.update(0.25F, input, editor, game);
+    (void)router.handleEvent(stickDown, input, game, mapper);
+    router.update(0.25F, input, game);
     assert(std::abs(input.cursorViewport().y - 460.0F) < 0.1F);
 
     // Primary gamepad button (SOUTH) clicks at virtual cursor (840, 460) -> World (1750, 460).
@@ -539,14 +565,14 @@ void testMultiplatformInputAndRouting() {
     southPress.gbutton.which = 77;
     southPress.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
     southPress.gbutton.down = true;
-    (void)router.handleEvent(southPress, input, editor, game, mapper);
+    (void)router.handleEvent(southPress, input, game, mapper);
     assert(input.activeDevice() == InputDevice::gamepad);
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1750.0F) < 0.5F); // 840 + 910
     assert(std::abs(game.scene().player().destination().y - 460.0F) < 0.5F);
 
     // Virtual cursor clamps cleanly at viewport boundaries [0..1279] x [0..719].
-    router.update(10.0F, input, editor, game);
+    router.update(10.0F, input, game);
     assert(Renderer::containsViewportPoint(input.cursorViewport()));
     assert(std::abs(input.cursorViewport().y - 719.0F) < 0.01F);
 
@@ -554,7 +580,7 @@ void testMultiplatformInputAndRouting() {
     SDL_Event padRemoved{};
     padRemoved.type = SDL_EVENT_GAMEPAD_REMOVED;
     padRemoved.gdevice.which = 77;
-    (void)router.handleEvent(padRemoved, input, editor, game, mapper);
+    (void)router.handleEvent(padRemoved, input, game, mapper);
     assert(input.gamepadCount() == 0);
     assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
 
@@ -563,7 +589,7 @@ void testMultiplatformInputAndRouting() {
     f1Key.type = SDL_EVENT_KEY_DOWN;
     f1Key.key.key = SDLK_F1;
     f1Key.key.down = true;
-    assert(router.handleEvent(f1Key, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(f1Key, input, game, mapper).consumedByDebug);
     assert(editor.active() && editor.panelVisible());
 
     SDL_Event padBack{};
@@ -571,9 +597,9 @@ void testMultiplatformInputAndRouting() {
     padBack.gbutton.which = 77;
     padBack.gbutton.button = SDL_GAMEPAD_BUTTON_BACK;
     padBack.gbutton.down = true;
-    assert(router.handleEvent(padBack, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
     assert(!editor.active()); // Toggled closed by gamepad BACK.
-    assert(router.handleEvent(padBack, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
     assert(editor.active() && editor.panelVisible()); // Re-opened without typing "DEBUG"!
 
     const float initialFarSpeed = game.scene().room().playerFarSpeed;
@@ -581,36 +607,36 @@ void testMultiplatformInputAndRouting() {
 
     SDL_Event dpadRight = padBack;
     dpadRight.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
-    assert(router.handleEvent(dpadRight, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(dpadRight, input, game, mapper).consumedByDebug);
     assert(game.scene().room().playerFarSpeed > initialFarSpeed);
 
     SDL_Event leftShoulder = padBack;
     leftShoulder.gbutton.button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
-    assert(router.handleEvent(leftShoulder, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(leftShoulder, input, game, mapper).consumedByDebug);
     assert(std::abs(game.scene().room().playerFarSpeed - initialFarSpeed) < 0.01F);
 
     SDL_Event dpadDown = padBack;
     dpadDown.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_DOWN;
-    assert(router.handleEvent(dpadDown, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(dpadDown, input, game, mapper).consumedByDebug);
     assert(editor.selected() == 1);
 
     SDL_Event keyUp{};
     keyUp.type = SDL_EVENT_KEY_DOWN;
     keyUp.key.key = SDLK_UP;
     keyUp.key.down = true;
-    assert(router.handleEvent(keyUp, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(keyUp, input, game, mapper).consumedByDebug);
     assert(editor.selected() == 0);
 
     SDL_Event padWest = padBack;
     padWest.gbutton.button = SDL_GAMEPAD_BUTTON_WEST;
-    assert(router.handleEvent(padWest, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
     assert(editor.active() && !editor.panelVisible());
-    assert(router.handleEvent(padWest, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
     assert(editor.panelVisible());
 
     SDL_Event padEast = padBack;
     padEast.gbutton.button = SDL_GAMEPAD_BUTTON_EAST;
-    assert(router.handleEvent(padEast, input, editor, game, mapper).consumedByDebug);
+    assert(router.handleEvent(padEast, input, game, mapper).consumedByDebug);
     assert(!editor.active());
 
     // 5. Layer 3 ViewportUiConsumer priority & Layer 1 mobile/console lifecycle signals.
@@ -631,37 +657,37 @@ void testMultiplatformInputAndRouting() {
     SDL_Event modalClick = panelClick;
     modalClick.button.x = 440.0F + 300.0F * 2.0F; // Viewport (300, 300) inside modalBox
     modalClick.button.y = 300.0F * 2.0F;
-    routeResult = router.handleEvent(modalClick, input, editor, game, mapper);
+    routeResult = router.handleEvent(modalClick, input, game, mapper);
     assert(routeResult.consumedByUi);
     assert(!game.scene().player().moving());
 
-    routeResult = router.handleEvent(dpadDown, input, editor, game, mapper);
+    routeResult = router.handleEvent(dpadDown, input, game, mapper);
     assert(routeResult.consumedByUi && modalUi.navCount == 1);
     router.clearUiConsumers();
 
     // Lifecycle signals: background clears transient axes, device reset signals invalidation.
     stickRight.gaxis.value = 32767;
-    (void)router.handleEvent(stickRight, input, editor, game, mapper);
+    (void)router.handleEvent(stickRight, input, game, mapper);
     assert(input.moveAxis().x > 0.5F);
 
     SDL_Event bgEvent{};
     bgEvent.type = SDL_EVENT_WILL_ENTER_BACKGROUND;
-    routeResult = router.handleEvent(bgEvent, input, editor, game, mapper);
+    routeResult = router.handleEvent(bgEvent, input, game, mapper);
     assert(routeResult.enteredBackground);
     assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
 
     SDL_Event fgEvent{};
     fgEvent.type = SDL_EVENT_DID_ENTER_FOREGROUND;
-    assert(router.handleEvent(fgEvent, input, editor, game, mapper).enteredForeground);
+    assert(router.handleEvent(fgEvent, input, game, mapper).enteredForeground);
 
     SDL_Event resetEvent{};
     resetEvent.type = SDL_EVENT_RENDER_DEVICE_RESET;
-    assert(router.handleEvent(resetEvent, input, editor, game, mapper).invalidateGraphics);
+    assert(router.handleEvent(resetEvent, input, game, mapper).invalidateGraphics);
     renderer.invalidateTextures();
 
     SDL_Event quitEvent{};
     quitEvent.type = SDL_EVENT_QUIT;
-    assert(router.handleEvent(quitEvent, input, editor, game, mapper).quitRequested);
+    assert(router.handleEvent(quitEvent, input, game, mapper).quitRequested);
 
     renderer.shutdown();
     SDL_DestroyWindow(window);
@@ -707,7 +733,8 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
 
     // 2. Live edits in DebugEditor (set, move, undo, reset) MUST preserve SessionState!
     DebugEditor editor;
-    editor.setRoomDirectory(directory);
+    const RoomLibrary library = openLibrary(directory);
+    editor.setLibrary(library);
     assert(editor.onTextInput("DEBUG", game));
     assert(editor.active());
 
@@ -739,7 +766,7 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(game.session().hasFlag("red_box_unlocked"));
     assert(!game.scene().isObjectVisible("magenta_gem"));
     assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
-    editor.onKey(DebugKey::close, game);
+    editor.onToolAction(ToolAction::close, game);
 
     // 3. Headless SceneRenderer check: hidden magenta_gem is NOT drawn; showing it draws it again!
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
@@ -771,7 +798,7 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
 void testInteractionRulesFilesAndValidation(const std::filesystem::path& directory) {
     // 1. Validate shipped companion .rules files against shipped .room files.
     const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
-    const auto firstRoom = RoomFiles::load(roomsDir / "first.room");
+    const auto firstRoom = RoomFiles::load(roomsDir / "first.room", sharedPlayerArt());
     assert(firstRoom.room);
     const auto firstRules = InteractionFiles::loadOptionalForRoom(
             roomsDir / "first.room", &*firstRoom.room);
@@ -780,7 +807,7 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     assert(firstRules.interactions->hasRulesForObject("blue_box"));
     assert(firstRules.interactions->hasRulesForObject("red_box"));
 
-    const auto galleryRoom = RoomFiles::load(roomsDir / "gallery.room");
+    const auto galleryRoom = RoomFiles::load(roomsDir / "gallery.room", sharedPlayerArt());
     assert(galleryRoom.room);
     const auto galleryRules = InteractionFiles::loadOptionalForRoom(
             roomsDir / "gallery.room", &*galleryRoom.room);
@@ -860,7 +887,8 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     }
     Game editorGame(testRoom);
     DebugEditor editor;
-    editor.setRoomDirectory(directory);
+    const RoomLibrary library = openLibrary(directory);
+    editor.setLibrary(library);
     assert(editor.onTextInput("DEBUG", editorGame));
     command(editor, editorGame, "set player.far_speed 155");
     assert(editorGame.scene().room().playerFarSpeed == 155.0F);
@@ -945,7 +973,7 @@ void assertSameDialogues(const RoomDialogues& a, const RoomDialogues& b) {
 void testDialogueFiles(const std::filesystem::path& directory) {
     // 1. The shipped gallery.dlg loads against gallery.room and matches gallery.rules.
     const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
-    const auto gallery = RoomFiles::load(roomsDir / "gallery.room");
+    const auto gallery = RoomFiles::load(roomsDir / "gallery.room", sharedPlayerArt());
     assert(gallery.room);
     const auto shipped = DialogueFiles::loadOptionalForRoom(roomsDir / "gallery.room",
                                                             &*gallery.room);
@@ -958,7 +986,7 @@ void testDialogueFiles(const std::filesystem::path& directory) {
                                                                     &*gallery.room);
     assert(galleryRules.interactions);
     assert(dialogueReferencesError(*galleryRules.interactions, *shipped.dialogues).empty());
-    const auto firstRoom = RoomFiles::load(roomsDir / "first.room");
+    const auto firstRoom = RoomFiles::load(roomsDir / "first.room", sharedPlayerArt());
     const auto firstNone = DialogueFiles::loadOptionalForRoom(roomsDir / "first.room",
                                                               &*firstRoom.room);
     assert(firstNone.dialogues && firstNone.dialogues->empty() && firstNone.error.empty());
@@ -1069,6 +1097,7 @@ void testDialogueMenuInput() {
     InputRouter router;
     router.addUiConsumer(&menu);
     DebugEditor editor;
+    router.setToolConsumer(&editor);
 
     const auto press = [&](const SDL_FPoint point) {
         TranslatedInput input;
@@ -1076,12 +1105,12 @@ void testDialogueMenuInput() {
         input.primaryPressed = true;
         input.viewportPoint = point;
         input.insideViewport = true;
-        return router.routeTranslated(input, editor, game);
+        return router.routeTranslated(input, game);
     };
     const auto navigate = [&](const UiNavAction action) {
         TranslatedInput input;
         input.navAction = action;
-        return router.routeTranslated(input, editor, game);
+        return router.routeTranslated(input, game);
     };
     const auto center = [](const SDL_FRect rect) {
         return SDL_FPoint{rect.x + rect.w * 0.5F, rect.y + rect.h * 0.5F};
@@ -1127,7 +1156,7 @@ void testDialogueMenuInput() {
     hover.pointerMoved = true;
     hover.viewportPoint = {200.0F, 100.0F};
     hover.insideViewport = true;
-    (void)router.routeTranslated(hover, editor, game);
+    (void)router.routeTranslated(hover, game);
     assert(navigate(UiNavAction::down).consumedByUi);
     assert(navigate(UiNavAction::down).consumedByUi);
     assert(press({200.0F, 100.0F}).consumedByUi);
@@ -1136,7 +1165,7 @@ void testDialogueMenuInput() {
     // Hover follows the pointer and is consumed inside the panel.
     assert(game.startDialogue("menu"));
     hover.viewportPoint = center(DialogueMenu::optionRect(2, 3));
-    assert(router.routeTranslated(hover, editor, game).consumedByUi);
+    assert(router.routeTranslated(hover, game).consumedByUi);
     assert(menu.highlighted() == 2 && !game.scene().pointerInside());
 
     // Draws without a window of its own (software renderer) while open.
@@ -1147,7 +1176,7 @@ void testDialogueMenuInput() {
     assert(window);
     Renderer renderer;
     assert(renderer.initialize(window));
-    renderer.render(game, 1.0F, nullptr, nullptr, &menu);
+    renderer.render(game, 1.0F, nullptr, &menu);
     SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(pixels);
     if (const char* capture = std::getenv("POINTCLICK_DIALOGUE_CAPTURE")) {
@@ -1251,6 +1280,38 @@ void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
     assert(actionUsage("play_animation", findEffect("play_animation")->args)
            == "Use play_animation <objeto> <animacao>");
 }
+// The shipped layout: rooms inherit assets/actors/player.actor; RoomLibrary loads a room with
+// its .rules and .dlg in one validated bundle for both the game and the editor.
+void testRoomLibraryAndActors(const std::filesystem::path& directory) {
+    RoomLibrary library;
+    std::string error;
+    assert(library.open(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms", error));
+    assert(library.playerArt().size() == 5);
+    const auto first = library.loadBundle("first.room");
+    assert(first.bundle && first.error.empty());
+    assert(first.bundle->room.playerAnimations == library.playerArt()); // no copy in the room
+    assert(!first.bundle->interactions.empty());
+    const auto gallery = library.loadBundle("gallery.room");
+    assert(gallery.bundle && gallery.bundle->dialogues.findNode("mesa"));
+    assert(gallery.bundle->room.playerAnimations == library.playerArt());
+
+    // Saving through the library keeps the shared art out of the room file.
+    RoomLibrary scratch = openLibrary(directory);
+    assert(scratch.playerArt().empty()); // no actors/ folder next to a temp directory
+    assert(RoomFiles::save(directory / "art.room", first.bundle->room, error,
+                           &library.playerArt()));
+    std::ifstream saved(directory / "art.room");
+    const std::string text((std::istreambuf_iterator<char>(saved)), {});
+    assert(text.find("player.idle.") == std::string::npos);
+
+    assert(ActorFiles::parse("").error == "Ator sem animacoes");
+    assert(ActorFiles::parse("idle.file = a.png\nidle.file = b.png").error
+           == "Linha 2: Chave repetida: idle.file");
+    assert(ActorFiles::parse("idle.frames = 0").error
+           == "Animacao idle: Contagem de quadros invalida");
+    assert(ActorFiles::parse("idle.colour = 1").error
+           == "Linha 1: Chave ou valor invalido: idle.colour");
+}
 }
 
 int main() {
@@ -1267,5 +1328,6 @@ int main() {
     testActionCatalogRoundtrip(directory);
     testDialogueFiles(directory);
     testDialogueMenuInput();
+    testRoomLibraryAndActors(directory);
     std::filesystem::remove_all(directory);
 }

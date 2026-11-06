@@ -15,8 +15,9 @@ namespace EntityRenderer {
 void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                 const SceneObject& object, const AnimationPlayback* playback,
                 SDL_FPoint cameraOffset = {},
-                std::optional<bool> solidOverride = std::nullopt);
+                std::optional<bool> solidOverride = std::nullopt,
+                float interpolation = 1.0F);
 void drawPlayer(SpriteLibrary& sprites, const Room& room,
                 const Player& player, SDL_FPoint feet,
-                SDL_FPoint cameraOffset = {});
+                SDL_FPoint cameraOffset = {}, float interpolation = 1.0F);
 }

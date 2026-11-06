@@ -19,6 +19,8 @@ public:
     void setBlocked(int column, int row, bool blocked);
     void addObstacle(SDL_FRect bounds, float paddingX, float paddingY);
     [[nodiscard]] std::vector<SDL_FPoint> findPath(SDL_FPoint from, SDL_FPoint to) const;
+    // One flood fill from `from` picks the reachable cell nearest to `desired`, then one A*
+    // (plus a direct attempt when the desired cell itself is reachable).
     [[nodiscard]] std::vector<SDL_FPoint> findPathToNearestReachable(SDL_FPoint from,
                                                                   SDL_FPoint desired) const;
     [[nodiscard]] bool canStandAt(SDL_FPoint point) const;
@@ -26,12 +28,14 @@ public:
     [[nodiscard]] int rows() const;
 
 private:
-    struct Candidate {
-        float distanceSquared;
-        SDL_FPoint position;
-    };
+    static constexpr int kMoves[8][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1},
+                                         {-1, -1}, {-1, 1}, {1, -1}, {1, 1}};
 
     [[nodiscard]] bool walkable(int column, int row) const;
+    // Diagonal moves need both side cells free so the feet never cut a blocked corner.
+    [[nodiscard]] bool canStep(int column, int row, const int (&move)[2]) const;
+    // Where the feet stand inside a cell (its centre, clamped to the walkable band).
+    [[nodiscard]] SDL_FPoint cellPoint(int cell) const;
     [[nodiscard]] bool clearLine(SDL_FPoint from, SDL_FPoint to) const;
     [[nodiscard]] int cellAt(SDL_FPoint point) const;
 
@@ -43,5 +47,6 @@ private:
     float walkableTopY_ = 0.0F;
     mutable std::vector<float> cost_;
     mutable std::vector<int> parent_;
-    mutable std::vector<Candidate> candidates_;
+    mutable std::vector<std::uint8_t> reached_;
+    mutable std::vector<int> frontier_;
 };

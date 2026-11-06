@@ -1,4 +1,5 @@
 #include "content/RoomPresets.hpp"
+#include "game/Camera.hpp"
 #include "game/Game.hpp"
 #include "game/Navigation.hpp"
 
@@ -593,6 +594,49 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
 }
 }
 
+void testCameraTargetFor() {
+    Camera camera(2000.0F, 1000.0F);
+
+    // Foco no centro da viewport produz offset zero.
+    SDL_FPoint target = camera.targetFor({640.0F, 360.0F});
+    assert(near(target.x, 0.0F));
+    assert(near(target.y, 0.0F));
+
+    // Foco livre: o alvo centraliza o pé do jogador na viewport.
+    target = camera.targetFor({1000.0F, 600.0F});
+    assert(near(target.x, 360.0F));
+    assert(near(target.y, 240.0F));
+
+    // Limites: offset nunca sai de [0, room - World].
+    target = camera.targetFor({1900.0F, 900.0F});
+    assert(near(target.x, 720.0F));
+    assert(near(target.y, 280.0F));
+    target = camera.targetFor({-500.0F, -500.0F});
+    assert(near(target.x, 0.0F));
+    assert(near(target.y, 0.0F));
+
+    // targetFor é const: não altera a posição atual da câmera.
+    camera.snapTo({1000.0F, 600.0F});
+    const SDL_FPoint before = camera.position();
+    (void)camera.targetFor({100.0F, 100.0F});
+    assert(near(camera.position().x, before.x));
+    assert(near(camera.position().y, before.y));
+
+    // Foco não finito devolve a posição atual, sem propagar NaN.
+    const SDL_FPoint nanTarget = camera.targetFor({std::nanf(""), 10.0F});
+    assert(near(nanTarget.x, camera.position().x));
+    assert(near(nanTarget.y, camera.position().y));
+    const SDL_FPoint infTarget = camera.targetFor({10.0F, INFINITY});
+    assert(near(infTarget.x, camera.position().x));
+    assert(near(infTarget.y, camera.position().y));
+
+    // Sala menor que a viewport: a câmera fica travada em (0, 0).
+    Camera small(100.0F, 100.0F);
+    target = small.targetFor({1200.0F, 700.0F});
+    assert(near(target.x, 0.0F));
+    assert(near(target.y, 0.0F));
+}
+
 int main() {
     testMovementAndRetargeting();
     testRoomPerspective();
@@ -604,4 +648,5 @@ int main() {
     testWalkToInteractAndDepthPicking();
     testItemPickupAndHiddenCollision();
     testConditionalNpcPuzzleAndRoomPersistence();
+    testCameraTargetFor();
 }

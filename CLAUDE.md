@@ -34,3 +34,14 @@ O preset usa Ninja; se não estiver no `PATH`, use a build do CLion em `cmake-bu
 Para rodar com os assets da raiz: `pointclick --rooms assets/rooms`.
 
 Antes de concluir: checklist da skill (seção 12) e todos os testes passando.
+
+## Delegacao ao Argon (agy)
+
+Voce e o arquiteto/revisor. Para economizar tokens, trabalho volumoso e bem definido vai para o Argon via o subagente `argon-delegate` (que usa `scripts/argon.sh`). Config: `ARGON_MODEL` (veja `agy models`), `ARGON_EFFORT`, `ARGON_TIMEOUT`.
+
+**Delegue** somente se a tarefa tocar 3+ arquivos ou for em lote: investigacao de modulos, refatoracao mecanica, testes de unidade/regressao, documentacao, implementacao de tarefa ja especificada.
+**Nao delegue**: decisoes de camada/arquitetura, mudanca de formato `.room`/`.rules`, catalogos (`RoomParameters`, catalogo de acoes), depuracao complexa, tarefas pequenas (fazer direto e mais barato que briefing + revisao).
+
+Fluxo: 1) planejar e dividir; 2) briefing autocontido com escopo, arquivos proibidos e criterios de aceite; 3) cada tarefa roda em branch `argon/<nome>` num worktree proprio (o Argon so ve commits, nao mudancas locais); 4) revisar por `git diff --stat` e leitura apenas dos trechos criticos, nunca o diff inteiro; 5) rodar build e testes voce mesmo; 6) pedir correcao com novo briefing curto ou corrigir direto se for pequeno; 7) integrar (merge) so apos aprovar.
+
+Nunca confie cegamente no relatorio do Argon. Nunca integre sem rodar os testes.

@@ -39,6 +39,12 @@ SDL_FPoint Room::clampDestination(const SDL_FPoint point) const {
     return {std::clamp(point.x, halfWidth, width - halfWidth), y};
 }
 
+const SceneObject* Room::findObject(const std::string_view objectId) const {
+    const auto found = std::find_if(scenery.begin(), scenery.end(),
+                                    [&](const SceneObject& object) { return object.id == objectId; });
+    return found == scenery.end() ? nullptr : &(*found);
+}
+
 std::string Room::validationError() const {
     if (!validIdentifier(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
     for (const auto& parameter : roomParameters()) {

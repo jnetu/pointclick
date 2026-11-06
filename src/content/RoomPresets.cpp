@@ -37,47 +37,47 @@ RoomInteractions RoomPresets::firstRoomInteractions() {
     return RoomInteractions{{
         {
             .trigger = InteractionTrigger::interact("blue_box"),
-            .conditions = {InteractionCondition::flagNotSet("found_brass_key")},
+            .conditions = {InteractionCondition::make("flag_not_set", {"found_brass_key"})},
             .effects = {
-                InteractionEffect::setFlag("found_brass_key"),
-                InteractionEffect::giveItem("brass_key"),
-                InteractionEffect::say("Encontrei uma chave de latao escondida na caixa azul!"),
+                InteractionEffect::make("set_flag", {"found_brass_key"}),
+                InteractionEffect::make("give_item", {"brass_key"}),
+                InteractionEffect::make("say", {"Encontrei uma chave de latao escondida na caixa azul!"}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("blue_box"),
             .conditions = {},
-            .effects = {InteractionEffect::say("A caixa azul ja foi vasculhada.")},
+            .effects = {InteractionEffect::make("say", {"A caixa azul ja foi vasculhada."})},
         },
         {
             .trigger = InteractionTrigger::useItem("brass_key", "red_box"),
-            .conditions = {InteractionCondition::flagNotSet("red_box_unlocked")},
+            .conditions = {InteractionCondition::make("flag_not_set", {"red_box_unlocked"})},
             .effects = {
-                InteractionEffect::takeItem("brass_key"),
-                InteractionEffect::setFlag("red_box_unlocked"),
-                InteractionEffect::setSolid("red_box", false),
-                InteractionEffect::say("A chave destravou a caixa vermelha! O caminho esta livre."),
+                InteractionEffect::make("take_item", {"brass_key"}),
+                InteractionEffect::make("set_flag", {"red_box_unlocked"}),
+                InteractionEffect::make("set_solid", {"red_box", "0"}),
+                InteractionEffect::make("say", {"A chave destravou a caixa vermelha! O caminho esta livre."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("red_box"),
-            .conditions = {InteractionCondition::flagSet("red_box_unlocked")},
-            .effects = {InteractionEffect::say("A trava foi aberta. A caixa nao bloqueia mais a passagem.")},
+            .conditions = {InteractionCondition::make("flag_set", {"red_box_unlocked"})},
+            .effects = {InteractionEffect::make("say", {"A trava foi aberta. A caixa nao bloqueia mais a passagem."})},
         },
         {
             .trigger = InteractionTrigger::interact("red_box"),
-            .conditions = {InteractionCondition::hasItem("brass_key")},
+            .conditions = {InteractionCondition::make("has_item", {"brass_key"})},
             .effects = {
-                InteractionEffect::takeItem("brass_key"),
-                InteractionEffect::setFlag("red_box_unlocked"),
-                InteractionEffect::setSolid("red_box", false),
-                InteractionEffect::say("Usei a chave de latao e liberei a passagem da caixa vermelha!"),
+                InteractionEffect::make("take_item", {"brass_key"}),
+                InteractionEffect::make("set_flag", {"red_box_unlocked"}),
+                InteractionEffect::make("set_solid", {"red_box", "0"}),
+                InteractionEffect::make("say", {"Usei a chave de latao e liberei a passagem da caixa vermelha!"}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("red_box"),
             .conditions = {},
-            .effects = {InteractionEffect::say("Esta pesada e trancada no chao. Talvez haja uma chave por perto.")},
+            .effects = {InteractionEffect::make("say", {"Esta pesada e trancada no chao. Talvez haja uma chave por perto."})},
         },
     }};
 }

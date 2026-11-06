@@ -8,16 +8,11 @@
 #include <algorithm>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <utility>
 
 namespace {
 constexpr float kMaxInteractionReachPixels = static_cast<float>(Navigation::cellSize) * 3.0F;
-
-const SceneObject* findSceneObject(const Room& room, const std::string_view objectId) {
-    const auto found = std::find_if(room.scenery.begin(), room.scenery.end(),
-                                    [&](const SceneObject& obj) { return obj.id == objectId; });
-    return found == room.scenery.end() ? nullptr : &(*found);
-}
 
 SDL_FRect paddedObstacleRect(const Room& room, const SceneObject& object) {
     const SDL_FRect base = effectiveCollisionFootprint(object);
@@ -49,87 +44,41 @@ bool InteractionTrigger::matches(const InteractionTrigger& other) const noexcept
     return kind == InteractionTriggerKind::interact || itemId == other.itemId;
 }
 
-InteractionCondition InteractionCondition::flagSet(std::string flag) {
-    return {InteractionConditionKind::flagSet, std::move(flag)};
-}
-
-InteractionCondition InteractionCondition::flagNotSet(std::string flag) {
-    return {InteractionConditionKind::flagNotSet, std::move(flag)};
-}
-
-InteractionCondition InteractionCondition::hasItem(std::string itemId) {
-    return {InteractionConditionKind::hasItem, std::move(itemId)};
-}
-
-InteractionCondition InteractionCondition::lacksItem(std::string itemId) {
-    return {InteractionConditionKind::lacksItem, std::move(itemId)};
-}
-
-InteractionCondition InteractionCondition::objectVisible(std::string objectId) {
-    return {InteractionConditionKind::objectVisible, std::move(objectId)};
-}
-
-InteractionCondition InteractionCondition::objectHidden(std::string objectId) {
-    return {InteractionConditionKind::objectHidden, std::move(objectId)};
+InteractionCondition InteractionCondition::make(const std::string_view keyword,
+                                                std::vector<std::string> args) {
+    const ConditionDescriptor* condition = findCondition(keyword);
+    if (!condition) {
+        throw std::invalid_argument("Condicao desconhecida: " + std::string(keyword));
+    }
+    return {condition, std::move(args)};
 }
 
 bool InteractionCondition::evaluate(const SessionState& session,
                                     const std::string_view roomId) const {
-    switch (kind) {
-    case InteractionConditionKind::flagSet:
-        return session.hasFlag(targetId);
-    case InteractionConditionKind::flagNotSet:
-        return !session.hasFlag(targetId);
-    case InteractionConditionKind::hasItem:
-        return session.hasItem(targetId);
-    case InteractionConditionKind::lacksItem:
-        return !session.hasItem(targetId);
-    case InteractionConditionKind::objectVisible:
-        return session.isObjectVisible(roomId, targetId);
-    case InteractionConditionKind::objectHidden:
-        return !session.isObjectVisible(roomId, targetId);
+    return condition && condition->evaluate(args, session, roomId);
+}
+
+std::string InteractionCondition::validationError(const Room* room) const {
+    if (!condition) return "Condicao sem tipo";
+    return argumentsError(condition->keyword, condition->args, args, room);
+}
+
+InteractionEffect InteractionEffect::make(const std::string_view keyword,
+                                          std::vector<std::string> args) {
+    const EffectDescriptor* effect = findEffect(keyword);
+    if (!effect) {
+        throw std::invalid_argument("Efeito desconhecido: " + std::string(keyword));
     }
-    return false;
+    return {effect, std::move(args)};
 }
 
-InteractionEffect InteractionEffect::say(std::string text) {
-    return {InteractionEffectKind::say, {}, std::move(text), false};
+void InteractionEffect::run(EffectContext& context) const {
+    if (effect) effect->run(args, context);
 }
 
-InteractionEffect InteractionEffect::setFlag(std::string flag) {
-    return {InteractionEffectKind::setFlag, std::move(flag), {}, false};
-}
-
-InteractionEffect InteractionEffect::clearFlag(std::string flag) {
-    return {InteractionEffectKind::clearFlag, std::move(flag), {}, false};
-}
-
-InteractionEffect InteractionEffect::giveItem(std::string itemId) {
-    return {InteractionEffectKind::giveItem, std::move(itemId), {}, false};
-}
-
-InteractionEffect InteractionEffect::takeItem(std::string itemId) {
-    return {InteractionEffectKind::takeItem, std::move(itemId), {}, false};
-}
-
-InteractionEffect InteractionEffect::hideObject(std::string objectId) {
-    return {InteractionEffectKind::hideObject, std::move(objectId), {}, false};
-}
-
-InteractionEffect InteractionEffect::showObject(std::string objectId) {
-    return {InteractionEffectKind::showObject, std::move(objectId), {}, false};
-}
-
-InteractionEffect InteractionEffect::setSolid(std::string objectId, const bool solid) {
-    return {InteractionEffectKind::setSolid, std::move(objectId), {}, solid};
-}
-
-InteractionEffect InteractionEffect::playAnimation(std::string objectId, std::string animation) {
-    return {InteractionEffectKind::playAnimation, std::move(objectId), std::move(animation), false};
-}
-
-InteractionEffect InteractionEffect::changeRoom(std::string roomId) {
-    return {InteractionEffectKind::changeRoom, std::move(roomId), {}, false};
+std::string InteractionEffect::validationError(const Room* room) const {
+    if (!effect) return "Efeito sem tipo";
+    return effectArgumentsError(*effect, args, room);
 }
 
 std::string InteractionRule::validationError(const Room* room) const {
@@ -142,66 +91,17 @@ std::string InteractionRule::validationError(const Room* room) const {
     if (trigger.kind == InteractionTriggerKind::interact && !trigger.itemId.empty()) {
         return "Gatilho interact nao aceita item";
     }
-    if (room && !findSceneObject(*room, trigger.objectId)) {
+    if (room && !room->findObject(trigger.objectId)) {
         return "Objeto desconhecido na sala: " + trigger.objectId;
     }
-
     for (const InteractionCondition& condition : conditions) {
-        if (!validIdentifier(condition.targetId)) {
-            return "Identificador invalido na condicao";
-        }
-        if (room && (condition.kind == InteractionConditionKind::objectVisible
-                     || condition.kind == InteractionConditionKind::objectHidden)
-            && !findSceneObject(*room, condition.targetId)) {
-            return "Objeto desconhecido na sala: " + condition.targetId;
-        }
+        if (std::string error = condition.validationError(room); !error.empty()) return error;
     }
-
     if (effects.empty()) {
         return "Regra sem efeitos";
     }
-
     for (const InteractionEffect& effect : effects) {
-        switch (effect.kind) {
-        case InteractionEffectKind::say:
-            if (effect.value.empty()) {
-                return "Texto de fala vazio";
-            }
-            break;
-        case InteractionEffectKind::setFlag:
-        case InteractionEffectKind::clearFlag:
-        case InteractionEffectKind::giveItem:
-        case InteractionEffectKind::takeItem:
-        case InteractionEffectKind::changeRoom:
-            if (!validIdentifier(effect.targetId)) {
-                return "Identificador invalido no efeito";
-            }
-            break;
-        case InteractionEffectKind::hideObject:
-        case InteractionEffectKind::showObject:
-        case InteractionEffectKind::setSolid:
-            if (!validIdentifier(effect.targetId)) {
-                return "Identificador de objeto invalido no efeito";
-            }
-            if (room && !findSceneObject(*room, effect.targetId)) {
-                return "Objeto desconhecido na sala: " + effect.targetId;
-            }
-            break;
-        case InteractionEffectKind::playAnimation:
-            if (!validIdentifier(effect.targetId) || !validIdentifier(effect.value)) {
-                return "Identificador invalido em play_animation";
-            }
-            if (room) {
-                const SceneObject* target = findSceneObject(*room, effect.targetId);
-                if (!target) {
-                    return "Objeto desconhecido na sala: " + effect.targetId;
-                }
-                if (!findAnimation(target->animations, effect.value)) {
-                    return "Animacao desconhecida '" + effect.value + "' no objeto: " + effect.targetId;
-                }
-            }
-            break;
-        }
+        if (std::string error = effect.validationError(room); !error.empty()) return error;
     }
     return {};
 }
@@ -312,46 +212,10 @@ InteractionOutcome applyInteraction(const RoomInteractions& interactions,
     }
 
     outcome.matched = true;
+    EffectContext context{session, roomId, outcome.events};
     for (const InteractionEffect& effect : rule->effects) {
-        switch (effect.kind) {
-        case InteractionEffectKind::say:
-            if (!outcome.spokenText) {
-                outcome.spokenText = effect.value;
-            } else {
-                *outcome.spokenText += "\n" + effect.value;
-            }
-            break;
-        case InteractionEffectKind::setFlag:
-            session.setFlag(effect.targetId);
-            break;
-        case InteractionEffectKind::clearFlag:
-            session.clearFlag(effect.targetId);
-            break;
-        case InteractionEffectKind::giveItem:
-            session.addItem(effect.targetId);
-            break;
-        case InteractionEffectKind::takeItem:
-            session.removeItem(effect.targetId);
-            break;
-        case InteractionEffectKind::hideObject:
-            session.setObjectVisible(roomId, effect.targetId, false);
-            outcome.navigationChanged = true;
-            break;
-        case InteractionEffectKind::showObject:
-            session.setObjectVisible(roomId, effect.targetId, true);
-            outcome.navigationChanged = true;
-            break;
-        case InteractionEffectKind::setSolid:
-            session.setObjectSolid(roomId, effect.targetId, effect.boolValue);
-            outcome.navigationChanged = true;
-            break;
-        case InteractionEffectKind::playAnimation:
-            outcome.animations.push_back({effect.targetId, effect.value});
-            break;
-        case InteractionEffectKind::changeRoom:
-            outcome.targetRoomId = effect.targetId;
-            break;
-        }
+        effect.run(context);
     }
+    outcome.navigationChanged = context.navigationChanged;
     return outcome;
 }

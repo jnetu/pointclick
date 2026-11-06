@@ -297,25 +297,25 @@ void testWalkToInteractAndDepthPicking() {
             .trigger = InteractionTrigger::interact("back_statue"),
             .conditions = {},
             .effects = {
-                InteractionEffect::setFlag("inspected_statue"),
-                InteractionEffect::say("Uma estatua antiga."),
+                InteractionEffect::make("set_flag", {"inspected_statue"}),
+                InteractionEffect::make("say", {"Uma estatua antiga."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("front_banner"),
-            .conditions = {InteractionCondition::flagNotSet("took_banner")},
+            .conditions = {InteractionCondition::make("flag_not_set", {"took_banner"})},
             .effects = {
-                InteractionEffect::setFlag("took_banner"),
-                InteractionEffect::hideObject("front_banner"),
-                InteractionEffect::say("Retirei o estandarte da frente."),
+                InteractionEffect::make("set_flag", {"took_banner"}),
+                InteractionEffect::make("hide_object", {"front_banner"}),
+                InteractionEffect::make("say", {"Retirei o estandarte da frente."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("wall_painting"),
             .conditions = {},
             .effects = {
-                InteractionEffect::setFlag("saw_painting"),
-                InteractionEffect::say("Um retrato na parede."),
+                InteractionEffect::make("set_flag", {"saw_painting"}),
+                InteractionEffect::make("say", {"Um retrato na parede."}),
             },
         },
     }});
@@ -403,11 +403,11 @@ void testItemPickupAndHiddenCollision() {
     game.setInteractions(RoomInteractions{{
         {
             .trigger = InteractionTrigger::interact("supply_crate"),
-            .conditions = {InteractionCondition::objectVisible("supply_crate")},
+            .conditions = {InteractionCondition::make("object_visible", {"supply_crate"})},
             .effects = {
-                InteractionEffect::giveItem("crowbar"),
-                InteractionEffect::hideObject("supply_crate"),
-                InteractionEffect::say("Peguei o pe de cabra e recolhi a caixa."),
+                InteractionEffect::make("give_item", {"crowbar"}),
+                InteractionEffect::make("hide_object", {"supply_crate"}),
+                InteractionEffect::make("say", {"Peguei o pe de cabra e recolhi a caixa."}),
             },
         },
     }});
@@ -462,59 +462,59 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     game.setInteractions(RoomInteractions{{
         {
             .trigger = InteractionTrigger::interact("silver_key"),
-            .conditions = {InteractionCondition::objectVisible("silver_key")},
+            .conditions = {InteractionCondition::make("object_visible", {"silver_key"})},
             .effects = {
-                InteractionEffect::giveItem("silver_key"),
-                InteractionEffect::hideObject("silver_key"),
-                InteractionEffect::say("Peguei a chave prateada."),
+                InteractionEffect::make("give_item", {"silver_key"}),
+                InteractionEffect::make("hide_object", {"silver_key"}),
+                InteractionEffect::make("say", {"Peguei a chave prateada."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("guard"),
-            .conditions = {InteractionCondition::flagSet("gate_open")},
-            .effects = {InteractionEffect::say("O portao esta aberto. Boa sorte la dentro.")},
+            .conditions = {InteractionCondition::make("flag_set", {"gate_open"})},
+            .effects = {InteractionEffect::make("say", {"O portao esta aberto. Boa sorte la dentro."})},
         },
         {
             .trigger = InteractionTrigger::interact("guard"),
             .conditions = {
-                InteractionCondition::hasItem("silver_key"),
-                InteractionCondition::flagSet("talked_to_guard"),
+                InteractionCondition::make("has_item", {"silver_key"}),
+                InteractionCondition::make("flag_set", {"talked_to_guard"}),
             },
             .effects = {
-                InteractionEffect::takeItem("silver_key"),
-                InteractionEffect::setFlag("gate_open"),
-                InteractionEffect::setSolid("iron_gate", false),
-                InteractionEffect::playAnimation("iron_gate", "open"),
-                InteractionEffect::say("Essa e a chave! Vou abrir o portao."),
+                InteractionEffect::make("take_item", {"silver_key"}),
+                InteractionEffect::make("set_flag", {"gate_open"}),
+                InteractionEffect::make("set_solid", {"iron_gate", "0"}),
+                InteractionEffect::make("play_animation", {"iron_gate", "open"}),
+                InteractionEffect::make("say", {"Essa e a chave! Vou abrir o portao."}),
             },
         },
         {
             .trigger = InteractionTrigger::useItem("silver_key", "iron_gate"),
-            .conditions = {InteractionCondition::flagNotSet("gate_open")},
+            .conditions = {InteractionCondition::make("flag_not_set", {"gate_open"})},
             .effects = {
-                InteractionEffect::takeItem("silver_key"),
-                InteractionEffect::setFlag("gate_open"),
-                InteractionEffect::setSolid("iron_gate", false),
-                InteractionEffect::playAnimation("iron_gate", "open"),
-                InteractionEffect::say("Abri o portao com a chave."),
+                InteractionEffect::make("take_item", {"silver_key"}),
+                InteractionEffect::make("set_flag", {"gate_open"}),
+                InteractionEffect::make("set_solid", {"iron_gate", "0"}),
+                InteractionEffect::make("play_animation", {"iron_gate", "open"}),
+                InteractionEffect::make("say", {"Abri o portao com a chave."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("guard"),
-            .conditions = {InteractionCondition::lacksItem("silver_key")},
+            .conditions = {InteractionCondition::make("lacks_item", {"silver_key"})},
             .effects = {
-                InteractionEffect::setFlag("talked_to_guard"),
-                InteractionEffect::say("Sem a chave prateada ninguem passa."),
+                InteractionEffect::make("set_flag", {"talked_to_guard"}),
+                InteractionEffect::make("say", {"Sem a chave prateada ninguem passa."}),
             },
         },
         {
             .trigger = InteractionTrigger::interact("relic"),
             .conditions = {},
             .effects = {
-                InteractionEffect::giveItem("relic"),
-                InteractionEffect::hideObject("relic"),
-                InteractionEffect::changeRoom("sanctuary"),
-                InteractionEffect::say("Encontrei a reliquia!"),
+                InteractionEffect::make("give_item", {"relic"}),
+                InteractionEffect::make("hide_object", {"relic"}),
+                InteractionEffect::make("change_room", {"sanctuary"}),
+                InteractionEffect::make("say", {"Encontrei a reliquia!"}),
             },
         },
     }});

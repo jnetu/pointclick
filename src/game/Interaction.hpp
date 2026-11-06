@@ -1,8 +1,9 @@
 #pragma once
 
+#include "game/ActionCatalog.hpp"
+
 #include <SDL3/SDL_rect.h>
 
-#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -26,59 +27,28 @@ struct InteractionTrigger {
     [[nodiscard]] bool matches(const InteractionTrigger& other) const noexcept;
 };
 
-enum class InteractionConditionKind {
-    flagSet,
-    flagNotSet,
-    hasItem,
-    lacksItem,
-    objectVisible,
-    objectHidden,
-};
-
+// A condition or effect is one catalog entry (game/ActionCatalog) plus its typed arguments,
+// stored as text in signature order. Adding vocabulary never touches these structs.
 struct InteractionCondition {
-    InteractionConditionKind kind = InteractionConditionKind::flagSet;
-    std::string targetId;
+    const ConditionDescriptor* condition = nullptr;
+    std::vector<std::string> args;
 
-    [[nodiscard]] static InteractionCondition flagSet(std::string flag);
-    [[nodiscard]] static InteractionCondition flagNotSet(std::string flag);
-    [[nodiscard]] static InteractionCondition hasItem(std::string itemId);
-    [[nodiscard]] static InteractionCondition lacksItem(std::string itemId);
-    [[nodiscard]] static InteractionCondition objectVisible(std::string objectId);
-    [[nodiscard]] static InteractionCondition objectHidden(std::string objectId);
-
+    // Throws std::invalid_argument for unknown keywords (authoring bug in C++ presets/tests).
+    [[nodiscard]] static InteractionCondition make(std::string_view keyword,
+                                                   std::vector<std::string> args);
     [[nodiscard]] bool evaluate(const SessionState& session, std::string_view roomId) const;
-};
-
-enum class InteractionEffectKind {
-    say,
-    setFlag,
-    clearFlag,
-    giveItem,
-    takeItem,
-    hideObject,
-    showObject,
-    setSolid,
-    playAnimation,
-    changeRoom,
+    [[nodiscard]] std::string validationError(const Room* room) const;
 };
 
 struct InteractionEffect {
-    InteractionEffectKind kind = InteractionEffectKind::say;
-    std::string targetId;
-    std::string value;
-    bool boolValue = false;
+    const EffectDescriptor* effect = nullptr;
+    std::vector<std::string> args;
 
-    [[nodiscard]] static InteractionEffect say(std::string text);
-    [[nodiscard]] static InteractionEffect setFlag(std::string flag);
-    [[nodiscard]] static InteractionEffect clearFlag(std::string flag);
-    [[nodiscard]] static InteractionEffect giveItem(std::string itemId);
-    [[nodiscard]] static InteractionEffect takeItem(std::string itemId);
-    [[nodiscard]] static InteractionEffect hideObject(std::string objectId);
-    [[nodiscard]] static InteractionEffect showObject(std::string objectId);
-    [[nodiscard]] static InteractionEffect setSolid(std::string objectId, bool solid);
-    [[nodiscard]] static InteractionEffect playAnimation(std::string objectId,
-                                                         std::string animation);
-    [[nodiscard]] static InteractionEffect changeRoom(std::string roomId);
+    // Throws std::invalid_argument for unknown keywords (authoring bug in C++ presets/tests).
+    [[nodiscard]] static InteractionEffect make(std::string_view keyword,
+                                                std::vector<std::string> args);
+    void run(EffectContext& context) const;
+    [[nodiscard]] std::string validationError(const Room* room) const;
 };
 
 struct InteractionRule {
@@ -110,17 +80,10 @@ struct PendingInteraction {
     }
 };
 
-struct ObjectAnimationRequest {
-    std::string objectId;
-    std::string animation;
-};
-
 struct InteractionOutcome {
     bool matched = false;
     bool navigationChanged = false;
-    std::optional<std::string> spokenText;
-    std::vector<ObjectAnimationRequest> animations;
-    std::optional<std::string> targetRoomId;
+    std::vector<InteractionEvent> events; // In effect order.
 };
 
 [[nodiscard]] SDL_FRect effectiveCollisionFootprint(const SceneObject& object);

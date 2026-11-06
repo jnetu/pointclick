@@ -15,6 +15,7 @@ include(cmake/Dependencies.cmake)
 
 # Shared game code: the executable and the tests use the same implementation.
 add_library(pointclick_core STATIC
+        src/game/ActionCatalog.cpp
         src/game/Animation.cpp
         src/game/Camera.cpp
         src/game/FloatingText.cpp

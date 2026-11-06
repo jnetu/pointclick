@@ -297,6 +297,12 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
 | **Efeito** | `change_room <roomId>` | Solicita transição para `<roomId>.room` |
 
+A tabela acima espelha o catálogo de ações em `src/game/ActionCatalog.cpp`. Os
+argumentos são validados pelo tipo: identificadores só aceitam letras, números, `_`
+e `-`; `<objeto>` precisa existir na sala; `<animacao>` precisa existir no objeto;
+`"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`. Um erro aponta a linha
+e a forma esperada (por exemplo, `Linha 4: Use set_solid <objeto> <0|1>`).
+
 ### Exemplo prático: chave coletável, NPC condicional e porta trancada
 
 ```ini

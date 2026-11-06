@@ -1,6 +1,7 @@
 #include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
+#include "game/ActionCatalog.hpp"
 #include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
@@ -14,6 +15,8 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <set>
+#include <stdexcept>
 
 namespace {
 void command(DebugEditor& editor, Game& game, const std::string_view text) {
@@ -673,11 +676,11 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     RoomInteractions rules = RoomPresets::firstRoomInteractions();
     rules.rules.push_back({
         .trigger = InteractionTrigger::interact("magenta_gem"),
-        .conditions = {InteractionCondition::objectVisible("magenta_gem")},
+        .conditions = {InteractionCondition::make("object_visible", {"magenta_gem"})},
         .effects = {
-            InteractionEffect::giveItem("magenta_gem"),
-            InteractionEffect::hideObject("magenta_gem"),
-            InteractionEffect::say("Peguei a gema magenta!"),
+            InteractionEffect::make("give_item", {"magenta_gem"}),
+            InteractionEffect::make("hide_object", {"magenta_gem"}),
+            InteractionEffect::make("say", {"Peguei a gema magenta!"}),
         },
     });
     game.setInteractions(rules);
@@ -832,14 +835,14 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     const auto parsed = InteractionFiles::parse(authoredRulesText, &testRoom);
     assert(parsed.interactions && parsed.error.empty());
     assert(parsed.interactions->rules.size() == 3);
-    assert(parsed.interactions->rules[0].effects[2].value == "Item #1: \"ficha dourada\" encontrada!");
+    assert(parsed.interactions->rules[0].effects[2].args[0] == "Item #1: \"ficha dourada\" encontrada!");
 
     const auto rulesPath = directory / "roundtrip.rules";
     assert(InteractionFiles::save(rulesPath, *parsed.interactions, saveError, &testRoom));
     const auto reloaded = InteractionFiles::load(rulesPath, &testRoom);
     assert(reloaded.interactions && reloaded.error.empty());
     assert(reloaded.interactions->rules.size() == 3);
-    assert(reloaded.interactions->rules[0].effects[2].value == "Item #1: \"ficha dourada\" encontrada!");
+    assert(reloaded.interactions->rules[0].effects[2].args[0] == "Item #1: \"ficha dourada\" encontrada!");
     assert(reloaded.interactions->rules[1].trigger.kind == InteractionTriggerKind::useItem);
     assert(reloaded.interactions->rules[1].trigger.itemId == "golden_token");
     assert(reloaded.interactions->rules[1].trigger.objectId == "red_box");
@@ -885,7 +888,7 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
         {"[interact blue_box]\nsay sem_aspas",
          "Linha 2: Use say \"texto\""},
         {"[interact blue_box]\nsay \"\"",
-         "Linha 2: Texto de fala vazio"},
+         "Linha 2: Texto vazio em say"},
         {"[interact blue_box]\nsay \"ok\" lixo",
          "Linha 2: Caracteres extras apos aspas em say"},
         {"[interact blue_box]\nset_solid red_box 2",
@@ -908,6 +911,91 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
         assert(bad.error == testCase.expectedError);
     }
 }
+
+// Every catalog entry, present and future, must survive parse -> save -> load with its typed
+// arguments, so a new effect or condition is covered without writing a new test.
+std::string sampleArgument(const ArgType type) {
+    switch (type) {
+    case ArgType::objectId: return "red_box";
+    case ArgType::animation: return "open";
+    case ArgType::text: return "Linha \"um\" #1\nfim";
+    case ArgType::boolean: return "1";
+    case ArgType::itemId:
+    case ArgType::flagId:
+    case ArgType::roomId: return "sample_id";
+    }
+    return {};
+}
+
+template <typename Descriptor>
+std::vector<std::string> sampleArguments(const Descriptor& descriptor) {
+    std::vector<std::string> args;
+    for (const ArgType type : descriptor.args.view()) args.push_back(sampleArgument(type));
+    return args;
+}
+
+void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
+    Room room = RoomPresets::firstRoom();
+    room.scenery[1].animations["open"] = SpriteClip{.file = "red_open.png"};
+
+    std::set<std::string_view> keywords;
+    InteractionRule rule{.trigger = InteractionTrigger::interact("blue_box")};
+    for (const ConditionDescriptor& condition : conditionCatalog()) {
+        assert(!condition.description.empty() && condition.evaluate);
+        assert(keywords.insert(condition.keyword).second);
+        rule.conditions.push_back(
+                InteractionCondition::make(condition.keyword, sampleArguments(condition)));
+    }
+    for (const EffectDescriptor& effect : effectCatalog()) {
+        assert(!effect.description.empty() && effect.run);
+        assert(keywords.insert(effect.keyword).second);
+        rule.effects.push_back(InteractionEffect::make(effect.keyword, sampleArguments(effect)));
+    }
+    RoomInteractions authored{{rule}};
+    assert(authored.validationError(&room).empty());
+
+    const auto path = directory / "catalog.rules";
+    std::string error;
+    assert(InteractionFiles::save(path, authored, error, &room));
+    const auto loaded = InteractionFiles::load(path, &room);
+    assert(loaded.interactions && loaded.error.empty());
+    const InteractionRule& back = loaded.interactions->rules.at(0);
+    assert(back.conditions.size() == rule.conditions.size());
+    assert(back.effects.size() == rule.effects.size());
+    for (std::size_t i = 0; i < rule.conditions.size(); ++i) {
+        assert(back.conditions[i].condition == rule.conditions[i].condition);
+        assert(back.conditions[i].args == rule.conditions[i].args);
+    }
+    for (std::size_t i = 0; i < rule.effects.size(); ++i) {
+        assert(back.effects[i].effect == rule.effects[i].effect);
+        assert(back.effects[i].args == rule.effects[i].args);
+    }
+
+    // Typed validation applies to rules built in C++ as well as to parsed files.
+    bool threw = false;
+    try {
+        (void)InteractionEffect::make("teleport", {"x"});
+    } catch (const std::invalid_argument&) {
+        threw = true;
+    }
+    assert(threw);
+    const auto invalid = [&](InteractionEffect effect) {
+        RoomInteractions rules{{{.trigger = InteractionTrigger::interact("blue_box"),
+                                 .effects = {std::move(effect)}}}};
+        return rules.validationError(&room);
+    };
+    assert(invalid(InteractionEffect::make("set_solid", {"red_box", "2"}))
+           == "Use set_solid <objeto> <0|1>");
+    assert(invalid(InteractionEffect::make("set_solid", {"red_box"}))
+           == "Use set_solid <objeto> <0|1>");
+    assert(invalid(InteractionEffect::make("hide_object", {"fantasma"}))
+           == "Objeto desconhecido na sala: fantasma");
+    assert(invalid(InteractionEffect::make("play_animation", {"red_box", "danca"}))
+           == "Animacao desconhecida 'danca' no objeto: red_box");
+    assert(invalid(InteractionEffect::make("say", {""})) == "Texto vazio em say");
+    assert(actionUsage("play_animation", findEffect("play_animation")->args)
+           == "Use play_animation <objeto> <animacao>");
+}
 }
 
 int main() {
@@ -921,5 +1009,6 @@ int main() {
     testMultiplatformInputAndRouting();
     testEditorPreservesSessionState(directory);
     testInteractionRulesFilesAndValidation(directory);
+    testActionCatalogRoundtrip(directory);
     std::filesystem::remove_all(directory);
 }

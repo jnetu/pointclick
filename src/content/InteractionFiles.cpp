@@ -10,7 +10,9 @@
 #include <fstream>
 #include <locale>
 #include <memory>
+#include <ostream>
 #include <sstream>
+#include <vector>
 
 namespace {
 std::string pathToUtf8(const std::filesystem::path& path) {
@@ -55,117 +57,73 @@ bool finished(std::istringstream& input) {
     return input.eof();
 }
 
-const SceneObject* findObjectInRoom(const Room* room, const std::string_view objectId) {
-    if (!room) return nullptr;
-    const auto found = std::find_if(room->scenery.begin(), room->scenery.end(),
-                                    [&](const SceneObject& item) { return item.id == objectId; });
-    return found == room->scenery.end() ? nullptr : &(*found);
+bool isSpace(const char ch) {
+    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
 }
 
-struct ConditionDescriptor {
-    std::string_view keyword;
-    InteractionConditionKind kind;
-    bool referencesObject;
-};
-
-constexpr ConditionDescriptor kConditions[]{
-    {"flag_set", InteractionConditionKind::flagSet, false},
-    {"flag_not_set", InteractionConditionKind::flagNotSet, false},
-    {"has_item", InteractionConditionKind::hasItem, false},
-    {"lacks_item", InteractionConditionKind::lacksItem, false},
-    {"object_visible", InteractionConditionKind::objectVisible, true},
-    {"object_hidden", InteractionConditionKind::objectHidden, true},
-};
-
-struct SingleIdEffectDescriptor {
-    std::string_view keyword;
-    InteractionEffectKind kind;
-    bool referencesObject;
-};
-
-constexpr SingleIdEffectDescriptor kSingleIdEffects[]{
-    {"set_flag", InteractionEffectKind::setFlag, false},
-    {"clear_flag", InteractionEffectKind::clearFlag, false},
-    {"give_item", InteractionEffectKind::giveItem, false},
-    {"take_item", InteractionEffectKind::takeItem, false},
-    {"hide_object", InteractionEffectKind::hideObject, true},
-    {"show_object", InteractionEffectKind::showObject, true},
-    {"change_room", InteractionEffectKind::changeRoom, false},
-};
-
-const ConditionDescriptor* findConditionDescriptor(const std::string_view keyword) {
-    for (const auto& entry : kConditions) {
-        if (entry.keyword == keyword) return &entry;
-    }
-    return nullptr;
+void skipSpaces(const std::string_view text, std::size_t& pos) {
+    while (pos < text.size() && isSpace(text[pos])) ++pos;
 }
 
-const SingleIdEffectDescriptor* findSingleIdEffectDescriptor(const std::string_view keyword) {
-    for (const auto& entry : kSingleIdEffects) {
-        if (entry.keyword == keyword) return &entry;
-    }
-    return nullptr;
-}
-
-std::string_view conditionKeyword(const InteractionConditionKind kind) {
-    for (const auto& entry : kConditions) {
-        if (entry.kind == kind) return entry.keyword;
-    }
-    return {};
-}
-
-std::string_view singleIdEffectKeyword(const InteractionEffectKind kind) {
-    for (const auto& entry : kSingleIdEffects) {
-        if (entry.kind == kind) return entry.keyword;
-    }
-    return {};
-}
-
-bool parseQuotedText(const std::string_view rest, std::string& out, std::string& reason) {
-    const std::string trimmed = trim(rest);
-    if (trimmed.empty() || trimmed.front() != '"') {
-        reason = "Use say \"texto\"";
-        return false;
-    }
+// Decodes "..." starting at pos (which must point at the opening quote).
+std::string readQuotedToken(const std::string_view keyword, const std::string_view text,
+                            std::size_t& pos, std::string& out) {
     std::string decoded;
-    decoded.reserve(trimmed.size());
-    bool closed = false;
-    for (std::size_t i = 1; i < trimmed.size(); ++i) {
-        const char ch = trimmed[i];
+    for (++pos; pos < text.size(); ++pos) {
+        const char ch = text[pos];
         if (ch == '\\') {
-            if (i + 1 >= trimmed.size()) {
-                reason = "Sequencia de escape incompleta em say";
-                return false;
+            if (pos + 1 >= text.size()) {
+                return "Sequencia de escape incompleta em " + std::string(keyword);
             }
-            const char next = trimmed[++i];
+            const char next = text[++pos];
             if (next == '"' || next == '\\') decoded.push_back(next);
             else if (next == 'n') decoded.push_back('\n');
-            else {
-                reason = "Sequencia de escape invalida em say";
-                return false;
-            }
+            else return "Sequencia de escape invalida em " + std::string(keyword);
             continue;
         }
         if (ch == '"') {
-            if (!trim(std::string_view(trimmed).substr(i + 1)).empty()) {
-                reason = "Caracteres extras apos aspas em say";
-                return false;
+            ++pos;
+            if (pos < text.size() && !isSpace(text[pos])) {
+                return "Caracteres extras apos aspas em " + std::string(keyword);
             }
-            closed = true;
-            break;
+            out = std::move(decoded);
+            return {};
         }
         decoded.push_back(ch);
     }
-    if (!closed) {
-        reason = "Texto entre aspas nao fechado";
-        return false;
+    return "Texto entre aspas nao fechado";
+}
+
+// Tokenizes the arguments after the keyword following the catalog signature.
+// Type-specific checks (identifiers, room objects) happen afterwards in argumentsError.
+std::string readArguments(const std::string_view keyword, const ArgSignature& signature,
+                          const std::string_view text, std::vector<std::string>& args) {
+    std::size_t pos = 0;
+    for (const ArgType type : signature.view()) {
+        skipSpaces(text, pos);
+        if (pos >= text.size()) return actionUsage(keyword, signature);
+        std::string token;
+        if (type == ArgType::text) {
+            if (text[pos] != '"') return actionUsage(keyword, signature);
+            if (std::string error = readQuotedToken(keyword, text, pos, token); !error.empty()) {
+                return error;
+            }
+        } else {
+            const std::size_t begin = pos;
+            while (pos < text.size() && !isSpace(text[pos])) ++pos;
+            token.assign(text.substr(begin, pos - begin));
+        }
+        args.push_back(std::move(token));
     }
-    if (decoded.empty()) {
-        reason = "Texto de fala vazio";
-        return false;
+    skipSpaces(text, pos);
+    if (pos < text.size()) {
+        const auto types = signature.view();
+        if (!types.empty() && types.back() == ArgType::text) {
+            return "Caracteres extras apos aspas em " + std::string(keyword);
+        }
+        return actionUsage(keyword, signature);
     }
-    out = std::move(decoded);
-    return true;
+    return {};
 }
 
 std::string escapeQuotedText(const std::string_view text) {
@@ -178,6 +136,18 @@ std::string escapeQuotedText(const std::string_view text) {
         else escaped.push_back(ch);
     }
     return escaped;
+}
+
+void writeStatement(std::ostream& out, const std::string_view keyword,
+                    const ArgSignature& signature, const ActionArgs args) {
+    out << keyword;
+    const auto types = signature.view();
+    for (std::size_t i = 0; i < args.size(); ++i) {
+        out << ' ';
+        if (types[i] == ArgType::text) out << '"' << escapeQuotedText(args[i]) << '"';
+        else out << args[i];
+    }
+    out << '\n';
 }
 
 InteractionLoadResult loadStream(SDL_IOStream* file, const Room* room) {
@@ -252,7 +222,7 @@ InteractionLoadResult InteractionFiles::parse(const std::string_view content, co
             if (!validIdentifier(trigger.objectId)) {
                 return failAt(lineNumber, "Identificador de objeto invalido: " + trigger.objectId);
             }
-            if (room && !findObjectInRoom(room, trigger.objectId)) {
+            if (room && !room->findObject(trigger.objectId)) {
                 return failAt(lineNumber, "Objeto desconhecido na sala: " + trigger.objectId);
             }
 
@@ -284,30 +254,23 @@ InteractionLoadResult InteractionFiles::parse(const std::string_view content, co
             statement = trim(std::string_view(line).substr(5));
         }
 
-        std::istringstream tokens(statement);
-        tokens.imbue(std::locale::classic());
-        std::string verb;
-        tokens >> verb;
+        const auto verbEnd = std::find_if(statement.begin(), statement.end(), isSpace);
+        const std::string verb(statement.begin(), verbEnd);
         if (verb.empty()) {
             return failAt(lineNumber, "Instrucao vazia na regra");
         }
+        const std::string_view rest = std::string_view(statement).substr(verb.size());
+        std::vector<std::string> args;
 
         if (!forcedEffect) {
-            if (const auto* condDesc = findConditionDescriptor(verb)) {
+            if (const ConditionDescriptor* condition = findCondition(verb)) {
                 if (!currentRule->effects.empty()) {
                     return failAt(lineNumber, "Condicao deve vir antes dos efeitos");
                 }
-                std::string targetId;
-                if (!(tokens >> targetId) || !finished(tokens)) {
-                    return failAt(lineNumber, "Use " + std::string(condDesc->keyword) + " <id>");
-                }
-                if (!validIdentifier(targetId)) {
-                    return failAt(lineNumber, "Identificador invalido: " + targetId);
-                }
-                if (room && condDesc->referencesObject && !findObjectInRoom(room, targetId)) {
-                    return failAt(lineNumber, "Objeto desconhecido na sala: " + targetId);
-                }
-                currentRule->conditions.push_back({condDesc->kind, std::move(targetId)});
+                std::string error = readArguments(verb, condition->args, rest, args);
+                if (error.empty()) error = argumentsError(verb, condition->args, args, room);
+                if (!error.empty()) return failAt(lineNumber, error);
+                currentRule->conditions.push_back({condition, std::move(args)});
                 continue;
             }
             if (forcedCondition) {
@@ -315,72 +278,11 @@ InteractionLoadResult InteractionFiles::parse(const std::string_view content, co
             }
         }
 
-        if (verb == "say") {
-            const auto verbPos = statement.find("say");
-            const std::string_view rest = std::string_view(statement).substr(verbPos + 3);
-            std::string spoken;
-            std::string reason;
-            if (!parseQuotedText(rest, spoken, reason)) {
-                return failAt(lineNumber, reason);
-            }
-            currentRule->effects.push_back(InteractionEffect::say(std::move(spoken)));
-            continue;
-        }
-
-        if (const auto* effectDesc = findSingleIdEffectDescriptor(verb)) {
-            std::string targetId;
-            if (!(tokens >> targetId) || !finished(tokens)) {
-                return failAt(lineNumber, "Use " + std::string(effectDesc->keyword) + " <id>");
-            }
-            if (!validIdentifier(targetId)) {
-                return failAt(lineNumber, "Identificador invalido: " + targetId);
-            }
-            if (room && effectDesc->referencesObject && !findObjectInRoom(room, targetId)) {
-                return failAt(lineNumber, "Objeto desconhecido na sala: " + targetId);
-            }
-            currentRule->effects.push_back({effectDesc->kind, std::move(targetId), {}, false});
-            continue;
-        }
-
-        if (verb == "set_solid") {
-            std::string objectId;
-            std::string flagToken;
-            if (!(tokens >> objectId >> flagToken) || !finished(tokens)
-                || (flagToken != "0" && flagToken != "1")) {
-                return failAt(lineNumber, "Use set_solid <objeto> <0|1>");
-            }
-            if (!validIdentifier(objectId)) {
-                return failAt(lineNumber, "Identificador invalido: " + objectId);
-            }
-            if (room && !findObjectInRoom(room, objectId)) {
-                return failAt(lineNumber, "Objeto desconhecido na sala: " + objectId);
-            }
-            currentRule->effects.push_back(
-                    InteractionEffect::setSolid(std::move(objectId), flagToken == "1"));
-            continue;
-        }
-
-        if (verb == "play_animation") {
-            std::string objectId;
-            std::string animName;
-            if (!(tokens >> objectId >> animName) || !finished(tokens)) {
-                return failAt(lineNumber, "Use play_animation <objeto> <animacao>");
-            }
-            if (!validIdentifier(objectId) || !validIdentifier(animName)) {
-                return failAt(lineNumber, "Identificador invalido em play_animation");
-            }
-            if (room) {
-                const SceneObject* target = findObjectInRoom(room, objectId);
-                if (!target) {
-                    return failAt(lineNumber, "Objeto desconhecido na sala: " + objectId);
-                }
-                if (!findAnimation(target->animations, animName)) {
-                    return failAt(lineNumber,
-                                  "Animacao desconhecida '" + animName + "' no objeto: " + objectId);
-                }
-            }
-            currentRule->effects.push_back(
-                    InteractionEffect::playAnimation(std::move(objectId), std::move(animName)));
+        if (const EffectDescriptor* effect = findEffect(verb)) {
+            std::string error = readArguments(verb, effect->args, rest, args);
+            if (error.empty()) error = effectArgumentsError(*effect, args, room);
+            if (!error.empty()) return failAt(lineNumber, error);
+            currentRule->effects.push_back({effect, std::move(args)});
             continue;
         }
 
@@ -432,7 +334,8 @@ bool InteractionFiles::save(const std::filesystem::path& path,
     error = interactions.validationError(room);
     if (!error.empty()) return false;
 
-    const auto temporary = std::filesystem::path(path.string() + ".tmp");
+    auto temporary = path;
+    temporary += ".tmp";
     std::ofstream out(temporary);
     if (!out) {
         error = "Nao foi possivel salvar " + pathToUtf8(path.filename());
@@ -451,24 +354,11 @@ bool InteractionFiles::save(const std::filesystem::path& path,
         }
 
         for (const InteractionCondition& condition : rule.conditions) {
-            out << conditionKeyword(condition.kind) << ' ' << condition.targetId << '\n';
+            writeStatement(out, condition.condition->keyword, condition.condition->args,
+                           condition.args);
         }
-
         for (const InteractionEffect& effect : rule.effects) {
-            switch (effect.kind) {
-            case InteractionEffectKind::say:
-                out << "say \"" << escapeQuotedText(effect.value) << "\"\n";
-                break;
-            case InteractionEffectKind::setSolid:
-                out << "set_solid " << effect.targetId << ' ' << (effect.boolValue ? 1 : 0) << '\n';
-                break;
-            case InteractionEffectKind::playAnimation:
-                out << "play_animation " << effect.targetId << ' ' << effect.value << '\n';
-                break;
-            default:
-                out << singleIdEffectKeyword(effect.kind) << ' ' << effect.targetId << '\n';
-                break;
-            }
+            writeStatement(out, effect.effect->keyword, effect.effect->args, effect.args);
         }
     }
 

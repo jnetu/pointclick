@@ -19,6 +19,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
 | `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto |
+| `game/ActionCatalog` | Catálogo tipado de condições e efeitos das regras (`ArgType`, validação, execução, eventos de saída) |
 | `game/Interaction` | Gatilhos, condições, efeitos, picking por profundidade e cálculo de aproximação |
 | `game/Camera` | Câmera 2D suave com campo de visão fixo (`1280×720`), clamp nas bordas da sala e interpolação |
 | `game/Game` | Coordena entrada de gameplay, Walk-to-Interact, estado de sessão, salas, navegação, câmera e jogador |
@@ -148,6 +149,21 @@ Em `Interaction` / `InteractionFiles`, cada `InteractionRule` possui:
   `give_item`, `take_item`, `hide_object`, `show_object`, `set_solid <objectId> <0|1>`
   (reconstrói `Navigation` automaticamente), `play_animation <objectId> <anim>` e
   `change_room <roomId>`.
+
+Condições e efeitos vêm do **catálogo de ações** (`game/ActionCatalog`), no mesmo
+modelo de `RoomParameters`. Cada entrada declara palavra-chave, descrição, assinatura
+tipada (`ArgType`: `objectId`, `itemId`, `flagId`, `roomId`, `animation`, `text`,
+`boolean`), uma validação extra opcional e a função que executa (ou avalia). Uma
+`InteractionCondition`/`InteractionEffect` guarda só o ponteiro para a entrada e os
+argumentos em texto. O parser, o serializador, a validação por `ArgType` (inclusive
+"o objeto existe na sala?"), a mensagem `Use <palavra> <args>` e a execução saem
+todos do catálogo. Efeito novo = uma entrada + uma função.
+
+Efeitos que só alteram `SessionState` não produzem saída. Os demais emitem
+`InteractionEvent` (`SayEvent`, `PlayAnimationEvent`, `ChangeRoomEvent`) em
+`InteractionOutcome::events`, na ordem dos efeitos, e `Game::resolveInteraction`
+encaminha cada evento ao sistema certo. Só um tipo novo de saída exige uma alternativa
+nova no `std::variant` e o tratamento correspondente em `Game`.
 
 As regras são avaliadas na ordem declarada: a primeira regra cujas condições forem
 todas verdadeiras executa seus efeitos em sequência e encerra a avaliação. Objetos

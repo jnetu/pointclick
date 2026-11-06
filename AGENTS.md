@@ -18,6 +18,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` | `src/graphics/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
 | Regras de interação, itens e puzzles | `assets/rooms/*.rules`, `src/game/Interaction.*`, `src/content/InteractionFiles.*` | `src/game/Game.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
+| Efeito ou condição nova em `.rules` | uma entrada + uma função em `src/game/ActionCatalog.cpp` | evento novo em `ActionCatalog.hpp` + tratamento em `Game::resolveInteraction` só se sair de `SessionState`; tabela em `docs/GAME_DESIGN.md` |
 | Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp` |
 | UI de Diálogo / Inventário futuro | novo módulo UI consumindo `SessionState` / `Game::useItemOnObject` | `ViewportUiConsumer` em `src/input/InputRouter.hpp`, interface em `graphics/` |
 | Efeitos visuais de transição de sala | `Game::consumeRoomTransition()` em `src/core/Application.cpp` | efeito visual temporizado em `graphics/` |

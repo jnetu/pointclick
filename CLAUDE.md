@@ -18,7 +18,6 @@ Leia também `docs/ARCHITECTURE.md` antes de mudanças estruturais e `docs/GAME_
 - Cache de texturas limpo a cada `roomRevision`; `SpriteLibrary::draw` valida o clip a cada desenho.
 - Rota, cruz de destino e diagnóstico desenhados em produção (devem ir para flags de debug).
 - `path.string()` em `SpriteLibrary` e nos `save` (usar UTF-8); gravação via `std::ofstream`, sem `SDL_GetPrefPath`.
-- Efeito de regra novo exige editar 7 lugares em `Interaction`/`InteractionFiles`/`Game` (migrar para catálogo de ações).
 - Arte do player repetida por `.room`; `gallery.room` depende em silêncio de `RoomPresets`.
 
 ## Build e testes

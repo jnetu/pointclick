@@ -6,6 +6,7 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 
 Game::Game(Room room)
         : player_(room.playerStart) {
@@ -123,11 +124,8 @@ bool Game::playObjectAnimation(const std::string_view objectId,
 }
 
 bool Game::startObjectInteraction(const InteractionTrigger& trigger) {
-    const auto found = std::find_if(room_.scenery.begin(), room_.scenery.end(),
-                                    [&](const SceneObject& obj) {
-                                        return obj.id == trigger.objectId;
-                                    });
-    if (found == room_.scenery.end() || !session_.isObjectVisible(room_.id, found->id)) {
+    const SceneObject* found = room_.findObject(trigger.objectId);
+    if (!found || !session_.isObjectVisible(room_.id, found->id)) {
         return false;
     }
     if (trigger.kind == InteractionTriggerKind::useItem && !session_.hasItem(trigger.itemId)) {
@@ -171,11 +169,8 @@ bool Game::startObjectInteraction(const InteractionTrigger& trigger) {
 }
 
 bool Game::resolveInteraction(const InteractionTrigger& trigger) {
-    const auto found = std::find_if(room_.scenery.begin(), room_.scenery.end(),
-                                    [&](const SceneObject& obj) {
-                                        return obj.id == trigger.objectId;
-                                    });
-    if (found == room_.scenery.end() || !session_.isObjectVisible(room_.id, found->id)) {
+    const SceneObject* found = room_.findObject(trigger.objectId);
+    if (!found || !session_.isObjectVisible(room_.id, found->id)) {
         return false;
     }
     if (trigger.kind == InteractionTriggerKind::useItem && !session_.hasItem(trigger.itemId)) {
@@ -187,18 +182,24 @@ bool Game::resolveInteraction(const InteractionTrigger& trigger) {
         return false;
     }
 
-    if (outcome.spokenText) {
-        floatingText_.show(*outcome.spokenText);
+    // Effects that only change SessionState already ran; route the remaining outputs.
+    std::string spoken;
+    for (const InteractionEvent& event : outcome.events) {
+        if (const auto* say = std::get_if<SayEvent>(&event)) {
+            if (!spoken.empty()) spoken += '\n';
+            spoken += say->text;
+        } else if (const auto* anim = std::get_if<PlayAnimationEvent>(&event)) {
+            std::string ignoredError;
+            (void)playObjectAnimation(anim->objectId, anim->animation, true, ignoredError);
+        } else if (const auto* change = std::get_if<ChangeRoomEvent>(&event)) {
+            pendingRoomTransition_ = change->roomId;
+        }
     }
-    for (const ObjectAnimationRequest& anim : outcome.animations) {
-        std::string ignoredError;
-        (void)playObjectAnimation(anim.objectId, anim.animation, true, ignoredError);
+    if (!spoken.empty()) {
+        floatingText_.show(spoken);
     }
     if (outcome.navigationChanged) {
         refreshNavigation();
-    }
-    if (outcome.targetRoomId) {
-        pendingRoomTransition_ = *outcome.targetRoomId;
     }
     return true;
 }

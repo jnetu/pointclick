@@ -8,6 +8,7 @@
 
 #include <array>
 #include <string>
+#include <string_view>
 #include <vector>
 
 // Room definition only. Content supplies player art defaults when loading files.
@@ -52,6 +53,8 @@ struct Room {
     [[nodiscard]] SDL_FRect playerBounds(SDL_FPoint feet) const;
     [[nodiscard]] bool containsFloor(SDL_FPoint point) const;
     [[nodiscard]] SDL_FPoint clampDestination(SDL_FPoint point) const;
+    // Single lookup by stable ID; never address objects by vector position.
+    [[nodiscard]] const SceneObject* findObject(std::string_view objectId) const;
 
     // Empty means valid. Invalid designer data must never enter the simulation.
     [[nodiscard]] std::string validationError() const;

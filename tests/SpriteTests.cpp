@@ -72,39 +72,39 @@ void testClipDefinition(const std::filesystem::path& directory) {
     assert(!loaded.room->scenery[0].animations.at("wave").loop);
     assert(loaded.room->scenery[1].initialAnimation == "glow");
     Game game(*loaded.room);
-    assert(game.objectAnimation("blue_box"));
-    assert(game.objectAnimation("blue_box")->name() == "idle");
-    assert(game.objectAnimation("red_box")->name() == "glow");
+    assert(game.scene().objectAnimation("blue_box"));
+    assert(game.scene().objectAnimation("blue_box")->name() == "idle");
+    assert(game.scene().objectAnimation("red_box")->name() == "glow");
     assert(game.playObjectAnimation("blue_box", "wave", false, error));
     game.tick(0.5F);
-    assert(game.objectAnimation("blue_box")->name() == "wave");
-    assert(game.objectAnimation("blue_box")->elapsed() == 0.5F);
-    assert(game.objectAnimation("red_box")->elapsed() == 0.5F);
-    assert(game.objectAnimation("blue_box")->finished(
+    assert(game.scene().objectAnimation("blue_box")->name() == "wave");
+    assert(game.scene().objectAnimation("blue_box")->elapsed() == 0.5F);
+    assert(game.scene().objectAnimation("red_box")->elapsed() == 0.5F);
+    assert(game.scene().objectAnimation("blue_box")->finished(
             loaded.room->scenery[0].animations.at("wave")));
     assert(game.playObjectAnimation("blue_box", "wave", true, error));
-    assert(game.objectAnimation("blue_box")->elapsed() == 0.0F);
-    assert(game.objectAnimation("red_box")->elapsed() == 0.5F);
+    assert(game.scene().objectAnimation("blue_box")->elapsed() == 0.0F);
+    assert(game.scene().objectAnimation("red_box")->elapsed() == 0.5F);
     assert(!game.playObjectAnimation("blue_box", "missing", false, error));
-    assert(game.objectAnimation("blue_box")->name() == "wave");
+    assert(game.scene().objectAnimation("blue_box")->name() == "wave");
     assert(game.applyRoom(*loaded.room, false, error));
-    assert(game.objectAnimation("blue_box")->elapsed() == 0.0F);
+    assert(game.scene().objectAnimation("blue_box")->elapsed() == 0.0F);
     assert(game.applyRoom(*loaded.room, true, error));
-    assert(game.objectAnimation("blue_box")->name() == "idle");
+    assert(game.scene().objectAnimation("blue_box")->name() == "idle");
     game.onClick({300, 360});
     game.tick(0.05F);
-    assert(game.player().pose() == PlayerPose::left);
+    assert(game.scene().player().pose() == PlayerPose::left);
     game.onClick({900, 360});
     game.tick(0.05F);
-    assert(game.player().pose() == PlayerPose::right);
-    game.onClick({game.player().feet().x, 320});
+    assert(game.scene().player().pose() == PlayerPose::right);
+    game.onClick({game.scene().player().feet().x, 320});
     game.tick(0.05F);
-    assert(game.player().pose() == PlayerPose::up);
-    game.onClick({game.player().feet().x, 600});
+    assert(game.scene().player().pose() == PlayerPose::up);
+    game.onClick({game.scene().player().feet().x, 600});
     game.tick(0.05F);
-    assert(game.player().pose() == PlayerPose::down);
+    assert(game.scene().player().pose() == PlayerPose::down);
     for (int i = 0; i < 200; ++i) game.tick(0.05F);
-    assert(game.player().pose() == PlayerPose::idle);
+    assert(game.scene().player().pose() == PlayerPose::idle);
 
     room.playerAnimations["left"].frameHeight = 0;
     assert(!RoomFiles::save(path, room, error));
@@ -235,8 +235,8 @@ void testEntityAnimationSelection(const std::filesystem::path& directory) {
     sprites.setRoot(directory);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    EntityRenderer::drawObject(renderer, sprites, game.room().scenery[0],
-                               game.objectAnimation("blue_box"));
+    EntityRenderer::drawObject(renderer, sprites, game.scene().room().scenery[0],
+                               game.scene().objectAnimation("blue_box"));
     SDL_RenderPresent(renderer);
     expectColor(pixel(output, 20, 20), 250, 20, 20);
 
@@ -244,8 +244,8 @@ void testEntityAnimationSelection(const std::filesystem::path& directory) {
     assert(game.playObjectAnimation("blue_box", "open", false, error));
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
-    EntityRenderer::drawObject(renderer, sprites, game.room().scenery[0],
-                               game.objectAnimation("blue_box"));
+    EntityRenderer::drawObject(renderer, sprites, game.scene().room().scenery[0],
+                               game.scene().objectAnimation("blue_box"));
     SDL_RenderPresent(renderer);
     expectColor(pixel(output, 20, 20), 20, 240, 20);
     sprites.clear();

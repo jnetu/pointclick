@@ -7,6 +7,8 @@
 #include "input/InputSystem.hpp"
 #include "ui/DialogueMenu.hpp"
 
+#include <vector>
+
 struct SDL_Window;
 
 class Application {
@@ -17,7 +19,8 @@ public:
 private:
     bool initialize();
     bool loadRoomWithRules(std::string_view roomFilename);
-    void processPendingRoomTransition();
+    // Routes the domain's notifications; today only room changes need the shell.
+    void processGameEvents();
     void mainLoop();
     void processEvents();
     void syncTextInputState();
@@ -25,6 +28,7 @@ private:
 
     SDL_Window* window_ = nullptr;
     Game game_;
+    std::vector<GameEvent> gameEvents_; // reused drain buffer
     DialogueMenu dialogueMenu_{game_};
     Renderer renderer_;
     DebugEditor debugEditor_;

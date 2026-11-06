@@ -28,9 +28,9 @@ void DebugEditor::setRoomDirectory(std::filesystem::path path) { roomDirectory_ 
 void DebugEditor::activate(Game& game) {
     active_ = true;
     panelVisible_ = true;
-    baseline_ = game.room();
-    baselineInteractions_ = game.interactions();
-    baselineDialogues_ = game.dialogues();
+    baseline_ = game.scene().room();
+    baselineInteractions_ = game.scene().interactions();
+    baselineDialogues_ = game.scene().dialogues();
     undo_.reset();
     undoInteractions_.reset();
     undoDialogues_.reset();
@@ -73,9 +73,9 @@ bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer,
         status_ = nextDialogues->validationError(&room);
         if (!status_.empty()) return false;
     }
-    Room previous = game.room();
-    RoomInteractions previousInteractions = game.interactions();
-    RoomDialogues previousDialogues = game.dialogues();
+    Room previous = game.scene().room();
+    RoomInteractions previousInteractions = game.scene().interactions();
+    RoomDialogues previousDialogues = game.scene().dialogues();
     if (!game.applyRoom(std::move(room), resetPlayer, status_)) return false;
     if (nextInteractions) {
         std::string rulesError;
@@ -99,7 +99,7 @@ void DebugEditor::setParameter(Game& game, const std::string_view key, const flo
         status_ = "Valor fora do intervalo permitido";
         return;
     }
-    Room room = game.room();
+    Room room = game.scene().room();
     parameter->write(room, value);
     commit(game, std::move(room));
 }
@@ -127,7 +127,7 @@ bool DebugEditor::onKey(const DebugKey key, Game& game) {
     case DebugKey::decrease:
     case DebugKey::increase: {
         const auto& parameter = parameters[selected_];
-        setParameter(game, parameter.key, parameter.read(game.room())
+        setParameter(game, parameter.key, parameter.read(game.scene().room())
                      + (key == DebugKey::increase ? parameter.step : -parameter.step));
         break;
     }
@@ -161,7 +161,7 @@ void DebugEditor::submit(Game& game) {
             return;
         }
         if (verb == "save") {
-            if (RoomFiles::save(roomDirectory_ / name, game.room(), status_)) status_ = "Salvo: " + name;
+            if (RoomFiles::save(roomDirectory_ / name, game.scene().room(), status_)) status_ = "Salvo: " + name;
         } else {
             const auto roomPath = roomDirectory_ / name;
             auto result = RoomFiles::load(roomPath);
@@ -193,7 +193,7 @@ void DebugEditor::submit(Game& game) {
     } else if (verb == "move" || verb == "size" || verb == "base" || verb == "solid") {
         std::string id;
         input >> id;
-        Room room = game.room();
+        Room room = game.scene().room();
         const auto object = std::find_if(room.scenery.begin(), room.scenery.end(),
                                          [&](const auto& item) { return item.id == id; });
         if (object == room.scenery.end()) { status_ = "Objeto desconhecido: " + id; return; }

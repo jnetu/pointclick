@@ -83,12 +83,12 @@ void Renderer::render(const Game& game, const float interpolation,
                       const DialogueMenu* dialogueMenu) {
     SDL_SetRenderDrawColor(renderer_, 8, 10, 16, 255);
     SDL_RenderClear(renderer_);
-    if (lastRoomRevision_ != game.roomRevision()) {
+    if (lastRoomRevision_ != game.scene().roomRevision()) {
         sprites_.clear();
-        lastRoomRevision_ = game.roomRevision();
+        lastRoomRevision_ = game.scene().roomRevision();
     }
-    SceneRenderer::draw(renderer_, sprites_, game, interpolation);
-    DiagnosticsOverlay::draw(renderer_, window_, game, interpolation);
+    SceneRenderer::draw(renderer_, sprites_, game.scene(), interpolation);
+    DiagnosticsOverlay::draw(renderer_, window_, game.scene(), interpolation);
     if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, game, *dialogueMenu);
     if (editor) DebugOverlay::draw(renderer_, game, *editor, interpolation);
     if (input && input->activeDevice() == InputDevice::gamepad) {

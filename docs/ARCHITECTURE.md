@@ -27,7 +27,9 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/ActionCatalog` | Catálogo tipado de condições e efeitos das regras (`ArgType`, validação, execução, eventos de saída) |
 | `game/Interaction` | Gatilhos, condições, efeitos, picking por profundidade e cálculo de aproximação |
 | `game/Camera` | Câmera 2D suave com campo de visão fixo (`1280×720`), clamp nas bordas da sala e interpolação |
-| `game/Game` | Coordena entrada de gameplay, Walk-to-Interact, estado de sessão, salas, navegação, câmera e jogador |
+| `game/Game` | Coordenador fino: recebe intenções (clique, uso de item, escolha de diálogo), dono de `SessionState`, `Scene`, `ScriptRunner`, `DialoguePlayer` e da fila de `GameEvent` |
+| `game/Scene` | Sala em jogo: conteúdo carregado (sala, regras, diálogos) e simulação local (navegação, jogador, câmera, animações, fala, Walk-to-Interact, picking) |
+| `game/GameEvent` | Notificações para fora do domínio (`RoomEntered`, `RoomChangeRequested`, `LineSpoken`, `CutsceneStarted`/`Ended`) |
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
 | `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas |
 | `debug/DebugEditor` | Reconhece DEBUG/F1/Select, decide hit-test do painel na viewport, processa comandos e gerencia edição/undo |
@@ -105,8 +107,9 @@ interrompe a rota e preserva os pés e todo o `SessionState`.
 `load` passa pela mesma validação usada pelas edições e carrega também o arquivo
 companheiro opcional `<sala>.rules` via `InteractionFiles::loadOptionalForRoom`.
 A aplicação carrega `first.room` (e `first.rules`, se existir) da pasta indicada
-por `--rooms` na inicialização, e processa `Game::consumeRoomTransition()` para
-trocar de sala automaticamente quando um efeito `change_room <roomId>` dispara.
+por `--rooms` na inicialização. Depois de cada tick, `Application::processGameEvents`
+esvazia a fila do `Game` e carrega a sala de um `RoomChangeRequested` (emitido quando
+uma sequência com `change_room <roomId>` termina).
 
 A leitura de `.room` e `.rules` usa `SDL_IOFromFile` e `SDL_LoadFile_IO` do SDL3
 3.4.16, com caminhos UTF-8 e o tamanho explícito dos dados. O stream permanece aberto
@@ -134,13 +137,39 @@ O editor, `set`, a leitura e a gravação passam a conhecer esse parâmetro pelo
 catálogo. A lista do editor muda de página automaticamente conforme a seleção.
 Novos tipos de dados precisam de uma representação explícita em `RoomFiles`.
 
+## Coordenador, cena e eventos
+
+`Game` é um coordenador fino. Ele é dono de três peças e não guarda estado próprio além
+da ligação entre elas:
+
+- **`SessionState`**: progresso da partida, que sobrevive a trocas de sala e edições.
+- **`Scene`**: a sala em jogo. Lê a sessão (visibilidade, colisão, inventário) por
+  referência constante e nunca a altera; quem altera são os scripts.
+- **`ScriptRunner` + `DialoguePlayer`**: executam sequências e conversas sobre as duas,
+  pelo adaptador `Game::Host` (`ScriptHost`).
+
+Para dentro, o `Game` recebe intenções (`onClick`, `useItemOnObject`, `startDialogue`,
+`chooseDialogueOption`, `tick`). Para fora, emite `GameEvent` (`std::variant`) numa fila
+em ordem. `Application` esvazia a fila com `drainEvents(buffer)` (troca de vetores, o
+buffer é reaproveitado) e encaminha cada evento. Sistemas novos (áudio, fade de transição,
+autosave, legendas) assinam ali, sem o domínio conhecê-los. Não crie campo + `consumeX()`
+na fachada; crie um tipo de evento em `game/GameEvent.hpp` e emita no `Game`.
+
+| Evento | Quando |
+| --- | --- |
+| `RoomEntered{roomId}` | uma carga com spawn foi aplicada (`loadRoom`/`applyRoom(..., true, ...)`); edições ao vivo não emitem |
+| `RoomChangeRequested{roomId}` | uma sequência com `change_room` terminou; é descartado se outra sala entrar antes de a fila ser esvaziada |
+| `LineSpoken{text}` | um `say` começou |
+| `CutsceneStarted` / `CutsceneEnded` | `inCutscene()` mudou |
+
 ## Separação Tripla de Estado e Interações Declarativas
 
 O projeto separa estritamente três categorias de estado:
 1. **Definições Autoradas (`Room`, `SceneObject`, `SpriteClip`, `RoomInteractions`)**:
    Imutáveis durante o gameplay; carregadas de `.room` e `.rules` ou de presets C++.
 2. **Estado de Simulação Local (`Player`, `Camera`, `Navigation`, `ObjectAnimations`, `PendingInteraction`)**:
-   Estado volátil da sala atual, atualizado em `Game::tick(dt)` e lido em `graphics/`.
+   Estado volátil da sala atual, agrupado em `Scene`, avançado por `Game::tick(dt)` e lido
+   em `graphics/` (`SceneRenderer` recebe só `const Scene&`).
 3. **Estado de Sessão (`SessionState`)**:
    Armazena flags/contadores (`setFlag`, `clearFlag`, `hasFlag`), itens ordenados do
    inventário (`addItem`, `removeItem`, `hasItem`, `items`) e overrides de objetos por

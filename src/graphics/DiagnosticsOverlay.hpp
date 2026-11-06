@@ -2,8 +2,8 @@
 
 struct SDL_Renderer;
 struct SDL_Window;
-class Game;
+class Scene;
 
 namespace DiagnosticsOverlay {
-void draw(SDL_Renderer* renderer, SDL_Window* window, const Game& game, float interpolation);
+void draw(SDL_Renderer* renderer, SDL_Window* window, const Scene& scene, float interpolation);
 }

@@ -4,37 +4,56 @@
 #include "game/Navigation.hpp"
 
 #include <cassert>
+#include <vector>
+#include <variant>
+#include <string>
+#include <optional>
 #include <cmath>
 
 namespace {
+// The last room change a finished script asked for, if not drained yet.
+std::optional<std::string> requestedRoom(const Game& game) {
+    std::optional<std::string> last;
+    for (const GameEvent& event : game.pendingEvents()) {
+        if (const auto* change = std::get_if<RoomChangeRequested>(&event)) last = change->roomId;
+    }
+    return last;
+}
+
+std::optional<std::string> consumeRequestedRoom(Game& game) {
+    std::optional<std::string> requested = requestedRoom(game);
+    std::vector<GameEvent> drained;
+    game.drainEvents(drained);
+    return requested;
+}
 bool near(const float a, const float b) { return std::abs(a - b) < 0.01F; }
 
 void testMovementAndRetargeting() {
     Game game(RoomPresets::firstRoom());
-    assert(near(game.player().feet().x, 640.0F));
-    assert(near(game.player().feet().y, 360.0F));
+    assert(near(game.scene().player().feet().x, 640.0F));
+    assert(near(game.scene().player().feet().y, 360.0F));
 
     game.onClick({900.0F, 360.0F});
     game.tick(0.5F);
-    assert(near(game.player().feet().x, 640.0F + game.room().speedAt(360.0F) * 0.5F));
+    assert(near(game.scene().player().feet().x, 640.0F + game.scene().room().speedAt(360.0F) * 0.5F));
     game.onClick({750.0F, 500.0F});
     for (int i = 0; i < 20; ++i) {
         game.tick(0.05F);
     }
-    assert(near(game.player().feet().x, 750.0F));
-    assert(near(game.player().feet().y, 500.0F));
-    assert(!game.player().moving());
+    assert(near(game.scene().player().feet().x, 750.0F));
+    assert(near(game.scene().player().feet().y, 500.0F));
+    assert(!game.scene().player().moving());
 
     game.onClick({-10.0F, 200.0F});
-    assert(!game.player().moving());
+    assert(!game.scene().player().moving());
     game.onClick({2.0F, 2.0F});
-    assert(near(game.player().destination().x, 750.0F));
-    assert(near(game.player().destination().y, 500.0F));
-    game.onClick({2.0F, game.room().wallBottomY + 1.0F});
-    const float expectedY = game.room().walkableTopY;
-    assert(near(game.player().destination().y, expectedY));
-    assert(near(game.player().destination().x,
-                game.room().playerBaseSize.x * game.room().scaleAt(expectedY) * 0.5F));
+    assert(near(game.scene().player().destination().x, 750.0F));
+    assert(near(game.scene().player().destination().y, 500.0F));
+    game.onClick({2.0F, game.scene().room().wallBottomY + 1.0F});
+    const float expectedY = game.scene().room().walkableTopY;
+    assert(near(game.scene().player().destination().y, expectedY));
+    assert(near(game.scene().player().destination().x,
+                game.scene().room().playerBaseSize.x * game.scene().room().scaleAt(expectedY) * 0.5F));
 }
 
 void testRoomPerspective() {
@@ -58,19 +77,19 @@ void testRoomPerspective() {
     room.playerStart = {640.0F, 400.0F};
     Game custom(room);
     custom.onClick({800.0F, 320.0F});
-    assert(!custom.player().moving());
+    assert(!custom.scene().player().moving());
     custom.onClick({800.0F, 400.0F});
     custom.tick(0.5F);
-    assert(custom.player().moving());
-    assert(near(std::hypot(custom.player().feet().x - room.playerStart.x,
-                           custom.player().feet().y - room.playerStart.y), 50.0F));
+    assert(custom.scene().player().moving());
+    assert(near(std::hypot(custom.scene().player().feet().x - room.playerStart.x,
+                           custom.scene().player().feet().y - room.playerStart.y), 50.0F));
 
     Room nextRoom = RoomPresets::firstRoom();
     nextRoom.playerStart = {300.0F, 620.0F};
     custom.loadRoom(nextRoom);
-    assert(near(custom.player().feet().x, 300.0F));
-    assert(near(custom.player().feet().y, 620.0F));
-    assert(!custom.player().moving());
+    assert(near(custom.scene().player().feet().x, 300.0F));
+    assert(near(custom.scene().player().feet().y, 620.0F));
+    assert(!custom.scene().player().moving());
 }
 
 void testPerspectiveMovementSpeed() {
@@ -80,13 +99,13 @@ void testPerspectiveMovementSpeed() {
     Game far(room);
     far.onClick({1000.0F, 320.0F});
     far.tick(0.5F);
-    const float farDistance = far.player().feet().x - 500.0F;
+    const float farDistance = far.scene().player().feet().x - 500.0F;
 
     room.playerStart = {500.0F, 650.0F};
     Game nearGame(room);
     nearGame.onClick({1000.0F, 650.0F});
     nearGame.tick(0.5F);
-    const float nearDistance = nearGame.player().feet().x - 500.0F;
+    const float nearDistance = nearGame.scene().player().feet().x - 500.0F;
     assert(nearDistance > farDistance);
     assert(near(farDistance, room.speedAt(320.0F) * 0.5F));
     assert(near(nearDistance, room.speedAt(650.0F) * 0.5F));
@@ -145,32 +164,32 @@ void testSolidObjectFootprint() {
 
     Game game(room);
     game.onClick({860.0F, 500.0F}); // The upper visual area is passable.
-    assert(near(game.player().destination().x, 860.0F));
-    assert(near(game.player().destination().y, 500.0F));
+    assert(near(game.scene().player().destination().x, 860.0F));
+    assert(near(game.scene().player().destination().y, 500.0F));
     game.onClick({860.0F, 575.0F}); // The solid base snaps to reachable ground.
-    const SDL_FPoint snapped = game.player().destination();
+    const SDL_FPoint snapped = game.scene().player().destination();
     assert(!SDL_PointInRectFloat(&snapped, &footprint));
 
     room.playerStart = {730.0F, 575.0F};
     Game detour(room);
     detour.onClick({1050.0F, 575.0F});
-    assert(detour.player().remainingWaypoints() > 1);
+    assert(detour.scene().player().remainingWaypoints() > 1);
     for (int i = 0; i < 100; ++i) {
         detour.tick(0.05F);
-        const SDL_FPoint feet = detour.player().feet();
+        const SDL_FPoint feet = detour.scene().player().feet();
         assert(!SDL_PointInRectFloat(&feet, &footprint));
     }
-    assert(!detour.player().moving());
-    assert(near(detour.player().feet().x, 1050.0F));
-    assert(near(detour.player().feet().y, 575.0F));
+    assert(!detour.scene().player().moving());
+    assert(near(detour.scene().player().feet().x, 1050.0F));
+    assert(near(detour.scene().player().feet().y, 575.0F));
 }
 
 void testStandardRoomCameraFixed() {
     Game game(RoomPresets::firstRoom());
-    assert(game.navigation().columns() == 40);
-    assert(game.navigation().rows() == 23);
-    assert(near(game.camera().position().x, 0.0F));
-    assert(near(game.camera().position().y, 0.0F));
+    assert(game.scene().navigation().columns() == 40);
+    assert(game.scene().navigation().rows() == 23);
+    assert(near(game.scene().camera().position().x, 0.0F));
+    assert(near(game.scene().camera().position().y, 0.0F));
 
     const SDL_FPoint targets[]{{80.0F, 340.0F}, {1220.0F, 680.0F}, {640.0F, 500.0F}};
     for (const SDL_FPoint target : targets) {
@@ -178,7 +197,7 @@ void testStandardRoomCameraFixed() {
         for (int i = 0; i < 60; ++i) {
             game.tick(0.05F);
             for (const float alpha : {0.0F, 0.5F, 1.0F}) {
-                const SDL_FPoint cam = game.camera().interpolatedPosition(alpha);
+                const SDL_FPoint cam = game.scene().camera().interpolatedPosition(alpha);
                 assert(near(cam.x, 0.0F) && near(cam.y, 0.0F));
             }
         }
@@ -199,32 +218,32 @@ void testPanoramicRoomCameraAndNavigation() {
     const SDL_FRect eastFootprint = room.scenery[0].worldCollisionFootprint();
 
     Game game(room);
-    assert(game.navigation().columns() == 80);
-    assert(game.navigation().rows() == 23);
+    assert(game.scene().navigation().columns() == 80);
+    assert(game.scene().navigation().rows() == 23);
     // Spawn near the left border clamps the initial camera to x = 0.
-    assert(near(game.camera().position().x, 0.0F));
-    assert(near(game.camera().position().y, 0.0F));
+    assert(near(game.scene().camera().position().x, 0.0F));
+    assert(near(game.scene().camera().position().y, 0.0F));
 
     game.onClick({2350.0F, 560.0F});
-    assert(game.player().moving());
-    assert(game.player().remainingWaypoints() > 1);
+    assert(game.scene().player().moving());
+    assert(game.scene().player().remainingWaypoints() > 1);
 
     bool sawSmoothLag = false;
     bool crossedOriginalWidth = false;
-    float previousCameraX = game.camera().position().x;
+    float previousCameraX = game.scene().camera().position().x;
     for (int i = 0; i < 220; ++i) {
-        const float beforeTickCamX = game.camera().position().x;
+        const float beforeTickCamX = game.scene().camera().position().x;
         game.tick(0.05F);
-        const SDL_FPoint feet = game.player().feet();
-        const SDL_FPoint cam = game.camera().position();
-        const SDL_FPoint mid = game.camera().interpolatedPosition(0.5F);
+        const SDL_FPoint feet = game.scene().player().feet();
+        const SDL_FPoint cam = game.scene().camera().position();
+        const SDL_FPoint mid = game.scene().camera().interpolatedPosition(0.5F);
         assert(!SDL_PointInRectFloat(&feet, &eastFootprint));
         assert(cam.x >= 0.0F && cam.x <= room.width - World::width);
         assert(near(cam.y, 0.0F));
         assert(cam.x + 0.001F >= previousCameraX);
         assert(mid.x >= beforeTickCamX - 0.001F && mid.x <= cam.x + 0.001F);
-        if (feet.x > 900.0F && feet.x < 1600.0F && game.player().moving()) {
-            const float idealTargetX = game.camera().targetFor(feet).x;
+        if (feet.x > 900.0F && feet.x < 1600.0F && game.scene().player().moving()) {
+            const float idealTargetX = game.scene().camera().targetFor(feet).x;
             if (cam.x > 0.0F && cam.x + 1.0F < idealTargetX) {
                 sawSmoothLag = true;
             }
@@ -236,33 +255,33 @@ void testPanoramicRoomCameraAndNavigation() {
     }
     assert(crossedOriginalWidth);
     assert(sawSmoothLag);
-    assert(!game.player().moving());
-    assert(near(game.player().feet().x, 2350.0F));
+    assert(!game.scene().player().moving());
+    assert(near(game.scene().player().feet().x, 2350.0F));
     // Near the right border (2350 - 640 = 1710 > 1280), the camera clamps at 1280.
-    assert(near(game.camera().position().x, 1280.0F));
+    assert(near(game.scene().camera().position().x, 1280.0F));
 
     // Clicking inside the solid footprint at x > 1280 snaps to nearest walkable ground.
     game.onClick({1800.0F, 565.0F});
-    const SDL_FPoint snapped = game.player().destination();
+    const SDL_FPoint snapped = game.scene().player().destination();
     assert(!SDL_PointInRectFloat(&snapped, &eastFootprint));
 
     // Teleporting snaps the camera immediately with zero lag.
     std::string error;
     assert(game.teleportPlayer({1400.0F, 520.0F}, error));
-    assert(near(game.camera().position().x, 760.0F));
-    assert(near(game.camera().interpolatedPosition(0.0F).x, 760.0F));
+    assert(near(game.scene().camera().position().x, 760.0F));
+    assert(near(game.scene().camera().interpolatedPosition(0.0F).x, 760.0F));
 
     // Live editor tweaks (resetPlayer == false) keep continuity and clamp when shrinking.
-    Room faster = game.room();
+    Room faster = game.scene().room();
     faster.playerFarSpeed = 160.0F;
     assert(game.applyRoom(faster, false, error));
-    assert(near(game.camera().position().x, 760.0F));
+    assert(near(game.scene().camera().position().x, 760.0F));
 
-    Room narrower = game.room();
+    Room narrower = game.scene().room();
     narrower.scenery.clear();
     narrower.width = 1800.0F;
     assert(game.applyRoom(narrower, false, error));
-    assert(near(game.camera().position().x, 520.0F));
+    assert(near(game.scene().camera().position().x, 520.0F));
 
     // Loading a room strong-snaps both X and Y camera axes to the spawn target.
     Room tallAndWide = RoomPresets::firstRoom();
@@ -272,8 +291,8 @@ void testPanoramicRoomCameraAndNavigation() {
     tallAndWide.nearDepthY = 1440.0F;
     tallAndWide.playerStart = {1900.0F, 1000.0F};
     game.loadRoom(tallAndWide);
-    assert(near(game.camera().position().x, 1260.0F));
-    assert(near(game.camera().position().y, 640.0F));
+    assert(near(game.scene().camera().position().x, 1260.0F));
+    assert(near(game.scene().camera().position().y, 640.0F));
 }
 
 void testWalkToInteractAndDepthPicking() {
@@ -323,39 +342,39 @@ void testWalkToInteractAndDepthPicking() {
     // 1. Click in the overlapping region (740, 470): must pick front_banner (higher depth),
     // start walking, and NOT trigger the effect before arrival.
     game.onClick({740.0F, 470.0F});
-    assert(game.player().moving());
-    assert(game.pendingInteraction().has_value());
-    assert(game.pendingInteraction()->objectId == "front_banner");
+    assert(game.scene().player().moving());
+    assert(game.scene().pendingInteraction().has_value());
+    assert(game.scene().pendingInteraction()->objectId == "front_banner");
     assert(!game.session().hasFlag("took_banner"));
-    assert(!game.floatingText().isVisible());
+    assert(!game.scene().floatingText().isVisible());
 
     game.tick(0.25F);
-    assert(game.player().moving());
+    assert(game.scene().player().moving());
     assert(!game.session().hasFlag("took_banner"));
 
     // 2. Clicking empty floor mid-walk cancels the pending interaction and reroutes.
     game.onClick({320.0F, 600.0F});
-    assert(!game.pendingInteraction().has_value());
+    assert(!game.scene().pendingInteraction().has_value());
     for (int i = 0; i < 80; ++i) {
         game.tick(0.05F);
     }
-    assert(!game.player().moving());
-    assert(near(game.player().feet().x, 320.0F) && near(game.player().feet().y, 600.0F));
+    assert(!game.scene().player().moving());
+    assert(near(game.scene().player().feet().x, 320.0F) && near(game.scene().player().feet().y, 600.0F));
     assert(!game.session().hasFlag("took_banner"));
-    assert(game.isObjectVisible("front_banner"));
+    assert(game.scene().isObjectVisible("front_banner"));
 
     // 3. Click the overlapping spot again and walk all the way to arrival: front_banner fires and hides.
     game.onClick({740.0F, 470.0F});
-    assert(game.pendingInteraction().has_value());
-    assert(game.pendingInteraction()->objectId == "front_banner");
+    assert(game.scene().pendingInteraction().has_value());
+    assert(game.scene().pendingInteraction()->objectId == "front_banner");
     for (int i = 0; i < 100; ++i) {
         game.tick(0.05F);
     }
-    assert(!game.player().moving());
-    assert(!game.pendingInteraction().has_value());
+    assert(!game.scene().player().moving());
+    assert(!game.scene().pendingInteraction().has_value());
     assert(game.session().hasFlag("took_banner"));
-    assert(!game.isObjectVisible("front_banner"));
-    assert(game.floatingText().text() == "Retirei o estandarte da frente.");
+    assert(!game.scene().isObjectVisible("front_banner"));
+    assert(game.scene().floatingText().text() == "Retirei o estandarte da frente.");
     assert(!game.session().hasFlag("inspected_statue"));
 
     // 4. Clicking the exact same spot (740, 470) now ignores hidden front_banner and picks back_statue.
@@ -363,27 +382,27 @@ void testWalkToInteractAndDepthPicking() {
     for (int i = 0; i < 60; ++i) {
         game.tick(0.05F);
     }
-    assert(!game.player().moving());
+    assert(!game.scene().player().moving());
     assert(game.session().hasFlag("inspected_statue"));
-    assert(game.floatingText().text() == "Uma estatua antiga.");
+    assert(game.scene().floatingText().text() == "Uma estatua antiga.");
 
     // 5. Clicking back_statue while ALREADY standing at its interaction point fires immediately.
     game.session().clearFlag("inspected_statue");
     game.onClick({740.0F, 470.0F});
-    assert(!game.player().moving());
-    assert(!game.pendingInteraction().has_value());
+    assert(!game.scene().player().moving());
+    assert(!game.scene().pendingInteraction().has_value());
     assert(game.session().hasFlag("inspected_statue"));
 
     // 6. Clicking wall_painting above wallBottomY walks to walkableTopY beneath it and interacts.
     game.onClick({465.0F, 175.0F});
-    assert(game.player().moving());
+    assert(game.scene().player().moving());
     for (int i = 0; i < 80; ++i) {
         game.tick(0.05F);
     }
-    assert(!game.player().moving());
-    assert(near(game.player().feet().y, room.walkableTopY));
+    assert(!game.scene().player().moving());
+    assert(near(game.scene().player().feet().y, room.walkableTopY));
     assert(game.session().hasFlag("saw_painting"));
-    assert(game.floatingText().text() == "Um retrato na parede.");
+    assert(game.scene().floatingText().text() == "Um retrato na parede.");
 }
 
 void testItemPickupAndHiddenCollision() {
@@ -398,7 +417,7 @@ void testItemPickupAndHiddenCollision() {
     const SDL_FPoint crateCenter{625.0F, 545.0F};
 
     Game game(room);
-    assert(!game.navigation().canStandAt(crateCenter));
+    assert(!game.scene().navigation().canStandAt(crateCenter));
 
     game.setInteractions(RoomInteractions{{
         {
@@ -413,29 +432,29 @@ void testItemPickupAndHiddenCollision() {
     }});
 
     game.onClick({625.0F, 515.0F});
-    assert(game.player().moving());
+    assert(game.scene().player().moving());
     assert(!game.session().hasItem("crowbar"));
     for (int i = 0; i < 80; ++i) {
         game.tick(0.05F);
     }
-    assert(!game.player().moving());
+    assert(!game.scene().player().moving());
     assert(game.session().hasItem("crowbar"));
     assert(game.session().items().size() == 1);
     assert(game.session().items()[0] == "crowbar");
-    assert(!game.isObjectVisible("supply_crate"));
-    assert(!game.isObjectSolid(game.room().scenery[0]));
+    assert(!game.scene().isObjectVisible("supply_crate"));
+    assert(!game.scene().isObjectSolid(game.scene().room().scenery[0]));
     // Hidden solid object no longer blocks navigation, and clicking its old bounds walks onto the floor.
-    assert(game.navigation().canStandAt(crateCenter));
+    assert(game.scene().navigation().canStandAt(crateCenter));
 
     game.onTextInput("");
     game.onClick(crateCenter);
-    assert(!game.pendingInteraction().has_value());
+    assert(!game.scene().pendingInteraction().has_value());
     for (int i = 0; i < 40; ++i) {
         game.tick(0.05F);
     }
-    assert(near(game.player().feet().x, crateCenter.x));
-    assert(near(game.player().feet().y, crateCenter.y));
-    assert(!game.floatingText().isVisible());
+    assert(near(game.scene().player().feet().x, crateCenter.x));
+    assert(near(game.scene().player().feet().y, crateCenter.y));
+    assert(!game.scene().floatingText().isVisible());
 }
 
 void testConditionalNpcPuzzleAndRoomPersistence() {
@@ -525,10 +544,10 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     for (int i = 0; i < 100; ++i) {
         game.tick(0.05F);
     }
-    assert(game.player().feet().x < 700.0F);
+    assert(game.scene().player().feet().x < 700.0F);
     assert(!game.session().hasItem("relic"));
-    assert(game.isObjectVisible("relic"));
-    assert(!game.pendingRoomTransition().has_value());
+    assert(game.scene().isObjectVisible("relic"));
+    assert(!requestedRoom(game).has_value());
 
     // 2. Talk to guard before having silver_key: sets talked_to_guard flag, gate stays solid.
     game.onClick({535.0F, 430.0F});
@@ -537,9 +556,9 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     }
     assert(game.session().hasFlag("talked_to_guard"));
     assert(!game.session().hasFlag("gate_open"));
-    assert(game.floatingText().text() == "Sem a chave prateada ninguem passa.");
-    assert(!game.navigation().canStandAt({730.0F, 520.0F}));
-    assert(game.objectAnimation("iron_gate")->name() == "idle");
+    assert(game.scene().floatingText().text() == "Sem a chave prateada ninguem passa.");
+    assert(!game.scene().navigation().canStandAt({730.0F, 520.0F}));
+    assert(game.scene().objectAnimation("iron_gate")->name() == "idle");
 
     // 3. Pick up silver_key on the floor.
     game.onClick({390.0F, 495.0F});
@@ -547,7 +566,7 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
         game.tick(0.05F);
     }
     assert(game.session().hasItem("silver_key"));
-    assert(!game.isObjectVisible("silver_key"));
+    assert(!game.scene().isObjectVisible("silver_key"));
 
     // 4. Talk to guard again now that we have silver_key AND talked_to_guard:
     // consumes silver_key, sets gate_open, switches iron_gate animation to "open",
@@ -558,26 +577,26 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     }
     assert(!game.session().hasItem("silver_key"));
     assert(game.session().hasFlag("gate_open"));
-    assert(game.floatingText().text() == "Essa e a chave! Vou abrir o portao.");
-    assert(game.objectAnimation("iron_gate")->name() == "open");
-    assert(game.navigation().canStandAt({730.0F, 520.0F}));
+    assert(game.scene().floatingText().text() == "Essa e a chave! Vou abrir o portao.");
+    assert(game.scene().objectAnimation("iron_gate")->name() == "open");
+    assert(game.scene().navigation().canStandAt({730.0F, 520.0F}));
 
     // Talking to guard a third time (already standing next to him) reflects the new state.
     game.onClick({535.0F, 430.0F});
-    assert(game.floatingText().text() == "O portao esta aberto. Boa sorte la dentro.");
+    assert(game.scene().floatingText().text() == "O portao esta aberto. Boa sorte la dentro.");
 
     // 5. Walk through the unlocked gate to collect relic and trigger change_room "sanctuary".
     game.onClick({1055.0F, 515.0F});
     for (int i = 0; i < 120; ++i) {
         game.tick(0.05F);
     }
-    assert(game.player().feet().x > 950.0F);
+    assert(game.scene().player().feet().x > 950.0F);
     assert(game.session().hasItem("relic"));
-    assert(!game.isObjectVisible("relic"));
-    assert(game.pendingRoomTransition().has_value());
-    assert(*game.pendingRoomTransition() == "sanctuary");
-    assert(*game.consumeRoomTransition() == "sanctuary");
-    assert(!game.pendingRoomTransition().has_value());
+    assert(!game.scene().isObjectVisible("relic"));
+    assert(requestedRoom(game).has_value());
+    assert(*requestedRoom(game) == "sanctuary");
+    assert(*consumeRequestedRoom(game) == "sanctuary");
+    assert(!requestedRoom(game).has_value());
 
     // 6. Transitioning to another room and returning preserves SessionState (inventory, flags,
     // hidden items, and unlocked iron_gate).
@@ -588,9 +607,9 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     assert(game.session().hasFlag("gate_open"));
 
     game.loadRoom(room);
-    assert(!game.isObjectVisible("silver_key"));
-    assert(!game.isObjectVisible("relic"));
-    assert(game.navigation().canStandAt({730.0F, 520.0F}));
+    assert(!game.scene().isObjectVisible("silver_key"));
+    assert(!game.scene().isObjectVisible("relic"));
+    assert(game.scene().navigation().canStandAt({730.0F, 520.0F}));
 }
 }
 
@@ -621,42 +640,42 @@ void testScriptedSequenceAndCutscene() {
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
     assert(game.inCutscene());
-    assert(game.player().moving()); // walk_to red_box holds the queue
+    assert(game.scene().player().moving()); // walk_to red_box holds the queue
 
     // World clicks do not redirect the scripted walk.
-    const SDL_FPoint destination = game.player().destination();
+    const SDL_FPoint destination = game.scene().player().destination();
     game.onClick({200.0F, 600.0F});
-    assert(game.player().destination().x == destination.x);
-    assert(game.player().destination().y == destination.y);
+    assert(game.scene().player().destination().x == destination.x);
+    assert(game.scene().player().destination().y == destination.y);
     assert(!game.useItemOnObject("anything", "red_box"));
 
-    for (int i = 0; i < 300 && game.player().moving(); ++i) game.tick(0.05F);
-    assert(game.floatingText().isVisible() && game.floatingText().text() == "A");
+    for (int i = 0; i < 300 && game.scene().player().moving(); ++i) game.tick(0.05F);
+    assert(game.scene().floatingText().isVisible() && game.scene().floatingText().text() == "A");
     assert(game.inCutscene());
-    assert(game.objectAnimation("red_box")->name() == "idle");
+    assert(game.scene().objectAnimation("red_box")->name() == "idle");
 
     // A click skips the line; the next tick starts the animation and waits for it.
     game.onClick({200.0F, 600.0F});
-    assert(!game.floatingText().isVisible());
-    assert(!game.player().moving());
+    assert(!game.scene().floatingText().isVisible());
+    assert(!game.scene().player().moving());
     game.tick(0.05F);
-    assert(game.objectAnimation("red_box")->name() == "open");
+    assert(game.scene().objectAnimation("red_box")->name() == "open");
     assert(game.inCutscene());
 
     for (int i = 0; i < 12; ++i) game.tick(0.05F); // clip (0.5 s) ends, wait 0.5 starts
     assert(game.inCutscene());
-    assert(game.floatingText().text() == "A");
+    assert(game.scene().floatingText().text() == "A");
     for (int i = 0; i < 12; ++i) game.tick(0.05F); // wait ends, say B holds the queue
-    assert(game.floatingText().text() == "B");
+    assert(game.scene().floatingText().text() == "B");
     assert(game.inCutscene());
     assert(!game.session().hasFlag("cutscene_done"));
-    assert(!game.pendingRoomTransition().has_value());
+    assert(!requestedRoom(game).has_value());
 
     // B expires on its own (reading time); the rest runs and the room change is published.
     for (int i = 0; i < 400 && game.inCutscene(); ++i) game.tick(0.05F);
     assert(!game.inCutscene());
     assert(game.session().hasFlag("cutscene_done"));
-    assert(game.pendingRoomTransition() && *game.pendingRoomTransition() == "gallery");
+    assert(requestedRoom(game) && *requestedRoom(game) == "gallery");
 
     // Changing room cancels any running sequence.
     game.onClick({430.0F, 410.0F});
@@ -666,7 +685,7 @@ void testScriptedSequenceAndCutscene() {
     gallery.id = "gallery";
     game.loadRoom(gallery);
     assert(!game.inCutscene());
-    assert(!game.pendingRoomTransition().has_value());
+    assert(!requestedRoom(game).has_value());
 }
 
 RoomDialogues guardDialogues() {
@@ -702,27 +721,27 @@ void testDialogueWithChoices() {
                     InteractionEffect::make("set_flag", {"talked"})},
     }}});
     game.setDialogues(guardDialogues());
-    assert(dialogueReferencesError(game.interactions(), game.dialogues()).empty());
+    assert(dialogueReferencesError(game.scene().interactions(), game.scene().dialogues()).empty());
 
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 200 && !game.dialogueActive(); ++i) game.tick(0.05F);
     assert(game.dialogueActive() && game.inCutscene());
     // The node's line is the last step, so the menu opens with it still on screen.
     assert(game.awaitingDialogueChoice());
-    assert(game.floatingText().isVisible() && game.floatingText().text() == "Alto la!");
+    assert(game.scene().floatingText().isVisible() && game.scene().floatingText().text() == "Alto la!");
     assert(game.dialogueOptions().size() == 2); // no key yet: "key" is filtered out
     assert(game.dialogueOptions()[0]->id == "ask" && game.dialogueOptions()[1]->id == "bye");
 
     // Modal: world clicks neither move the player nor end the conversation.
     game.onClick({200.0F, 600.0F});
-    assert(!game.player().moving() && game.awaitingDialogueChoice());
+    assert(!game.scene().player().moving() && game.awaitingDialogueChoice());
     assert(!game.chooseDialogueOption(5));
     assert(!game.startDialogue("guard")); // already in cutscene
 
     // A reply that leads to a node is read before the node reopens.
     assert(game.chooseDialogueOption(0));
     assert(!game.awaitingDialogueChoice() && game.inCutscene());
-    assert(game.floatingText().text() == "Resposta");
+    assert(game.scene().floatingText().text() == "Resposta");
     assert(!game.chooseDialogueOption(0));
     assert(game.session().dialogueChoiceTaken("first", "guard", "ask"));
     game.tick(0.05F);
@@ -730,19 +749,19 @@ void testDialogueWithChoices() {
     game.onClick({200.0F, 600.0F}); // skip the reply
     game.tick(0.05F);
     assert(game.awaitingDialogueChoice());
-    assert(game.floatingText().text() == "Alto la!");
+    assert(game.scene().floatingText().text() == "Alto la!");
     assert(game.dialogueOptions().size() == 1 && game.dialogueOptions()[0]->id == "bye");
 
     // change_room inside a reply waits for the dialogue and the rule that opened it.
     assert(game.chooseDialogueOption(0));
     assert(!game.dialogueActive());
-    assert(!game.pendingRoomTransition().has_value());
+    assert(!requestedRoom(game).has_value());
     assert(!game.session().hasFlag("talked"));
     game.tick(0.05F);
     assert(!game.inCutscene());
     assert(game.session().hasFlag("talked"));
-    assert(game.pendingRoomTransition() && *game.pendingRoomTransition() == "gallery");
-    (void)game.consumeRoomTransition();
+    assert(requestedRoom(game) && *requestedRoom(game) == "gallery");
+    (void)consumeRequestedRoom(game);
 
     // With the key the conditional option shows; "ask" stays hidden (once, kept in session).
     game.session().addItem("brass_key");
@@ -761,7 +780,7 @@ void testDialogueWithChoices() {
     Room gallery = RoomPresets::firstRoom();
     gallery.id = "gallery";
     game.loadRoom(gallery);
-    assert(!game.dialogueActive() && !game.inCutscene() && game.dialogues().empty());
+    assert(!game.dialogueActive() && !game.inCutscene() && game.scene().dialogues().empty());
     assert(game.session().dialogueChoiceTaken("first", "guard", "ask"));
 
     // A node with no option left ends after its lines; validation guards the definitions.
@@ -784,7 +803,65 @@ void testDialogueWithChoices() {
     game.setDialogues(RoomDialogues{{DialogueNode{
             "lonely", {InteractionEffect::make("say", {"Silencio."})}, {locked}}}});
     assert(game.startDialogue("lonely"));
-    assert(!game.dialogueActive() && game.floatingText().text() == "Silencio.");
+    assert(!game.dialogueActive() && game.scene().floatingText().text() == "Silencio.");
+}
+
+// Game reports outward through GameEvent: loads, lines, cutscene edges and room requests, in
+// the order they happened. Live edits stay silent and a room change drops stale requests.
+void testGameEventQueue() {
+    Room room = RoomPresets::firstRoom();
+    Game game(room);
+    std::vector<GameEvent> drained;
+    game.drainEvents(drained);
+    assert(drained.size() == 1);
+    assert(std::get<RoomEntered>(drained[0]).roomId == "first");
+    assert(game.pendingEvents().empty());
+
+    std::string error;
+    Room edited = room;
+    edited.playerFarSpeed += 10.0F;
+    assert(game.applyRoom(edited, false, error));
+    assert(game.pendingEvents().empty()); // live edit: no RoomEntered
+
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {
+            InteractionEffect::make("say", {"A"}),
+            InteractionEffect::make("say", {"B"}),
+            InteractionEffect::make("change_room", {"gallery"}),
+        },
+    }}});
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
+    game.onClick({200.0F, 600.0F}); // skip A
+    game.tick(0.05F);               // B holds the queue: change_room still follows it
+    assert(game.inCutscene() && game.scene().floatingText().text() == "B");
+    assert(!requestedRoom(game));
+    game.onClick({200.0F, 600.0F}); // skip B
+    game.tick(0.05F);               // change_room runs, the sequence ends, the request goes out
+    assert(!game.inCutscene());
+
+    const auto events = game.pendingEvents();
+    assert(events.size() == 5);
+    assert(std::get<LineSpoken>(events[0]).text == "A");
+    assert(std::holds_alternative<CutsceneStarted>(events[1]));
+    assert(std::get<LineSpoken>(events[2]).text == "B");
+    assert(std::get<RoomChangeRequested>(events[3]).roomId == "gallery");
+    assert(std::holds_alternative<CutsceneEnded>(events[4]));
+
+    // Entering another room before the shell drained the queue drops the old request.
+    Room other = RoomPresets::firstRoom();
+    other.id = "other";
+    game.loadRoom(other);
+    assert(!requestedRoom(game));
+    assert(std::get<RoomEntered>(game.pendingEvents().back()).roomId == "other");
+
+    // drainEvents hands the events over and leaves the queue empty.
+    drained.reserve(32);
+    game.drainEvents(drained);
+    assert(drained.size() == 5);
+    assert(game.pendingEvents().empty());
 }
 
 void testCameraTargetFor() {
@@ -843,5 +920,6 @@ int main() {
     testConditionalNpcPuzzleAndRoomPersistence();
     testScriptedSequenceAndCutscene();
     testDialogueWithChoices();
+    testGameEventQueue();
     testCameraTargetFor();
 }

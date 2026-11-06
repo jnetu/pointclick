@@ -12,6 +12,7 @@
 #include <string>
 #include <thread>
 #include <utility>
+#include <variant>
 
 namespace {
 constexpr double kTicksPerSecond = 20.0;
@@ -78,8 +79,16 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
     return true;
 }
 
-void Application::processPendingRoomTransition() {
-    const auto nextRoomId = game_.consumeRoomTransition();
+void Application::processGameEvents() {
+    game_.drainEvents(gameEvents_);
+    const std::string* nextRoomId = nullptr;
+    for (const GameEvent& event : gameEvents_) {
+        if (const auto* change = std::get_if<RoomChangeRequested>(&event)) {
+            nextRoomId = &change->roomId; // several in one drain: the last request wins
+        }
+        // RoomEntered, LineSpoken and the cutscene edges have no shell consumer yet
+        // (audio, fades, autosave and subtitles will subscribe here).
+    }
     if (!nextRoomId) return;
     if (!validIdentifier(*nextRoomId)) {
         SDL_Log("Invalid room transition target: %s", nextRoomId->c_str());
@@ -149,7 +158,7 @@ void Application::mainLoop() {
         if (!running_) {
             break;
         }
-        processPendingRoomTransition();
+        processGameEvents();
         if (suspended_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(16));
             continue;
@@ -172,7 +181,7 @@ void Application::mainLoop() {
 
         while (tickAccumulator >= kTickSeconds) {
             game_.tick(static_cast<float>(kTickSeconds));
-            processPendingRoomTransition();
+            processGameEvents();
             tickAccumulator -= kTickSeconds;
         }
 

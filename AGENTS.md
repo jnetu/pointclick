@@ -11,7 +11,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Novo clip de player ou objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md`; padrões em `src/content/RoomPresets.cpp` |
 | Regra que escolhe animação | `src/game/Animation.*`, `src/game/ObjectAnimations.*` ou `src/game/Player.*` | `src/graphics/EntityRenderer.cpp` apenas se mudar a apresentação |
 | Nova direção de locomoção | `PlayerPose` e `playerLocomotionAnimations` em `src/game/Player.hpp` | regra em `Player.cpp` e clip no `.room` |
-| Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Game.cpp` | `tests/GameTests.cpp` |
+| Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Scene.cpp` | `tests/GameTests.cpp` |
 | Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
@@ -25,7 +25,9 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles` |
 | Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp` |
 | UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
-| Efeitos visuais de transição de sala | `Game::consumeRoomTransition()` em `src/core/Application.cpp` | efeito visual temporizado em `graphics/` |
+| Efeitos visuais de transição de sala | `RoomChangeRequested` / `RoomEntered` em `Application::processGameEvents` | efeito visual temporizado em `graphics/` |
+| Notificação nova para fora do domínio (áudio, autosave, legendas) | struct nova em `src/game/GameEvent.hpp` + `emit` em `src/game/Game.cpp` | consumidor em `Application::processGameEvents`, `testGameEventQueue` em `tests/GameTests.cpp` |
+| Estado ou regra local da sala (aproximação, picking, fala na tela) | `src/game/Scene.*` | `Game` só coordena; `src/graphics/SceneRenderer.cpp` lê `const Scene&` |
 
 ## Contratos
 
@@ -41,15 +43,17 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   câmera/viewport lógica; o tamanho total da cena pertence a `Room::width` e
   `Room::height`. UI e overlays usam coordenadas de viewport; o mundo usa coordenadas
   da sala deslocadas por `Camera`.
-- `Game`, `Player`, `Camera`, `PendingInteraction`, `AnimationPlayback`, `ScriptRunner`
-  e `DialoguePlayer` guardam estado de execução da cena. Regras de gameplay não devem carregar texturas nem
+- `Scene` (com `Player`, `Camera`, `Navigation`, `PendingInteraction`, `AnimationPlayback`),
+  `ScriptRunner` e `DialoguePlayer` guardam estado de execução da cena. `Game` só coordena
+  essas peças e `SessionState`; comunica para fora por `GameEvent`, nunca por campo + `consumeX()`. Regras de gameplay não devem carregar texturas nem
   fazer chamadas de desenho.
 - `input/` traduz eventos brutos de mouse/teclado, toque (ignorando mouse sintético)
   e gamepad (hotplug, eixo analógico com *deadzone* e cursor virtual) para a viewport
   lógica, roteando por prioridade (`Ciclo de Vida → DebugEditor → ViewportUiConsumer → Game`)
   sem depender de `graphics/`.
-- `graphics/` lê o estado do jogo (`const Game&`, respeitando `Game::isObjectVisible`
-  e `Game::isObjectSolid`) e desenha. Não decide resultados de interação,
+- `graphics/` lê o estado do jogo (`const Scene&` para a cena, `const Game&` só para o
+  estado de diálogo e ferramentas, respeitando `Scene::isObjectVisible` e
+  `Scene::isObjectSolid`) e desenha. Não decide resultados de interação,
   hit-test de UI, colisão, diálogo ou transição de sala.
 - `content/` traduz arquivos `.room` (estética/espaço) e arquivos companheiros
   opcionais `.rules` (regras declarativas de interação) e `.dlg` (diálogos) em

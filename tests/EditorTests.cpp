@@ -36,57 +36,57 @@ void testEditing(const std::filesystem::path& directory) {
     assert(editor.onTextInput("bug", game));
     assert(editor.active());
     editor.onKey(DebugKey::increase, game);
-    assert(game.room().playerFarSpeed == 120);
+    assert(game.scene().room().playerFarSpeed == 120);
     command(editor, game, "set player.near_speed 400");
-    assert(game.room().playerNearSpeed == 400);
+    assert(game.scene().room().playerNearSpeed == 400);
 
     game.onClick({700, 400});
-    const auto before = game.player().destination();
+    const auto before = game.scene().player().destination();
     command(editor, game, "set perspective.near_y 100");
-    assert(game.room().nearDepthY == 720);
-    assert(game.player().moving()); // Rejected changes preserve the whole simulation.
-    assert(game.player().destination().x == before.x);
+    assert(game.scene().room().nearDepthY == 720);
+    assert(game.scene().player().moving()); // Rejected changes preserve the whole simulation.
+    assert(game.scene().player().destination().x == before.x);
     command(editor, game, "set player.width -1");
-    assert(game.room().playerBaseSize.x == 48);
+    assert(game.scene().room().playerBaseSize.x == 48);
     command(editor, game, "set player.width nan");
-    assert(game.room().playerBaseSize.x == 48);
+    assert(game.scene().room().playerBaseSize.x == 48);
 
     command(editor, game, "save authored.room");
     command(editor, game, "set player.near_speed 500");
     command(editor, game, "undo");
-    assert(game.room().playerNearSpeed == 400);
+    assert(game.scene().room().playerNearSpeed == 400);
     command(editor, game, "load authored.room");
-    assert(game.room().playerFarSpeed == 120);
-    assert(!game.player().moving());
+    assert(game.scene().room().playerFarSpeed == 120);
+    assert(!game.scene().player().moving());
     command(editor, game, "save ../escape.room");
     assert(editor.status().find("sem pastas") != std::string::npos);
 
     command(editor, game, "teleport 860 575");
-    assert(game.player().feet().x == 640); // Cannot place feet in the red base.
+    assert(game.scene().player().feet().x == 640); // Cannot place feet in the red base.
     command(editor, game, "move red_box 620 240");
-    assert(game.player().feet().x != 640 || game.player().feet().y != 360);
-    assert(game.room().scenery[1].bounds.x == 620);
+    assert(game.scene().player().feet().x != 640 || game.scene().player().feet().y != 360);
+    assert(game.scene().room().scenery[1].bounds.x == 620);
     command(editor, game, "move red_box 2000 240");
-    assert(game.room().scenery[1].bounds.x == 620);
+    assert(game.scene().room().scenery[1].bounds.x == 620);
     command(editor, game, "set room.width 1000");
-    assert(game.room().width == 1280);
+    assert(game.scene().room().width == 1280);
     command(editor, game, "set room.height 600");
-    assert(game.room().height == 720);
+    assert(game.scene().room().height == 720);
     command(editor, game, "set room.width 2560");
-    assert(game.room().width == 2560);
+    assert(game.scene().room().width == 2560);
     command(editor, game, "move red_box 2000 240");
-    assert(game.room().scenery[1].bounds.x == 2000);
+    assert(game.scene().room().scenery[1].bounds.x == 2000);
     command(editor, game, "set room.width 1280");
-    assert(game.room().width == 2560); // Cannot shrink past an object at x = 2000.
+    assert(game.scene().room().width == 2560); // Cannot shrink past an object at x = 2000.
     command(editor, game, "reset");
-    assert(game.room().width == 1280);
-    assert(game.room().playerFarSpeed == 110);
-    assert(game.room().scenery[1].bounds.x == 810);
+    assert(game.scene().room().width == 1280);
+    assert(game.scene().room().playerFarSpeed == 110);
+    assert(game.scene().room().scenery[1].bounds.x == 810);
 
     editor.onKey(DebugKey::togglePanel, game);
     assert(editor.active() && !editor.panelVisible());
     editor.onKey(DebugKey::increase, game);
-    assert(game.room().playerFarSpeed == 110);
+    assert(game.scene().room().playerFarSpeed == 110);
     assert(editor.onTextInput("set player.far_speed 500", game));
     assert(editor.command().empty());
     editor.onKey(DebugKey::togglePanel, game);
@@ -95,14 +95,14 @@ void testEditing(const std::filesystem::path& directory) {
     editor.onKey(DebugKey::close, game);
     assert(!editor.active());
     assert(!editor.onKey(DebugKey::increase, game));
-    assert(game.room().playerFarSpeed == 110);
+    assert(game.scene().room().playerFarSpeed == 110);
 
-    Room blocked = game.room();
+    Room blocked = game.scene().room();
     blocked.scenery = {{{0, 0, 1280, 720}, {255, 0, 0, 255}, SceneObjectType::solid,
                        {0, 0, 1280, 720}, "wall", {}}};
     std::string error;
     assert(!game.applyRoom(blocked, false, error));
-    assert(game.room().scenery.size() == 2);
+    assert(game.scene().room().scenery.size() == 2);
 }
 
 void testRoomFiles(const std::filesystem::path& directory) {
@@ -147,9 +147,9 @@ void testRoomFiles(const std::filesystem::path& directory) {
     const auto gallery = RoomFiles::load(source.parent_path() / "gallery.room");
     assert(gallery.room);
     Game other(*gallery.room);
-    assert(other.room().id == "gallery");
+    assert(other.scene().room().id == "gallery");
     other.onClick({400, 460});
-    assert(other.player().moving());
+    assert(other.scene().player().moving());
     Room room = *loaded.room;
     room.id = "other_room";
     room.width = 2560.0F;
@@ -256,7 +256,7 @@ void testDebugRendering() {
          SceneObjectType::decoration, {}, "beacon", {}, "idle"},
     };
     game.loadRoom(panorama);
-    assert(std::abs(game.camera().position().x) < 0.01F);
+    assert(std::abs(game.scene().camera().position().x) < 0.01F);
 
     const struct { int w; int h; } resolutions[]{
         {1280, 720},
@@ -276,16 +276,16 @@ void testDebugRendering() {
         SDL_FPoint worldCenter{};
         assert(renderer.windowToViewport(res.w * 0.5F, res.h * 0.5F, vpCenter));
         assert(renderer.windowToWorld(res.w * 0.5F, res.h * 0.5F, worldCenter,
-                                      game.camera().position()));
+                                      game.scene().camera().position()));
         assert(std::abs(vpCenter.x - 640.0F) < 0.5F && std::abs(vpCenter.y - 360.0F) < 0.5F);
         assert(std::abs(worldCenter.x - 640.0F) < 0.5F && std::abs(worldCenter.y - 360.0F) < 0.5F);
 
         SDL_FPoint leftEdge{};
         SDL_FPoint rightEdge{};
         assert(renderer.windowToWorld(presentation.x + 0.5F, res.h * 0.5F, leftEdge,
-                                      game.camera().position()));
+                                      game.scene().camera().position()));
         assert(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, res.h * 0.5F,
-                                      rightEdge, game.camera().position()));
+                                      rightEdge, game.scene().camera().position()));
         assert(leftEdge.x >= 0.0F && rightEdge.x <= 1280.0F);
         assert(std::abs((rightEdge.x - leftEdge.x) - 1280.0F) < 2.0F);
 
@@ -300,7 +300,7 @@ void testDebugRendering() {
     // while Ultrawide pillarbox bars remain outside the viewport and keep the clear color.
     std::string teleportError;
     assert(game.teleportPlayer({1550.0F, 620.0F}, teleportError));
-    assert(std::abs(game.camera().position().x - 910.0F) < 0.01F);
+    assert(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
     assert(SDL_SetWindowSize(window, 3440, 1440));
     SDL_PumpEvents();
     renderer.render(game, 1.0F, nullptr);
@@ -313,7 +313,7 @@ void testDebugRendering() {
     SDL_FPoint scrolledCenterWorld{};
     assert(renderer.windowToViewport(1720.0F, 720.0F, scrolledCenterViewport));
     assert(renderer.windowToWorld(1720.0F, 720.0F, scrolledCenterWorld,
-                                  game.camera().position()));
+                                  game.scene().camera().position()));
     assert(std::abs(scrolledCenterViewport.x - 640.0F) < 0.5F);
     assert(std::abs(scrolledCenterWorld.x - 1550.0F) < 0.5F);
 
@@ -358,7 +358,7 @@ void testMultiplatformInputAndRouting() {
     panorama.scenery.clear();
     panorama.playerStart = {1550.0F, 520.0F}; // Camera snaps to x = 910 (1550 - 640).
     Game game(panorama);
-    assert(std::abs(game.camera().position().x - 910.0F) < 0.01F);
+    assert(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
     renderer.render(game, 1.0F, nullptr);
 
     DebugEditor editor;
@@ -384,7 +384,7 @@ void testMultiplatformInputAndRouting() {
     panelClick.button.y = 500.0F * 2.0F;
     auto routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
     assert(routeResult.consumedByDebug);
-    assert(!game.player().moving());
+    assert(!game.scene().player().moving());
 
     // Clicking outside the panel at Viewport (300, 520) -> World (1210, 520) walks the player.
     SDL_Event outsidePanelClick = panelClick;
@@ -392,9 +392,9 @@ void testMultiplatformInputAndRouting() {
     outsidePanelClick.button.y = 520.0F * 2.0F;
     routeResult = router.handleEvent(outsidePanelClick, input, editor, game, mapper);
     assert(!routeResult.consumedByDebug);
-    assert(game.player().moving());
-    assert(std::abs(game.player().destination().x - 1210.0F) < 0.5F);
-    assert(std::abs(game.player().destination().y - 520.0F) < 0.5F);
+    assert(game.scene().player().moving());
+    assert(std::abs(game.scene().player().destination().x - 1210.0F) < 0.5F);
+    assert(std::abs(game.scene().player().destination().y - 520.0F) < 0.5F);
 
     std::string teleportError;
     assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
@@ -410,9 +410,9 @@ void testMultiplatformInputAndRouting() {
 
     routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
     assert(!routeResult.consumedByDebug);
-    assert(game.player().moving());
-    assert(std::abs(game.player().destination().x - 1810.0F) < 0.5F);
-    assert(std::abs(game.player().destination().y - 500.0F) < 0.5F);
+    assert(game.scene().player().moving());
+    assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
+    assert(std::abs(game.scene().player().destination().y - 500.0F) < 0.5F);
 
     assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
@@ -425,8 +425,8 @@ void testMultiplatformInputAndRouting() {
     assert(!editor.active());
     routeResult = router.handleEvent(panelClick, input, editor, game, mapper);
     assert(!routeResult.consumedByDebug);
-    assert(game.player().moving());
-    assert(std::abs(game.player().destination().x - 1810.0F) < 0.5F);
+    assert(game.scene().player().moving());
+    assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
 
     assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
@@ -439,8 +439,8 @@ void testMultiplatformInputAndRouting() {
     pillarboxTouch.tfinger.x = 0.02F;
     pillarboxTouch.tfinger.y = 0.75F;
     (void)router.handleEvent(pillarboxTouch, input, editor, game, mapper);
-    assert(!game.player().moving());
-    assert(!game.pointerInside());
+    assert(!game.scene().player().moving());
+    assert(!game.scene().pointerInside());
 
     SDL_Event pillarboxTouchUp = pillarboxTouch;
     pillarboxTouchUp.type = SDL_EVENT_FINGER_UP;
@@ -456,9 +456,9 @@ void testMultiplatformInputAndRouting() {
     worldTouch.tfinger.y = 540.0F / 720.0F;
     (void)router.handleEvent(worldTouch, input, editor, game, mapper);
     assert(input.activeDevice() == InputDevice::touch);
-    assert(game.player().moving());
-    assert(std::abs(game.player().destination().x - 1710.0F) < 0.5F); // 800 + 910
-    assert(std::abs(game.player().destination().y - 540.0F) < 0.5F);
+    assert(game.scene().player().moving());
+    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F); // 800 + 910
+    assert(std::abs(game.scene().player().destination().y - 540.0F) < 0.5F);
 
     // Synthetic mouse motion & click emitted by touch must be ignored (no double-click / retarget).
     SDL_Event syntheticMouseClick{};
@@ -470,7 +470,7 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseClick.button.y = 600.0F * 2.0F;
     (void)router.handleEvent(syntheticMouseClick, input, editor, game, mapper);
     assert(input.activeDevice() == InputDevice::touch);
-    assert(std::abs(game.player().destination().x - 1710.0F) < 0.5F);
+    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
     SDL_Event syntheticMouseTouch{};
     syntheticMouseTouch.type = SDL_EVENT_FINGER_DOWN;
@@ -479,7 +479,7 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseTouch.tfinger.x = 0.3F;
     syntheticMouseTouch.tfinger.y = 0.8F;
     (void)router.handleEvent(syntheticMouseTouch, input, editor, game, mapper);
-    assert(std::abs(game.player().destination().x - 1710.0F) < 0.5F);
+    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
     SDL_Event worldTouchUp = worldTouch;
     worldTouchUp.type = SDL_EVENT_FINGER_UP;
@@ -541,9 +541,9 @@ void testMultiplatformInputAndRouting() {
     southPress.gbutton.down = true;
     (void)router.handleEvent(southPress, input, editor, game, mapper);
     assert(input.activeDevice() == InputDevice::gamepad);
-    assert(game.player().moving());
-    assert(std::abs(game.player().destination().x - 1750.0F) < 0.5F); // 840 + 910
-    assert(std::abs(game.player().destination().y - 460.0F) < 0.5F);
+    assert(game.scene().player().moving());
+    assert(std::abs(game.scene().player().destination().x - 1750.0F) < 0.5F); // 840 + 910
+    assert(std::abs(game.scene().player().destination().y - 460.0F) < 0.5F);
 
     // Virtual cursor clamps cleanly at viewport boundaries [0..1279] x [0..719].
     router.update(10.0F, input, editor, game);
@@ -576,18 +576,18 @@ void testMultiplatformInputAndRouting() {
     assert(router.handleEvent(padBack, input, editor, game, mapper).consumedByDebug);
     assert(editor.active() && editor.panelVisible()); // Re-opened without typing "DEBUG"!
 
-    const float initialFarSpeed = game.room().playerFarSpeed;
+    const float initialFarSpeed = game.scene().room().playerFarSpeed;
     assert(editor.selected() == 0);
 
     SDL_Event dpadRight = padBack;
     dpadRight.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
     assert(router.handleEvent(dpadRight, input, editor, game, mapper).consumedByDebug);
-    assert(game.room().playerFarSpeed > initialFarSpeed);
+    assert(game.scene().room().playerFarSpeed > initialFarSpeed);
 
     SDL_Event leftShoulder = padBack;
     leftShoulder.gbutton.button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
     assert(router.handleEvent(leftShoulder, input, editor, game, mapper).consumedByDebug);
-    assert(std::abs(game.room().playerFarSpeed - initialFarSpeed) < 0.01F);
+    assert(std::abs(game.scene().room().playerFarSpeed - initialFarSpeed) < 0.01F);
 
     SDL_Event dpadDown = padBack;
     dpadDown.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_DOWN;
@@ -633,7 +633,7 @@ void testMultiplatformInputAndRouting() {
     modalClick.button.y = 300.0F * 2.0F;
     routeResult = router.handleEvent(modalClick, input, editor, game, mapper);
     assert(routeResult.consumedByUi);
-    assert(!game.player().moving());
+    assert(!game.scene().player().moving());
 
     routeResult = router.handleEvent(dpadDown, input, editor, game, mapper);
     assert(routeResult.consumedByUi && modalUi.navCount == 1);
@@ -697,13 +697,13 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     for (int i = 0; i < 100; ++i) game.tick(0.05F);
     assert(!game.session().hasItem("brass_key"));
     assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.isObjectSolid(game.room().scenery[1]));
-    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    assert(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
+    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     game.onClick({530.0F, 510.0F});
     for (int i = 0; i < 80; ++i) game.tick(0.05F);
     assert(game.session().hasItem("magenta_gem"));
-    assert(!game.isObjectVisible("magenta_gem"));
+    assert(!game.scene().isObjectVisible("magenta_gem"));
 
     // 2. Live edits in DebugEditor (set, move, undo, reset) MUST preserve SessionState!
     DebugEditor editor;
@@ -712,33 +712,33 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(editor.active());
 
     command(editor, game, "set player.far_speed 180");
-    assert(game.room().playerFarSpeed == 180.0F);
+    assert(game.scene().room().playerFarSpeed == 180.0F);
     assert(game.session().hasItem("magenta_gem"));
     assert(game.session().hasFlag("found_brass_key"));
     assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.isObjectVisible("magenta_gem"));
-    assert(!game.isObjectSolid(game.room().scenery[1]));
-    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    assert(!game.scene().isObjectVisible("magenta_gem"));
+    assert(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
+    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "move blue_box 300 350");
-    assert(game.room().scenery[0].bounds.x == 300.0F);
+    assert(game.scene().room().scenery[0].bounds.x == 300.0F);
     assert(game.session().hasItem("magenta_gem"));
-    assert(!game.isObjectVisible("magenta_gem"));
-    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    assert(!game.scene().isObjectVisible("magenta_gem"));
+    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "undo");
-    assert(game.room().scenery[0].bounds.x == 380.0F);
+    assert(game.scene().room().scenery[0].bounds.x == 380.0F);
     assert(game.session().hasItem("magenta_gem"));
     assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.isObjectVisible("magenta_gem"));
-    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    assert(!game.scene().isObjectVisible("magenta_gem"));
+    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "reset");
-    assert(game.room().playerFarSpeed == 110.0F);
+    assert(game.scene().room().playerFarSpeed == 110.0F);
     assert(game.session().hasItem("magenta_gem"));
     assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.isObjectVisible("magenta_gem"));
-    assert(game.navigation().canStandAt({860.0F, 575.0F}));
+    assert(!game.scene().isObjectVisible("magenta_gem"));
+    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
     editor.onKey(DebugKey::close, game);
 
     // 3. Headless SceneRenderer check: hidden magenta_gem is NOT drawn; showing it draws it again!
@@ -756,7 +756,7 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(!surfaceContainsColor(hiddenFrame, pickupColor));
     SDL_DestroySurface(hiddenFrame);
 
-    game.session().setObjectVisible(game.room().id, "magenta_gem", true);
+    game.session().setObjectVisible(game.scene().room().id, "magenta_gem", true);
     renderer.render(game, 1.0F, nullptr);
     SDL_Surface* shownFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(shownFrame);
@@ -863,10 +863,10 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     editor.setRoomDirectory(directory);
     assert(editor.onTextInput("DEBUG", editorGame));
     command(editor, editorGame, "set player.far_speed 155");
-    assert(editorGame.room().playerFarSpeed == 155.0F);
+    assert(editorGame.scene().room().playerFarSpeed == 155.0F);
     command(editor, editorGame, "load broken_rules.room");
     assert(editor.status() == "Linha 2: Texto entre aspas nao fechado");
-    assert(editorGame.room().playerFarSpeed == 155.0F); // Rolled back!
+    assert(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back!
 
     // 5. Clear line-by-line error messages for invalid rule syntax and invalid room references.
     const struct {
@@ -1089,8 +1089,8 @@ void testDialogueMenuInput() {
 
     // Closed: presses reach the world.
     assert(!press({900.0F, 600.0F}).consumedByUi);
-    assert(game.player().moving());
-    for (int i = 0; i < 200 && game.player().moving(); ++i) game.tick(0.05F);
+    assert(game.scene().player().moving());
+    for (int i = 0; i < 200 && game.scene().player().moving(); ++i) game.tick(0.05F);
     assert(!navigate(UiNavAction::down).consumedByUi);
 
     // Layout: rows stack inside the panel, at the bottom of the 1280x720 viewport.
@@ -1103,10 +1103,10 @@ void testDialogueMenuInput() {
     // Click/touch on a row chooses it.
     assert(game.startDialogue("menu"));
     assert(game.awaitingDialogueChoice());
-    const SDL_FPoint feet = game.player().feet();
+    const SDL_FPoint feet = game.scene().player().feet();
     assert(press({200.0F, 100.0F}).consumedByUi); // modal: outside the rows does nothing
-    assert(game.awaitingDialogueChoice() && !game.player().moving());
-    assert(game.player().feet().x == feet.x);
+    assert(game.awaitingDialogueChoice() && !game.scene().player().moving());
+    assert(game.scene().player().feet().x == feet.x);
     assert(press(center(row1)).consumedByUi);
     assert(game.session().hasFlag("picked_b") && !game.dialogueActive());
 
@@ -1137,7 +1137,7 @@ void testDialogueMenuInput() {
     assert(game.startDialogue("menu"));
     hover.viewportPoint = center(DialogueMenu::optionRect(2, 3));
     assert(router.routeTranslated(hover, editor, game).consumedByUi);
-    assert(menu.highlighted() == 2 && !game.pointerInside());
+    assert(menu.highlighted() == 2 && !game.scene().pointerInside());
 
     // Draws without a window of its own (software renderer) while open.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");

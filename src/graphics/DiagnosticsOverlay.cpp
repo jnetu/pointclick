@@ -1,5 +1,5 @@
 #include "graphics/DiagnosticsOverlay.hpp"
-#include "game/Game.hpp"
+#include "game/Scene.hpp"
 #include "game/World.hpp"
 #include <SDL3/SDL.h>
 
@@ -16,12 +16,12 @@ SDL_FPoint anchored(const Anchor anchor, const float width, const float height,
 
 }
 
-void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const Game& game,
+void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const Scene& scene,
                               const float interpolation) {
-    const Room& room = game.room();
-    const auto feet = game.player().interpolatedFeet(interpolation);
-    const auto camera = game.camera().interpolatedPosition(interpolation);
-    const auto destination = game.player().destination();
+    const Room& room = scene.room();
+    const auto feet = scene.player().interpolatedFeet(interpolation);
+    const auto camera = scene.camera().interpolatedPosition(interpolation);
+    const auto destination = scene.player().destination();
     int windowWidth = 0;
     int windowHeight = 0;
     int outputWidth = 0;
@@ -40,14 +40,14 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                         "POINT & CLICK  |  left click: move");
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 28.0F,
                               "player feet: (%.1f, %.1f)  %s", feet.x, feet.y,
-                              game.player().moving() ? "moving" : "idle");
+                              scene.player().moving() ? "moving" : "idle");
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 44.0F,
                               "destination: (%.1f, %.1f)  route: %zu",
-                              destination.x, destination.y, game.player().remainingWaypoints());
+                              destination.x, destination.y, scene.player().remainingWaypoints());
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 60.0F,
                               "mouse world: (%.1f, %.1f)  %s",
-                              game.pointer().x, game.pointer().y,
-                              game.pointerInside() ? "inside" : "outside");
+                              scene.pointer().x, scene.pointer().y,
+                              scene.pointerInside() ? "inside" : "outside");
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 76.0F,
                               "room: %.0f x %.0f  camera: (%.1f, %.1f)",
                               room.width, room.height, camera.x, camera.y);
@@ -68,17 +68,17 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                               room.speedAt(feet.y), room.playerFarSpeed,
                               room.playerNearSpeed);
     const char* poseName = "idle";
-    switch (game.player().pose()) {
+    switch (scene.player().pose()) {
     case PlayerPose::idle: break;
     case PlayerPose::left: poseName = "left"; break;
     case PlayerPose::right: poseName = "right"; break;
     case PlayerPose::up: poseName = "up"; break;
     case PlayerPose::down: poseName = "down"; break;
     }
-    const SpriteClip* clip = findAnimation(room.playerAnimations, game.player().animationName());
+    const SpriteClip* clip = findAnimation(room.playerAnimations, scene.player().animationName());
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
                               "anim: %s  frame: %d/%d", poseName,
-                              clip ? clip->frameAt(game.player().animationTime()) + 1 : 0,
+                              clip ? clip->frameAt(scene.player().animationTime()) + 1 : 0,
                               clip ? clip->frames : 0);
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 188.0F,
                               "sprite: %s", clip ? clip->file.substr(0, 42).c_str() : "missing clip");

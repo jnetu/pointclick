@@ -90,7 +90,7 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
                     break;
                 }
             }
-            const SDL_FPoint worldPoint = game.camera().viewportToWorld(
+            const SDL_FPoint worldPoint = game.scene().camera().viewportToWorld(
                     translated.viewportPoint, interpolation);
             game.onPointerMove(worldPoint,
                                translated.insideViewport && !pointerHoverConsumedByUi);
@@ -112,7 +112,7 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
             }
 
             // Layer 4: World click after camera offset conversion.
-            const SDL_FPoint worldPoint = game.camera().viewportToWorld(
+            const SDL_FPoint worldPoint = game.scene().camera().viewportToWorld(
                     translated.viewportPoint, interpolation);
             game.onClick(worldPoint);
         }

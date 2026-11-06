@@ -8,16 +8,16 @@
 void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
                         const DebugEditor& editor, const float interpolation) {
     if (!editor.active()) return;
-    const SDL_FPoint cameraOffset = game.camera().interpolatedPosition(interpolation);
+    const SDL_FPoint cameraOffset = game.scene().camera().interpolatedPosition(interpolation);
     SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
-    for (const auto& object : game.room().scenery) {
-        if (game.isObjectSolid(object)) {
+    for (const auto& object : game.scene().room().scenery) {
+        if (game.scene().isObjectSolid(object)) {
             auto base = effectiveCollisionFootprint(object);
             base.x -= cameraOffset.x;
             base.y -= cameraOffset.y;
             SDL_RenderRect(renderer, &base);
         }
-        if (game.isObjectVisible(object.id)) {
+        if (game.scene().isObjectVisible(object.id)) {
             SDL_RenderDebugText(renderer, object.bounds.x - cameraOffset.x,
                                 object.bounds.y - 12 - cameraOffset.y, object.id.c_str());
         } else {
@@ -45,7 +45,7 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
     const float x = panel.x + 12;
     const float y = panel.y + 12;
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
-    SDL_RenderDebugTextFormat(renderer, x, y, "DEBUG | sala: %s | ESC/F1: sair", game.room().id.c_str());
+    SDL_RenderDebugTextFormat(renderer, x, y, "DEBUG | sala: %s | ESC/F1: sair", game.scene().room().id.c_str());
     SDL_SetRenderDrawColor(renderer, 214, 223, 232, 255);
     SDL_RenderDebugText(renderer, x, y + 24, "CIMA/BAIXO: selecionar | ESQ/DIR: alterar");
     SDL_RenderDebugText(renderer, x, y + 40, "TAB/X: ocultar painel e testar a sala inteira.");
@@ -63,7 +63,7 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
         SDL_SetRenderDrawColor(renderer, 226, 233, 241, 255);
         SDL_RenderDebugTextFormat(renderer, x, rowY, "%s %-25s %8.2f",
                                   editor.selected() == i ? ">" : " ",
-                                  parameter.key.data(), parameter.read(game.room()));
+                                  parameter.key.data(), parameter.read(game.scene().room()));
     }
     const auto& selected = parameters[editor.selected()];
     SDL_SetRenderDrawColor(renderer, 165, 195, 218, 255);

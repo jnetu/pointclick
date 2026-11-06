@@ -289,19 +289,46 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Condição** | `flag_set <flag>` / `flag_not_set <flag>` | Testa se uma flag de progresso está ativa ou não |
 | **Condição** | `has_item <itemId>` / `lacks_item <itemId>` | Testa se o jogador possui (ou não) o item no inventário |
 | **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
-| **Efeito** | `say "<texto>"` | Exibe a fala/observação na tela (suporta `\"` e `\n`) |
+| **Efeito** | `say "<texto>"` | Exibe a fala/observação (suporta `\"` e `\n`) e espera o tempo de leitura ou um clique |
 | **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
 | **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |
 | **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
-| **Efeito** | `change_room <roomId>` | Solicita transição para `<roomId>.room` |
+| **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` não esperam) |
+| **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
+| **Efeito** | `wait <segundos>` | Espera um tempo (ex.: `wait 1.5`, sempre com ponto) |
+| **Efeito** | `change_room <roomId>` | Troca para `<roomId>.room` quando a sequência terminar |
 
 A tabela acima espelha o catálogo de ações em `src/game/ActionCatalog.cpp`. Os
 argumentos são validados pelo tipo: identificadores só aceitam letras, números, `_`
 e `-`; `<objeto>` precisa existir na sala; `<animacao>` precisa existir no objeto;
 `"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`. Um erro aponta a linha
 e a forma esperada (por exemplo, `Linha 4: Use set_solid <objeto> <0|1>`).
+
+### Sequências e cutscenes
+
+Os efeitos rodam **em ordem e ao longo do tempo**. Efeitos instantâneos (flags, itens,
+visibilidade, colisão, `play_animation`, `change_room`) acontecem na hora; `say`,
+`walk_to`, `wait` e `wait_animation` seguram a sequência até terminar. Enquanto isso o
+jogo fica em **modo cutscene**: clicar no cenário não move o personagem nem dispara
+outras regras, só pula a fala atual. O último efeito nunca é esperado, então uma regra
+que termina em `say` devolve o controle na hora. `change_room` só acontece quando a
+sequência inteira termina.
+
+```ini
+# Puxar a alavanca: animar -> esperar -> andar ate a porta -> falar -> trocar de sala
+[interact alavanca]
+play_animation porta open
+wait_animation porta
+wait 0.5
+walk_to porta
+say "Vamos la."
+change_room gallery
+```
+
+Falas lineares de diálogo são só uma sequência de `say`; cada clique avança para a
+próxima.
 
 ### Exemplo prático: chave coletável, NPC condicional e porta trancada
 

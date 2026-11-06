@@ -594,6 +594,81 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
 }
 }
 
+// walk_to -> say -> play_animation -> wait_animation -> wait -> say -> change_room runs over
+// several ticks; while it holds the scene, clicks only skip the current line.
+void testScriptedSequenceAndCutscene() {
+    Room room = RoomPresets::firstRoom();
+    room.scenery[1].animations["idle"] = SpriteClip{.file = "red_idle.png"};
+    room.scenery[1].animations["open"] = SpriteClip{.file = "red_open.png", .frameWidth = 16,
+                                                    .frameHeight = 16, .frames = 4,
+                                                    .columns = 4, .fps = 8.0F, .loop = false};
+    Game game(room);
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {
+            InteractionEffect::make("walk_to", {"red_box"}),
+            InteractionEffect::make("say", {"A"}),
+            InteractionEffect::make("play_animation", {"red_box", "open"}),
+            InteractionEffect::make("wait_animation", {"red_box"}),
+            InteractionEffect::make("wait", {"0.5"}),
+            InteractionEffect::make("say", {"B"}),
+            InteractionEffect::make("set_flag", {"cutscene_done"}),
+            InteractionEffect::make("change_room", {"gallery"}),
+        },
+    }}});
+
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
+    assert(game.inCutscene());
+    assert(game.player().moving()); // walk_to red_box holds the queue
+
+    // World clicks do not redirect the scripted walk.
+    const SDL_FPoint destination = game.player().destination();
+    game.onClick({200.0F, 600.0F});
+    assert(game.player().destination().x == destination.x);
+    assert(game.player().destination().y == destination.y);
+    assert(!game.useItemOnObject("anything", "red_box"));
+
+    for (int i = 0; i < 300 && game.player().moving(); ++i) game.tick(0.05F);
+    assert(game.floatingText().isVisible() && game.floatingText().text() == "A");
+    assert(game.inCutscene());
+    assert(game.objectAnimation("red_box")->name() == "idle");
+
+    // A click skips the line; the next tick starts the animation and waits for it.
+    game.onClick({200.0F, 600.0F});
+    assert(!game.floatingText().isVisible());
+    assert(!game.player().moving());
+    game.tick(0.05F);
+    assert(game.objectAnimation("red_box")->name() == "open");
+    assert(game.inCutscene());
+
+    for (int i = 0; i < 12; ++i) game.tick(0.05F); // clip (0.5 s) ends, wait 0.5 starts
+    assert(game.inCutscene());
+    assert(game.floatingText().text() == "A");
+    for (int i = 0; i < 12; ++i) game.tick(0.05F); // wait ends, say B holds the queue
+    assert(game.floatingText().text() == "B");
+    assert(game.inCutscene());
+    assert(!game.session().hasFlag("cutscene_done"));
+    assert(!game.pendingRoomTransition().has_value());
+
+    // B expires on its own (reading time); the rest runs and the room change is published.
+    for (int i = 0; i < 400 && game.inCutscene(); ++i) game.tick(0.05F);
+    assert(!game.inCutscene());
+    assert(game.session().hasFlag("cutscene_done"));
+    assert(game.pendingRoomTransition() && *game.pendingRoomTransition() == "gallery");
+
+    // Changing room cancels any running sequence.
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
+    assert(game.inCutscene());
+    Room gallery = RoomPresets::firstRoom();
+    gallery.id = "gallery";
+    game.loadRoom(gallery);
+    assert(!game.inCutscene());
+    assert(!game.pendingRoomTransition().has_value());
+}
+
 void testCameraTargetFor() {
     Camera camera(2000.0F, 1000.0F);
 
@@ -648,5 +723,6 @@ int main() {
     testWalkToInteractAndDepthPicking();
     testItemPickupAndHiddenCollision();
     testConditionalNpcPuzzleAndRoomPersistence();
+    testScriptedSequenceAndCutscene();
     testCameraTargetFor();
 }

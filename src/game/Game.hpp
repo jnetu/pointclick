@@ -7,6 +7,7 @@
 #include "game/ObjectAnimations.hpp"
 #include "game/Player.hpp"
 #include "game/Room.hpp"
+#include "game/ScriptRunner.hpp"
 #include "game/SessionState.hpp"
 
 #include <optional>
@@ -47,6 +48,8 @@ public:
     [[nodiscard]] bool isObjectVisible(std::string_view objectId) const;
     [[nodiscard]] bool isObjectSolid(const SceneObject& object) const;
     [[nodiscard]] const std::optional<PendingInteraction>& pendingInteraction() const;
+    // A scripted sequence holds the scene: world clicks only skip the current line.
+    [[nodiscard]] bool inCutscene() const;
     [[nodiscard]] const std::optional<std::string>& pendingRoomTransition() const;
     std::optional<std::string> consumeRoomTransition();
     [[nodiscard]] const AnimationPlayback* objectAnimation(std::string_view objectId) const;
@@ -58,6 +61,10 @@ private:
             const Room& room, const Navigation& navigation, SDL_FPoint desiredFeet);
     bool startObjectInteraction(const InteractionTrigger& trigger);
     bool resolveInteraction(const InteractionTrigger& trigger);
+    // Applies what the script deferred: dirty navigation and, once it ends, the room change.
+    void settleScript();
+
+    class Host; // ScriptHost adapter over this Game, defined in Game.cpp.
 
     FloatingText floatingText_;
     Room room_;
@@ -72,5 +79,8 @@ private:
     std::optional<PendingInteraction> pendingInteraction_;
     std::optional<std::string> pendingRoomTransition_;
     ObjectAnimations objectAnimations_;
+    ScriptRunner script_;
+    std::optional<std::string> scriptRoomTarget_;
+    bool navigationDirty_ = false;
     unsigned long long roomRevision_ = 0;
 };

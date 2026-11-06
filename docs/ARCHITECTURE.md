@@ -19,6 +19,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
 | `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto |
+| `game/ScriptRunner`, `game/ScriptHost` | Executor de sequências de ações por tick, modo cutscene e contrato da cena para as ações |
 | `game/ActionCatalog` | Catálogo tipado de condições e efeitos das regras (`ArgType`, validação, execução, eventos de saída) |
 | `game/Interaction` | Gatilhos, condições, efeitos, picking por profundidade e cálculo de aproximação |
 | `game/Camera` | Câmera 2D suave com campo de visão fixo (`1280×720`), clamp nas bordas da sala e interpolação |
@@ -159,11 +160,30 @@ argumentos em texto. O parser, o serializador, a validação por `ArgType` (incl
 "o objeto existe na sala?"), a mensagem `Use <palavra> <args>` e a execução saem
 todos do catálogo. Efeito novo = uma entrada + uma função.
 
-Efeitos que só alteram `SessionState` não produzem saída. Os demais emitem
-`InteractionEvent` (`SayEvent`, `PlayAnimationEvent`, `ChangeRoomEvent`) em
-`InteractionOutcome::events`, na ordem dos efeitos, e `Game::resolveInteraction`
-encaminha cada evento ao sistema certo. Só um tipo novo de saída exige uma alternativa
-nova no `std::variant` e o tratamento correspondente em `Game`.
+Os efeitos de uma regra formam uma **sequência** executada por `game/ScriptRunner`.
+Cada ação tem `start` e, se for bloqueante, um `update` chamado a cada tick até
+devolver `done` (`ActionStatus::running | done`). Passos instantâneos rodam em
+seguida no mesmo tick; um passo bloqueante (`say`, `walk_to`, `wait`,
+`wait_animation`) segura a fila. O último passo nunca é esperado, porque nada depende
+dele: uma regra que termina em `say` devolve o controle na hora, como antes.
+
+As ações falam com a cena só por `game/ScriptHost` (sessão, fala, animação,
+caminhada, troca de sala e as consultas de espera). `Game` implementa esse contrato
+num adaptador privado (`Game::Host`), e um teste pode usar um host falso. Ação nova que
+usa capacidades existentes = uma entrada + uma função no catálogo. Uma capacidade nova
+da cena exige um método em `ScriptHost` e a implementação em `Game::Host`.
+
+Enquanto um passo bloqueante segura a fila, `Game::inCutscene()` é verdadeiro: cliques
+no mundo, `useItemOnObject` e `useItemAt` são ignorados, e o clique só pula a fala atual.
+Uma UI futura (`ViewportUiConsumer`) deve consultar `inCutscene()` antes de agir.
+`change_room` é adiado até o fim da sequência, para os passos seguintes ainda rodarem
+na sala atual; trocar de sala cancela qualquer sequência em andamento. Mudanças de
+colisão marcam a navegação como suja, e ela é reconstruída ao fim do passo ou antes de
+um `walk_to`.
+
+O mesmo runner é a base para eventos de entrada de sala e diálogos: uma fala linear já é
+uma sequência de `say`; um nó de diálogo com escolhas será uma ação bloqueante que
+espera a UI escolher e depois inicia a sequência do ramo escolhido.
 
 As regras são avaliadas na ordem declarada: a primeira regra cujas condições forem
 todas verdadeiras executa seus efeitos em sequência e encerra a avaliação. Objetos

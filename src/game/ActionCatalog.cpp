@@ -16,44 +16,99 @@ std::string validateObjectAnimation(const ActionArgs args, const Room* room) {
     return {};
 }
 
+constexpr ActionStatus kDone = ActionStatus::done;
+constexpr ActionStatus kRunning = ActionStatus::running;
+
+constexpr float kMaxNumberArgument = 3600.0F;
+
 const EffectDescriptor kEffects[]{
-    {"say", "Exibe a fala/observacao na tela", {text}, nullptr,
-     [](const ActionArgs args, EffectContext& context) {
-         context.events.emplace_back(SayEvent{args[0]});
-     }},
+    // Blocks until the line expires or a click skips it.
+    {"say", "Exibe a fala/observacao; espera o tempo de leitura ou um clique", {text}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.say(args[0]);
+         return kRunning;
+     },
+     [](ActionArgs, ActionContext& context) { return context.host.speaking() ? kRunning : kDone; }},
     {"set_flag", "Ativa uma flag na sessao", {flagId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) { context.session.setFlag(args[0]); }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().setFlag(args[0]);
+         return kDone;
+     },
+     nullptr},
     {"clear_flag", "Limpa uma flag na sessao", {flagId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) { context.session.clearFlag(args[0]); }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().clearFlag(args[0]);
+         return kDone;
+     },
+     nullptr},
     {"give_item", "Adiciona um item ao inventario", {itemId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) { context.session.addItem(args[0]); }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().addItem(args[0]);
+         return kDone;
+     },
+     nullptr},
     {"take_item", "Remove um item do inventario", {itemId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) { context.session.removeItem(args[0]); }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().removeItem(args[0]);
+         return kDone;
+     },
+     nullptr},
     {"hide_object", "Esconde um objeto da sala", {objectId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) {
-         context.session.setObjectVisible(context.roomId, args[0], false);
-         context.navigationChanged = true;
-     }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().setObjectVisible(context.host.roomId(), args[0], false);
+         context.host.invalidateNavigation();
+         return kDone;
+     },
+     nullptr},
     {"show_object", "Revela um objeto da sala", {objectId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) {
-         context.session.setObjectVisible(context.roomId, args[0], true);
-         context.navigationChanged = true;
-     }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().setObjectVisible(context.host.roomId(), args[0], true);
+         context.host.invalidateNavigation();
+         return kDone;
+     },
+     nullptr},
     {"set_solid", "Liga (1) ou desliga (0) a colisao e reconstroi a navegacao",
      {objectId, boolean}, nullptr,
-     [](const ActionArgs args, EffectContext& context) {
-         context.session.setObjectSolid(context.roomId, args[0], args[1] == "1");
-         context.navigationChanged = true;
-     }},
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().setObjectSolid(context.host.roomId(), args[0], args[1] == "1");
+         context.host.invalidateNavigation();
+         return kDone;
+     },
+     nullptr},
     {"play_animation", "Toca/reinicia um clip configurado no objeto", {objectId, animation},
      validateObjectAnimation,
-     [](const ActionArgs args, EffectContext& context) {
-         context.events.emplace_back(PlayAnimationEvent{args[0], args[1]});
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.playAnimation(args[0], args[1]);
+         return kDone;
+     },
+     nullptr},
+    // Clips with loop = true never end, so waiting on them returns at once.
+    {"wait_animation", "Espera o clip atual do objeto terminar", {objectId}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         return context.host.animationFinished(args[0]) ? kDone : kRunning;
+     },
+     [](const ActionArgs args, ActionContext& context) {
+         return context.host.animationFinished(args[0]) ? kDone : kRunning;
      }},
-    {"change_room", "Solicita transicao para <sala>.room", {roomId}, nullptr,
-     [](const ActionArgs args, EffectContext& context) {
-         context.events.emplace_back(ChangeRoomEvent{args[0]});
+    {"walk_to", "Anda ate o ponto de aproximacao do objeto e espera chegar", {objectId}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         return context.host.walkToObject(args[0]) ? kRunning : kDone;
+     },
+     [](ActionArgs, ActionContext& context) { return context.host.walking() ? kRunning : kDone; }},
+    {"wait", "Espera alguns segundos", {number}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         (void)parseNumberArgument(args[0], context.step.value);
+         return context.step.value > 0.0F ? kRunning : kDone;
+     },
+     [](ActionArgs, ActionContext& context) {
+         return context.step.elapsed >= context.step.value ? kDone : kRunning;
      }},
+    {"change_room", "Troca para <sala>.room quando a sequencia terminar", {roomId}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.changeRoom(args[0]);
+         return kDone;
+     },
+     nullptr},
 };
 
 const ConditionDescriptor kConditions[]{
@@ -102,6 +157,7 @@ std::string_view argPlaceholder(const ArgType type) {
     case animation: return "<animacao>";
     case text: return "\"texto\"";
     case boolean: return "<0|1>";
+    case number: return "<segundos>";
     }
     return "<?>";
 }
@@ -116,6 +172,32 @@ const EffectDescriptor* findEffect(const std::string_view keyword) {
 
 const ConditionDescriptor* findCondition(const std::string_view keyword) {
     return findByKeyword(conditionCatalog(), keyword);
+}
+
+bool parseNumberArgument(const std::string_view text, float& value) {
+    // Locale-independent: digits with an optional single '.' fraction, no sign or exponent.
+    if (text.empty() || text.size() > 16) return false;
+    double result = 0.0;
+    double scale = 0.0;
+    bool sawDigit = false;
+    for (const char ch : text) {
+        if (ch == '.') {
+            if (scale != 0.0) return false;
+            scale = 1.0;
+            continue;
+        }
+        if (ch < '0' || ch > '9') return false;
+        sawDigit = true;
+        if (scale == 0.0) {
+            result = result * 10.0 + (ch - '0');
+        } else {
+            scale *= 0.1;
+            result += (ch - '0') * scale;
+        }
+    }
+    if (!sawDigit || result > kMaxNumberArgument) return false;
+    value = static_cast<float>(result);
+    return true;
 }
 
 std::string actionUsage(const std::string_view keyword, const ArgSignature& signature) {
@@ -143,6 +225,11 @@ std::string argumentsError(const std::string_view keyword, const ArgSignature& s
         case boolean:
             if (value != "0" && value != "1") return actionUsage(keyword, signature);
             break;
+        case number: {
+            float parsed = 0.0F;
+            if (!parseNumberArgument(value, parsed)) return "Numero invalido: " + value;
+            break;
+        }
         case objectId:
             if (!validIdentifier(value)) return "Identificador invalido: " + value;
             if (room && !room->findObject(value)) return "Objeto desconhecido na sala: " + value;

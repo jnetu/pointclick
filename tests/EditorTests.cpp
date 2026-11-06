@@ -920,6 +920,7 @@ std::string sampleArgument(const ArgType type) {
     case ArgType::animation: return "open";
     case ArgType::text: return "Linha \"um\" #1\nfim";
     case ArgType::boolean: return "1";
+    case ArgType::number: return "1.5";
     case ArgType::itemId:
     case ArgType::flagId:
     case ArgType::roomId: return "sample_id";
@@ -947,7 +948,7 @@ void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
                 InteractionCondition::make(condition.keyword, sampleArguments(condition)));
     }
     for (const EffectDescriptor& effect : effectCatalog()) {
-        assert(!effect.description.empty() && effect.run);
+        assert(!effect.description.empty() && effect.start);
         assert(keywords.insert(effect.keyword).second);
         rule.effects.push_back(InteractionEffect::make(effect.keyword, sampleArguments(effect)));
     }
@@ -993,6 +994,12 @@ void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
     assert(invalid(InteractionEffect::make("play_animation", {"red_box", "danca"}))
            == "Animacao desconhecida 'danca' no objeto: red_box");
     assert(invalid(InteractionEffect::make("say", {""})) == "Texto vazio em say");
+    assert(invalid(InteractionEffect::make("wait", {"1,5"})) == "Numero invalido: 1,5");
+    assert(invalid(InteractionEffect::make("wait", {"-1"})) == "Numero invalido: -1");
+    float seconds = 0.0F;
+    assert(parseNumberArgument("0.25", seconds) && seconds == 0.25F);
+    assert(parseNumberArgument("12", seconds) && seconds == 12.0F);
+    assert(!parseNumberArgument("1.2.3", seconds) && !parseNumberArgument(".", seconds));
     assert(actionUsage("play_animation", findEffect("play_animation")->args)
            == "Use play_animation <objeto> <animacao>");
 }

@@ -6,7 +6,12 @@
 class FloatingText {
 public:
     void show(std::string_view text);
+    void show(std::string_view text, float seconds);
+    void hide();
     void tick(float deltaSeconds);
+
+    // Scripted lines stay up long enough to read, then let the sequence continue.
+    [[nodiscard]] static float readingSeconds(std::string_view text);
 
     [[nodiscard]] bool isVisible() const;
     [[nodiscard]] const std::string& text() const;

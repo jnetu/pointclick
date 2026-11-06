@@ -6,7 +6,59 @@
 #include <optional>
 #include <stdexcept>
 #include <utility>
-#include <variant>
+
+class Game::Host final : public ScriptHost {
+public:
+    explicit Host(Game& game) : game_(game) {}
+
+    SessionState& session() override { return game_.session_; }
+    std::string_view roomId() const override { return game_.room_.id; }
+    void invalidateNavigation() override { game_.navigationDirty_ = true; }
+
+    void say(const std::string_view text) override {
+        game_.floatingText_.show(text, FloatingText::readingSeconds(text));
+    }
+    bool speaking() const override { return game_.floatingText_.isVisible(); }
+
+    void playAnimation(const std::string_view objectId, const std::string_view animation) override {
+        std::string ignoredError;
+        (void)game_.playObjectAnimation(objectId, animation, true, ignoredError);
+    }
+
+    bool animationFinished(const std::string_view objectId) const override {
+        const SceneObject* object = game_.room_.findObject(objectId);
+        const AnimationPlayback* playback = game_.objectAnimations_.find(objectId);
+        if (!object || !playback) return true;
+        const SpriteClip* clip = findAnimation(object->animations, playback->name());
+        return !clip || clip->loop || playback->finished(*clip);
+    }
+
+    bool walkToObject(const std::string_view objectId) override {
+        const SceneObject* object = game_.room_.findObject(objectId);
+        if (!object || !game_.session_.isObjectVisible(game_.room_.id, object->id)) return false;
+        if (game_.navigationDirty_) {
+            game_.navigationDirty_ = false;
+            game_.refreshNavigation();
+        }
+        const SDL_FPoint desired = interactionApproachPoint(game_.room_, *object, game_.session_);
+        auto route = game_.navigation_.findPathToNearestReachable(game_.player_.feet(), desired);
+        if (route.empty()) return false;
+        const SDL_FPoint arrival = route.back();
+        const SDL_FPoint feet = game_.player_.feet();
+        if (std::hypot(arrival.x - feet.x, arrival.y - feet.y) <= 0.01F) return false;
+        game_.pendingInteraction_.reset();
+        game_.player_.setPath(std::move(route));
+        return true;
+    }
+    bool walking() const override { return game_.player_.moving(); }
+
+    void changeRoom(const std::string_view roomId) override {
+        game_.scriptRoomTarget_ = std::string(roomId);
+    }
+
+private:
+    Game& game_;
+};
 
 Game::Game(Room room)
         : player_(room.playerStart) {
@@ -74,6 +126,10 @@ bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
     if (changingRoom) {
         interactions_.rules.clear();
         pendingRoomTransition_.reset();
+        // A sequence never crosses rooms: its object references belong to the old one.
+        script_.cancel();
+        scriptRoomTarget_.reset();
+        navigationDirty_ = false;
     }
     ++roomRevision_;
     return true;
@@ -177,35 +233,29 @@ bool Game::resolveInteraction(const InteractionTrigger& trigger) {
         return false;
     }
 
-    const InteractionOutcome outcome = applyInteraction(interactions_, room_.id, trigger, session_);
-    if (!outcome.matched) {
+    const InteractionRule* rule = interactions_.findMatchingRule(trigger, session_, room_.id);
+    if (!rule) {
         return false;
     }
-
-    // Effects that only change SessionState already ran; route the remaining outputs.
-    std::string spoken;
-    for (const InteractionEvent& event : outcome.events) {
-        if (const auto* say = std::get_if<SayEvent>(&event)) {
-            if (!spoken.empty()) spoken += '\n';
-            spoken += say->text;
-        } else if (const auto* anim = std::get_if<PlayAnimationEvent>(&event)) {
-            std::string ignoredError;
-            (void)playObjectAnimation(anim->objectId, anim->animation, true, ignoredError);
-        } else if (const auto* change = std::get_if<ChangeRoomEvent>(&event)) {
-            pendingRoomTransition_ = change->roomId;
-        }
-    }
-    if (!spoken.empty()) {
-        floatingText_.show(spoken);
-    }
-    if (outcome.navigationChanged) {
-        refreshNavigation();
-    }
+    Host host(*this);
+    script_.start(rule->effects, host);
+    settleScript();
     return true;
 }
 
+void Game::settleScript() {
+    if (navigationDirty_) {
+        navigationDirty_ = false;
+        refreshNavigation();
+    }
+    if (!script_.busy() && scriptRoomTarget_) {
+        pendingRoomTransition_ = std::move(*scriptRoomTarget_);
+        scriptRoomTarget_.reset();
+    }
+}
+
 bool Game::useItemOnObject(const std::string_view itemId, const std::string_view objectId) {
-    if (!session_.hasItem(itemId)) {
+    if (script_.busy() || !session_.hasItem(itemId)) {
         return false;
     }
     return startObjectInteraction(
@@ -213,7 +263,7 @@ bool Game::useItemOnObject(const std::string_view itemId, const std::string_view
 }
 
 bool Game::useItemAt(const std::string_view itemId, const SDL_FPoint worldPoint) {
-    if (!session_.hasItem(itemId)) {
+    if (script_.busy() || !session_.hasItem(itemId)) {
         return false;
     }
     const SceneObject* target = pickInteractiveObject(room_, session_, interactions_, worldPoint);
@@ -233,6 +283,11 @@ void Game::onPointerMove(const SDL_FPoint position, const bool insideViewport) {
 
 void Game::onClick(const SDL_FPoint position) {
     onPointerMove(position, true);
+    if (script_.busy()) {
+        // Cutscene: a click only skips the line being spoken.
+        floatingText_.hide();
+        return;
+    }
     if (!pointerInside_) {
         return;
     }
@@ -259,6 +314,11 @@ void Game::tick(const float deltaSeconds) {
     floatingText_.tick(deltaSeconds);
     objectAnimations_.tick(deltaSeconds);
     player_.tick(deltaSeconds, room_.speedAt(player_.feet().y));
+    if (script_.busy()) {
+        Host host(*this);
+        script_.tick(deltaSeconds, host);
+        settleScript();
+    }
     if (pendingInteraction_ && !player_.moving()) {
         const InteractionTrigger trigger = pendingInteraction_->toTrigger();
         pendingInteraction_.reset();
@@ -300,6 +360,8 @@ bool Game::isObjectSolid(const SceneObject& object) const {
 const std::optional<PendingInteraction>& Game::pendingInteraction() const {
     return pendingInteraction_;
 }
+
+bool Game::inCutscene() const { return script_.busy(); }
 
 const std::optional<std::string>& Game::pendingRoomTransition() const {
     return pendingRoomTransition_;

@@ -72,10 +72,6 @@ InteractionEffect InteractionEffect::make(const std::string_view keyword,
     return {effect, std::move(args)};
 }
 
-void InteractionEffect::run(EffectContext& context) const {
-    if (effect) effect->run(args, context);
-}
-
 std::string InteractionEffect::validationError(const Room* room) const {
     if (!effect) return "Efeito sem tipo";
     return effectArgumentsError(*effect, args, room);
@@ -199,23 +195,4 @@ bool isWithinInteractionReach(const Room& room,
         }
     }
     return false;
-}
-
-InteractionOutcome applyInteraction(const RoomInteractions& interactions,
-                                    const std::string_view roomId,
-                                    const InteractionTrigger& trigger,
-                                    SessionState& session) {
-    InteractionOutcome outcome;
-    const InteractionRule* rule = interactions.findMatchingRule(trigger, session, roomId);
-    if (!rule) {
-        return outcome;
-    }
-
-    outcome.matched = true;
-    EffectContext context{session, roomId, outcome.events};
-    for (const InteractionEffect& effect : rule->effects) {
-        effect.run(context);
-    }
-    outcome.navigationChanged = context.navigationChanged;
-    return outcome;
 }

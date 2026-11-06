@@ -47,7 +47,6 @@ struct InteractionEffect {
     // Throws std::invalid_argument for unknown keywords (authoring bug in C++ presets/tests).
     [[nodiscard]] static InteractionEffect make(std::string_view keyword,
                                                 std::vector<std::string> args);
-    void run(EffectContext& context) const;
     [[nodiscard]] std::string validationError(const Room* room) const;
 };
 
@@ -80,12 +79,6 @@ struct PendingInteraction {
     }
 };
 
-struct InteractionOutcome {
-    bool matched = false;
-    bool navigationChanged = false;
-    std::vector<InteractionEvent> events; // In effect order.
-};
-
 [[nodiscard]] SDL_FRect effectiveCollisionFootprint(const SceneObject& object);
 
 // Picks the front-most visible interactive object at worldPoint, matching the
@@ -103,8 +96,3 @@ struct InteractionOutcome {
                                             const SceneObject& object,
                                             const SessionState& session,
                                             SDL_FPoint feet);
-
-InteractionOutcome applyInteraction(const RoomInteractions& interactions,
-                                    std::string_view roomId,
-                                    const InteractionTrigger& trigger,
-                                    SessionState& session);

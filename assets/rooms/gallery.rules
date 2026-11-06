@@ -10,9 +10,6 @@ say "Havia um bilhete escondido entre as folhas!"
 [interact plant]
 say "Apenas uma planta bem cuidada no canto da galeria."
 
+# A mesa abre um dialogo com escolhas (gallery.dlg, no "mesa").
 [interact table]
-has_item gallery_note
-say "Coloquei o bilhete sobre a mesa para ler melhor."
-
-[interact table]
-say "Uma mesa de madeira solida no centro da galeria."
+start_dialogue mesa

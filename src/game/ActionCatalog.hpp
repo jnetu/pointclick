@@ -25,6 +25,7 @@ enum class ArgType : std::uint8_t {
     text,      // quoted string with \" \\ \n escapes, must not be empty
     boolean,   // stored canonically as "0" or "1"
     number,    // seconds or other non-negative decimal, '.' separator
+    dialogueId, // node of the room's .dlg; cross-checked by dialogueReferencesError
 };
 
 [[nodiscard]] std::string_view argPlaceholder(ArgType type);

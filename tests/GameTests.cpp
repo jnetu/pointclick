@@ -669,6 +669,124 @@ void testScriptedSequenceAndCutscene() {
     assert(!game.pendingRoomTransition().has_value());
 }
 
+RoomDialogues guardDialogues() {
+    DialogueChoice ask;
+    ask.id = "ask";
+    ask.text = "Quem e voce?";
+    ask.once = true;
+    ask.effects = {InteractionEffect::make("say", {"Resposta"})};
+    ask.next = "guard";
+    DialogueChoice key;
+    key.id = "key";
+    key.text = "Tenho a chave.";
+    key.conditions = {InteractionCondition::make("has_item", {"brass_key"})};
+    key.effects = {InteractionEffect::make("take_item", {"brass_key"}),
+                   InteractionEffect::make("set_flag", {"guard_open"})};
+    DialogueChoice bye;
+    bye.id = "bye";
+    bye.text = "Tchau.";
+    bye.effects = {InteractionEffect::make("change_room", {"gallery"})};
+    return RoomDialogues{{DialogueNode{"guard", {InteractionEffect::make("say", {"Alto la!"})},
+                                       {ask, key, bye}}}};
+}
+
+// A rule opens a dialogue (start_dialogue blocks under it), the menu lists only the options whose
+// conditions hold, a reply with goto is read before its node reopens, once-options stay hidden
+// (SessionState), and the rule resumes when the conversation ends.
+void testDialogueWithChoices() {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {InteractionEffect::make("start_dialogue", {"guard"}),
+                    InteractionEffect::make("set_flag", {"talked"})},
+    }}});
+    game.setDialogues(guardDialogues());
+    assert(dialogueReferencesError(game.interactions(), game.dialogues()).empty());
+
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !game.dialogueActive(); ++i) game.tick(0.05F);
+    assert(game.dialogueActive() && game.inCutscene());
+    // The node's line is the last step, so the menu opens with it still on screen.
+    assert(game.awaitingDialogueChoice());
+    assert(game.floatingText().isVisible() && game.floatingText().text() == "Alto la!");
+    assert(game.dialogueOptions().size() == 2); // no key yet: "key" is filtered out
+    assert(game.dialogueOptions()[0]->id == "ask" && game.dialogueOptions()[1]->id == "bye");
+
+    // Modal: world clicks neither move the player nor end the conversation.
+    game.onClick({200.0F, 600.0F});
+    assert(!game.player().moving() && game.awaitingDialogueChoice());
+    assert(!game.chooseDialogueOption(5));
+    assert(!game.startDialogue("guard")); // already in cutscene
+
+    // A reply that leads to a node is read before the node reopens.
+    assert(game.chooseDialogueOption(0));
+    assert(!game.awaitingDialogueChoice() && game.inCutscene());
+    assert(game.floatingText().text() == "Resposta");
+    assert(!game.chooseDialogueOption(0));
+    assert(game.session().dialogueChoiceTaken("first", "guard", "ask"));
+    game.tick(0.05F);
+    assert(!game.awaitingDialogueChoice());
+    game.onClick({200.0F, 600.0F}); // skip the reply
+    game.tick(0.05F);
+    assert(game.awaitingDialogueChoice());
+    assert(game.floatingText().text() == "Alto la!");
+    assert(game.dialogueOptions().size() == 1 && game.dialogueOptions()[0]->id == "bye");
+
+    // change_room inside a reply waits for the dialogue and the rule that opened it.
+    assert(game.chooseDialogueOption(0));
+    assert(!game.dialogueActive());
+    assert(!game.pendingRoomTransition().has_value());
+    assert(!game.session().hasFlag("talked"));
+    game.tick(0.05F);
+    assert(!game.inCutscene());
+    assert(game.session().hasFlag("talked"));
+    assert(game.pendingRoomTransition() && *game.pendingRoomTransition() == "gallery");
+    (void)game.consumeRoomTransition();
+
+    // With the key the conditional option shows; "ask" stays hidden (once, kept in session).
+    game.session().addItem("brass_key");
+    assert(game.startDialogue("guard"));
+    assert(game.awaitingDialogueChoice());
+    assert(game.dialogueOptions().size() == 2);
+    assert(game.dialogueOptions()[0]->id == "key" && game.dialogueOptions()[1]->id == "bye");
+    assert(game.chooseDialogueOption(0));
+    assert(!game.dialogueActive() && !game.inCutscene());
+    assert(game.session().hasFlag("guard_open") && !game.session().hasItem("brass_key"));
+    assert(!game.startDialogue("ghost"));
+
+    // Changing room ends the conversation and drops the old room's dialogues; progress stays.
+    assert(game.startDialogue("guard"));
+    assert(game.dialogueActive());
+    Room gallery = RoomPresets::firstRoom();
+    gallery.id = "gallery";
+    game.loadRoom(gallery);
+    assert(!game.dialogueActive() && !game.inCutscene() && game.dialogues().empty());
+    assert(game.session().dialogueChoiceTaken("first", "guard", "ask"));
+
+    // A node with no option left ends after its lines; validation guards the definitions.
+    RoomDialogues invalid = guardDialogues();
+    invalid.nodes[0].choices[0].next = "nowhere";
+    std::string error;
+    assert(!game.setDialogues(invalid, error) && error == "Destino de goto desconhecido: nowhere");
+    invalid = guardDialogues();
+    invalid.nodes[0].lines.push_back(InteractionEffect::make("start_dialogue", {"guard"}));
+    assert(!game.setDialogues(invalid, error)
+           && error == "start_dialogue nao vale dentro de dialogos; use goto <no>");
+    RoomInteractions unknown{{{.trigger = InteractionTrigger::interact("blue_box"),
+                               .effects = {InteractionEffect::make("start_dialogue", {"x"})}}}};
+    assert(dialogueReferencesError(unknown, guardDialogues()) == "Dialogo desconhecido: x");
+
+    DialogueChoice locked;
+    locked.id = "locked";
+    locked.text = "Segredo";
+    locked.conditions = {InteractionCondition::make("flag_set", {"never"})};
+    game.setDialogues(RoomDialogues{{DialogueNode{
+            "lonely", {InteractionEffect::make("say", {"Silencio."})}, {locked}}}});
+    assert(game.startDialogue("lonely"));
+    assert(!game.dialogueActive() && game.floatingText().text() == "Silencio.");
+}
+
 void testCameraTargetFor() {
     Camera camera(2000.0F, 1000.0F);
 
@@ -724,5 +842,6 @@ int main() {
     testItemPickupAndHiddenCollision();
     testConditionalNpcPuzzleAndRoomPersistence();
     testScriptedSequenceAndCutscene();
+    testDialogueWithChoices();
     testCameraTargetFor();
 }

@@ -19,27 +19,30 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
 | Regras de interação, itens e puzzles | `assets/rooms/*.rules`, `src/game/Interaction.*`, `src/content/InteractionFiles.*` | `src/game/Game.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Efeito ou condição nova em `.rules` | uma entrada + uma função (`start`, e `update` se bloquear) em `src/game/ActionCatalog.cpp` | método em `src/game/ScriptHost.hpp` + `Game::Host` só se precisar de capacidade nova da cena; tabela em `docs/GAME_DESIGN.md`; `tests/EditorTests.cpp` (round-trip do catálogo) |
-| Sequências, cutscene, base de diálogo | `src/game/ScriptRunner.*`, `src/game/ScriptHost.hpp` | `Game::Host`, `Game::inCutscene` em `src/game/Game.cpp`, `tests/GameTests.cpp` |
+| Sequências, cutscene, pilha de sequências | `src/game/ScriptRunner.*`, `src/game/ScriptHost.hpp` | `Game::Host`, `Game::inCutscene` em `src/game/Game.cpp`, `tests/GameTests.cpp` |
+| Diálogo com escolhas (formato `.dlg`) | `assets/rooms/*.dlg`, `src/content/DialogueFiles.*`, `src/game/Dialogue.*` | `start_dialogue` em `src/game/ActionCatalog.cpp`, `Game::chooseDialogueOption`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` (round-trip), `docs/GAME_DESIGN.md` |
+| Menu de escolhas na tela | `src/ui/DialogueMenu.*` (layout + `ViewportUiConsumer`) | `src/graphics/DialogueMenuRenderer.cpp`, registro em `src/core/Application.cpp`, `tests/EditorTests.cpp` |
+| Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles` |
 | Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp` |
-| UI de Diálogo / Inventário futuro | novo módulo UI consumindo `SessionState` / `Game::useItemOnObject` | `ViewportUiConsumer` em `src/input/InputRouter.hpp`, interface em `graphics/` |
+| UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
 | Efeitos visuais de transição de sala | `Game::consumeRoomTransition()` em `src/core/Application.cpp` | efeito visual temporizado em `graphics/` |
 
 ## Contratos
 
-- `Room`, `SceneObject`, `SpriteClip`, `AnimationSet` e `RoomInteractions` são
-  definições autoradas/editáveis. Não guarde neles progresso de diálogo, itens
+- `Room`, `SceneObject`, `SpriteClip`, `AnimationSet`, `RoomInteractions` e
+  `RoomDialogues` são definições autoradas/editáveis. Não guarde neles progresso de diálogo, itens
   coletados, flags ou tempo corrente.
 - `SessionState` guarda o progresso persistente da sessão (flags/contadores,
-  itens de inventário e overrides por `roomId + objectId` de visibilidade e
-  colisão `solidOverride`). Editar a sala em tempo real no `DebugEditor`
+  itens de inventário, overrides por `roomId + objectId` de visibilidade e
+  colisão `solidOverride`, e as escolhas `once` de diálogo já feitas). Editar a sala em tempo real no `DebugEditor`
   (`Game::applyRoom(room, false, error)`) ou trocar de sala **nunca** apaga o
   `SessionState`.
 - `World::width` × `World::height` (`1280 × 720`) definem o campo de visão fixo da
   câmera/viewport lógica; o tamanho total da cena pertence a `Room::width` e
   `Room::height`. UI e overlays usam coordenadas de viewport; o mundo usa coordenadas
   da sala deslocadas por `Camera`.
-- `Game`, `Player`, `Camera`, `PendingInteraction` e `AnimationPlayback` guardam
-  estado de execução da cena. Regras de gameplay não devem carregar texturas nem
+- `Game`, `Player`, `Camera`, `PendingInteraction`, `AnimationPlayback`, `ScriptRunner`
+  e `DialoguePlayer` guardam estado de execução da cena. Regras de gameplay não devem carregar texturas nem
   fazer chamadas de desenho.
 - `input/` traduz eventos brutos de mouse/teclado, toque (ignorando mouse sintético)
   e gamepad (hotplug, eixo analógico com *deadzone* e cursor virtual) para a viewport
@@ -49,8 +52,14 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   e `Game::isObjectSolid`) e desenha. Não decide resultados de interação,
   hit-test de UI, colisão, diálogo ou transição de sala.
 - `content/` traduz arquivos `.room` (estética/espaço) e arquivos companheiros
-  opcionais `.rules` (regras declarativas de interação) em definições validadas por
-  linha e de volta para arquivos. Preserve a leitura de chaves antigas ao evoluir.
+  opcionais `.rules` (regras declarativas de interação) e `.dlg` (diálogos) em
+  definições validadas por linha e de volta para arquivos, com o tokenizer comum
+  de `content/TextFormat`. Quem carrega a sala confere as referências cruzadas
+  (`dialogueReferencesError`) antes de aplicar. Preserve a leitura de chaves antigas ao evoluir.
+- `ui/` contém UIs de gameplay (`ViewportUiConsumer`): definem a própria geometria na
+  viewport, decidem o hit-test e chamam comandos do domínio (`Game::chooseDialogueOption`).
+  Só agem no momento em que o domínio pede (`Game::awaitingDialogueChoice`, parte do
+  `inCutscene`). `graphics/` lê essa geometria para desenhar.
 - `debug/` altera a definição da sala para teste e define sua própria geometria de
   captura na viewport (`DebugEditor::panelRect`), preservando `SessionState`.
   Não é o sistema de gameplay.

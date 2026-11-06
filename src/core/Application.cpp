@@ -1,4 +1,5 @@
 #include "core/Application.hpp"
+#include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
@@ -22,6 +23,7 @@ constexpr double kMaximumFrameTime = 0.25;
 Application::Application(std::filesystem::path roomDirectory)
         : game_(RoomPresets::firstRoom()) {
     debugEditor_.setRoomDirectory(std::move(roomDirectory));
+    inputRouter_.addUiConsumer(&dialogueMenu_);
 }
 
 int Application::run() {
@@ -47,6 +49,17 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
         SDL_Log("Could not load room rules: %s", rulesLoaded.error.c_str());
         return false;
     }
+    auto dialoguesLoaded = DialogueFiles::loadOptionalForRoom(roomPath, &*loaded.room);
+    if (!dialoguesLoaded.dialogues) {
+        SDL_Log("Could not load room dialogues: %s", dialoguesLoaded.error.c_str());
+        return false;
+    }
+    if (const std::string references = dialogueReferencesError(*rulesLoaded.interactions,
+                                                               *dialoguesLoaded.dialogues);
+        !references.empty()) {
+        SDL_Log("Room rules reference a missing dialogue: %s", references.c_str());
+        return false;
+    }
     std::string roomError;
     if (!game_.applyRoom(std::move(*loaded.room), true, roomError)) {
         SDL_Log("Could not apply room: %s", roomError.c_str());
@@ -55,6 +68,11 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
     std::string rulesError;
     if (!game_.setInteractions(std::move(*rulesLoaded.interactions), rulesError)) {
         SDL_Log("Could not apply room rules: %s", rulesError.c_str());
+        return false;
+    }
+    std::string dialoguesError;
+    if (!game_.setDialogues(std::move(*dialoguesLoaded.dialogues), dialoguesError)) {
+        SDL_Log("Could not apply room dialogues: %s", dialoguesError.c_str());
         return false;
     }
     return true;
@@ -163,7 +181,8 @@ void Application::mainLoop() {
                             debugEditor_, game_, renderInterpolation_);
 
         if (currentTime >= nextRenderTime) {
-            renderer_.render(game_, renderInterpolation_, &debugEditor_, &inputSystem_);
+            renderer_.render(game_, renderInterpolation_, &debugEditor_, &inputSystem_,
+                             &dialogueMenu_);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {

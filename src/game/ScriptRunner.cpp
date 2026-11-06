@@ -1,45 +1,58 @@
 #include "game/ScriptRunner.hpp"
 
 void ScriptRunner::start(const std::span<const InteractionEffect> steps, ScriptHost& host) {
-    steps_.assign(steps.begin(), steps.end());
-    next_ = 0;
+    frames_.clear();
+    push(steps, host);
+}
+
+void ScriptRunner::push(const std::span<const InteractionEffect> steps, ScriptHost& host,
+                        const bool waitLast) {
+    Frame frame;
+    frame.steps.assign(steps.begin(), steps.end());
+    frame.waitLast = waitLast;
+    frames_.push_back(std::move(frame));
     runUntilBlocked(host);
 }
 
 void ScriptRunner::tick(const float deltaSeconds, ScriptHost& host) {
-    if (!waiting_) {
+    if (frames_.empty()) {
         return;
     }
-    step_.elapsed += deltaSeconds;
-    const InteractionEffect& current = steps_[next_ - 1];
-    ActionContext context{host, step_};
-    if (current.effect->update(current.args, context) == ActionStatus::running) {
-        return;
-    }
+    frames_.back().step.elapsed += deltaSeconds;
     runUntilBlocked(host);
 }
 
 void ScriptRunner::cancel() noexcept {
-    steps_.clear();
-    next_ = 0;
-    waiting_ = false;
+    frames_.clear();
 }
 
 void ScriptRunner::runUntilBlocked(ScriptHost& host) {
-    waiting_ = false;
-    while (next_ < steps_.size()) {
-        const InteractionEffect& current = steps_[next_++];
-        if (!current.effect) {
-            continue;
+    while (!frames_.empty()) {
+        // Actions never push frames (see the class comment), so this reference stays valid.
+        Frame& top = frames_.back();
+        if (top.waiting) {
+            const InteractionEffect& current = top.steps[top.next - 1];
+            ActionContext context{host, top.step};
+            if (current.effect->update(current.args, context) == ActionStatus::running) {
+                return;
+            }
+            top.waiting = false;
         }
-        step_ = {};
-        ActionContext context{host, step_};
-        const ActionStatus status = current.effect->start(current.args, context);
-        if (status == ActionStatus::running && current.effect->update && next_ < steps_.size()) {
-            waiting_ = true;
-            return;
+        while (top.next < top.steps.size()) {
+            const InteractionEffect& current = top.steps[top.next++];
+            if (!current.effect) {
+                continue;
+            }
+            top.step = {};
+            ActionContext context{host, top.step};
+            const ActionStatus status = current.effect->start(current.args, context);
+            const bool last = top.next >= top.steps.size();
+            if (status == ActionStatus::running && current.effect->update
+                && (!last || top.waitLast)) {
+                top.waiting = true;
+                return;
+            }
         }
+        frames_.pop_back();
     }
-    steps_.clear();
-    next_ = 0;
 }

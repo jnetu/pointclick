@@ -1,0 +1,30 @@
+# Dialogos de gallery.room. Cada [node <id>] e aberto por start_dialogue <id> no .rules.
+# As escolhas [choice <id> "texto"] pertencem ao no acima delas; condicoes vem primeiro,
+# depois once (opcional), os efeitos e por ultimo goto <no> (sem goto, a conversa termina).
+
+[node mesa]
+say "Uma mesa de madeira solida. O que fazer?"
+
+# So aparece depois de achar o bilhete na planta.
+[choice ler_bilhete "Ler o bilhete sobre a mesa."]
+has_item gallery_note
+say "Coloquei o bilhete sobre a mesa para ler melhor."
+say "\"A chave esta onde a luz nao alcanca.\""
+set_flag read_gallery_note
+
+[choice gavetas "Procurar nas gavetas."]
+once
+say "Gavetas vazias... mas uma delas tem fundo falso."
+goto fundo_falso
+
+[choice sair "Deixar a mesa."]
+say "Melhor seguir em frente."
+
+[node fundo_falso]
+say "Forcar o fundo falso?"
+
+[choice forcar "Forcar."]
+say "Nada alem de poeira."
+goto mesa
+
+[choice deixar "Deixar quieto."]

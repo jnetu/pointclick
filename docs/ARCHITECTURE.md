@@ -7,10 +7,13 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | --- | --- |
 | `assets/rooms/*.room` | Salas editáveis por game design (geometria, estética, colisão base e sprites) |
 | `assets/rooms/*.rules` | Regras declarativas opcionais de interação, coleta e puzzles por sala |
+| `assets/rooms/*.dlg` | Diálogos opcionais da sala: nós, falas, escolhas condicionais e `goto` |
 | `assets/sprites/*.png` | Imagens estáticas e folhas de animação |
 | `game/RoomParameters` | Catálogo de parâmetros: nome, descrição, intervalo, passo e acesso ao campo |
 | `content/RoomFiles` | Leitura e gravação das salas; erros com número de linha |
 | `content/InteractionFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.rules` |
+| `content/DialogueFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.dlg` |
+| `content/TextFormat` | Tokenizer comum (comentários, aspas, instruções do catálogo), leitura SDL e gravação atômica |
 | `content/SpriteFields` | Leitura e gravação dos campos de um clip, independente da sala |
 | `content/RoomPresets` | Sprites, sala e regras padrão embutidos usados por testes e instanciação direta |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
@@ -19,7 +22,8 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
 | `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto |
-| `game/ScriptRunner`, `game/ScriptHost` | Executor de sequências de ações por tick, modo cutscene e contrato da cena para as ações |
+| `game/ScriptRunner`, `game/ScriptHost` | Executor de sequências empilháveis de ações por tick, modo cutscene e contrato da cena para as ações |
+| `game/Dialogue` | Definição dos diálogos (`RoomDialogues` → `DialogueNode` → `DialogueChoice`) e `DialoguePlayer`, a conversa em andamento sobre o `ScriptRunner` |
 | `game/ActionCatalog` | Catálogo tipado de condições e efeitos das regras (`ArgType`, validação, execução, eventos de saída) |
 | `game/Interaction` | Gatilhos, condições, efeitos, picking por profundidade e cálculo de aproximação |
 | `game/Camera` | Câmera 2D suave com campo de visão fixo (`1280×720`), clamp nas bordas da sala e interpolação |
@@ -28,7 +32,9 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas |
 | `debug/DebugEditor` | Reconhece DEBUG/F1/Select, decide hit-test do painel na viewport, processa comandos e gerencia edição/undo |
 | `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
-| `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `DebugEditor` → `ViewportUiConsumer` (UIs futuras) → `Game` |
+| `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `DebugEditor` → `ViewportUiConsumer` (UIs de gameplay) → `Game` |
+| `ui/DialogueMenu` | Menu de escolhas: layout na viewport, hit-test, destaque por ponteiro/setas e `Game::chooseDialogueOption` |
+| `graphics/DialogueMenuRenderer` | Desenho do menu de escolhas com o layout de `DialogueMenu` |
 | `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera |
 | `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena (filtrando objetos ocultos em `SessionState`) |
@@ -36,7 +42,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
 | `graphics/DebugOverlay` | Guias de objetos no mundo e desenho do painel consultando `DebugEditor::panelRect()` |
 | `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox, cursor virtual do controle e conversão janela/toque/viewport |
-| `core/Application` | Janela, ciclo de vida mobile/console, carregamento `.room` + `.rules`, transições de sala e loop em passo fixo |
+| `core/Application` | Janela, ciclo de vida mobile/console, carregamento `.room` + `.rules` + `.dlg`, transições de sala e loop em passo fixo |
 
 O executável e os testes compartilham `pointclick_core`. As rotinas de desenho
 ficam em `pointclick_graphics`. Uma correção no jogo ou na entrada chega aos dois
@@ -61,7 +67,9 @@ arquivos de arte nem chama funções de desenho.
    do controle; consome comandos (`DebugKey` via setas, D-Pad ou ombros), texto e
    cliques dentro de `DebugEditor::panelRect()` quando visível (`consumesViewportPoint`).
 3. **UIs de Gameplay (`ViewportUiConsumer`)**: ponto de extensão na viewport fixa
-   `0..1280 × 0..720` para futuros Diálogos, Inventário e Menus antes da câmera.
+   `0..1280 × 0..720` antes da câmera. `ui/DialogueMenu` é o primeiro: enquanto
+   `Game::awaitingDialogueChoice()`, consome cliques/toques (clique numa linha escolhe;
+   fora dela não faz nada), setas/D-pad e confirmação. Inventário e menus seguem o modelo.
 4. **Mundo (`Game`)**: converte `viewportPoint` via `Camera::viewportToWorld` e
    entrega `Game::onPointerMove` / `Game::onClick`:
    - `pickInteractiveObject` verifica se o clique atingiu algum `SceneObject`
@@ -182,8 +190,34 @@ colisão marcam a navegação como suja, e ela é reconstruída ao fim do passo 
 um `walk_to`.
 
 O mesmo runner é a base para eventos de entrada de sala e diálogos: uma fala linear já é
-uma sequência de `say`; um nó de diálogo com escolhas será uma ação bloqueante que
-espera a UI escolher e depois inicia a sequência do ramo escolhido.
+uma sequência de `say`.
+
+### Diálogos com escolhas
+
+Os diálogos da sala ficam no companheiro opcional `<sala>.dlg` (`content/DialogueFiles`),
+carregado como `RoomDialogues` (definição imutável: nós, falas, escolhas com condições do
+catálogo, `once` e `goto`). `Application` e o comando `load` do editor conferem com
+`dialogueReferencesError` que todo `start_dialogue` do `.rules` aponta para um nó existente
+antes de aplicar; `Game::setDialogues` valida o resto contra a sala.
+
+`start_dialogue <no>` é uma ação bloqueante do catálogo. O `ScriptRunner` mantém uma **pilha
+de sequências**: a regra que chamou `start_dialogue` fica esperando embaixo, e
+`DialoguePlayer` (estado de execução, em `Game`) empilha por cima as falas do nó e, depois, os
+efeitos da escolha. A ação nunca empilha sozinha: `ScriptHost::startDialogue` só registra o
+pedido, e `Game::settleScript` o abre depois que a ação devolve, então nenhum passo é
+reentrado. Fases: `lines` (falas do nó) → `choosing` (as escolhas cujas condições valem, na
+ordem do arquivo) → `reply` (efeitos da escolhida; se houver `goto`, o último passo também é
+esperado, para a resposta ser lida antes do próximo nó) → próximo nó ou fim. Sem escolhas
+disponíveis, a conversa termina depois das falas. Quando a conversa termina, a regra de baixo
+retoma no tick seguinte.
+
+`inCutscene()` vale durante toda a conversa. Durante `choosing`, `ui/DialogueMenu` (um
+`ViewportUiConsumer`) mostra as opções e chama `Game::chooseDialogueOption(i)`; nas outras
+fases o clique cai em `Game::onClick` e só pula a fala. `change_room` dentro de um diálogo
+espera a conversa e a regra que a abriu terminarem. Escolhas `once` ficam registradas em
+`SessionState` (`sala/no/escolha`) e somem nas próximas conversas. Trocar de sala encerra a
+conversa e descarta os diálogos da sala antiga; `Game::setDialogues` também encerra a conversa
+em andamento, porque o `DialoguePlayer` aponta para a definição.
 
 As regras são avaliadas na ordem declarada: a primeira regra cujas condições forem
 todas verdadeiras executa seus efeitos em sequência e encerra a avaliação. Objetos
@@ -207,9 +241,9 @@ consultada com `AnimationPlayback::finished`. Não use um novo valor de
 `SceneObjectType` para cada animação: esse enum expressa apenas se a base autoral
 do objeto bloqueia o caminho por padrão.
 
-Para uma futura UI visual de inventário ou árvore de diálogos com múltiplas escolhas,
-implemente um `ViewportUiConsumer` registrado em `InputRouter` operando na viewport
-fixa `1280×720`. A UI de inventário pode ler `game.session().items()` e disparar
+Para uma futura UI visual de inventário, siga o modelo de `ui/DialogueMenu`: um
+`ViewportUiConsumer` registrado em `InputRouter` operando na viewport fixa `1280×720`,
+com o layout no próprio módulo e o desenho em `graphics/`. A UI de inventário pode ler `game.session().items()` e disparar
 `game.useItemAt(itemId, worldPoint)` ou `game.useItemOnObject(itemId, objectId)`
 sem acoplar `graphics/` às regras de negócio. Efeitos visuais de transição de sala
 (*fade*) podem observar a troca em `Application` / `Renderer` usando estado
@@ -241,7 +275,8 @@ ctest --test-dir build/debug --output-on-failure
 Os testes cobrem movimento, perspectiva, desvio, quinas, salas panorâmicas,
 câmera fixa e suave com clamp nas bordas, Walk-to-Interact (aproximação, cancelamento
 no meio do caminho, disparo imediato quando já posicionado e picking por profundidade),
-coleta de itens, puzzles/NPCs condicionais com desbloqueio dinâmico de `Navigation`,
+coleta de itens, diálogos com escolhas condicionais (`once`, `goto`, retomada da regra,
+menu por clique/setas/gamepad e round-trip do `.dlg`), puzzles/NPCs condicionais com desbloqueio dinâmico de `Navigation`,
 persistência de `SessionState` entre salas e durante edições do `DebugEditor` (`set`,
 `move`, `undo`, `reset`), parser/serialização/validação por linha de `.rules`,
 configurações inválidas, entrada multiplataforma e independência de resolução (720p,

@@ -1,165 +1,22 @@
 #include "content/InteractionFiles.hpp"
 
+#include "content/TextFormat.hpp"
+
 #include "game/Identifier.hpp"
 #include "game/Room.hpp"
 
-#include <SDL3/SDL_iostream.h>
-#include <SDL3/SDL_stdinc.h>
-
 #include <algorithm>
-#include <fstream>
 #include <locale>
-#include <memory>
 #include <ostream>
 #include <sstream>
 #include <vector>
 
 namespace {
-std::string pathToUtf8(const std::filesystem::path& path) {
-    const auto utf8 = path.u8string();
-    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
-}
-
-std::string trim(const std::string_view value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string_view::npos) return {};
-    const auto last = value.find_last_not_of(" \t\r\n");
-    return std::string(value.substr(first, last - first + 1));
-}
-
-// Strips '#' comments only outside double-quoted strings so say "Item #1" works cleanly.
-std::string stripCommentPreservingQuotes(const std::string_view line) {
-    bool inQuotes = false;
-    bool escaped = false;
-    for (std::size_t i = 0; i < line.size(); ++i) {
-        const char ch = line[i];
-        if (escaped) {
-            escaped = false;
-            continue;
-        }
-        if (inQuotes && ch == '\\') {
-            escaped = true;
-            continue;
-        }
-        if (ch == '"') {
-            inQuotes = !inQuotes;
-            continue;
-        }
-        if (!inQuotes && ch == '#') {
-            return trim(line.substr(0, i));
-        }
-    }
-    return trim(line);
-}
+using namespace TextFormat;
 
 bool finished(std::istringstream& input) {
     input >> std::ws;
     return input.eof();
-}
-
-bool isSpace(const char ch) {
-    return ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n';
-}
-
-void skipSpaces(const std::string_view text, std::size_t& pos) {
-    while (pos < text.size() && isSpace(text[pos])) ++pos;
-}
-
-// Decodes "..." starting at pos (which must point at the opening quote).
-std::string readQuotedToken(const std::string_view keyword, const std::string_view text,
-                            std::size_t& pos, std::string& out) {
-    std::string decoded;
-    for (++pos; pos < text.size(); ++pos) {
-        const char ch = text[pos];
-        if (ch == '\\') {
-            if (pos + 1 >= text.size()) {
-                return "Sequencia de escape incompleta em " + std::string(keyword);
-            }
-            const char next = text[++pos];
-            if (next == '"' || next == '\\') decoded.push_back(next);
-            else if (next == 'n') decoded.push_back('\n');
-            else return "Sequencia de escape invalida em " + std::string(keyword);
-            continue;
-        }
-        if (ch == '"') {
-            ++pos;
-            if (pos < text.size() && !isSpace(text[pos])) {
-                return "Caracteres extras apos aspas em " + std::string(keyword);
-            }
-            out = std::move(decoded);
-            return {};
-        }
-        decoded.push_back(ch);
-    }
-    return "Texto entre aspas nao fechado";
-}
-
-// Tokenizes the arguments after the keyword following the catalog signature.
-// Type-specific checks (identifiers, room objects) happen afterwards in argumentsError.
-std::string readArguments(const std::string_view keyword, const ArgSignature& signature,
-                          const std::string_view text, std::vector<std::string>& args) {
-    std::size_t pos = 0;
-    for (const ArgType type : signature.view()) {
-        skipSpaces(text, pos);
-        if (pos >= text.size()) return actionUsage(keyword, signature);
-        std::string token;
-        if (type == ArgType::text) {
-            if (text[pos] != '"') return actionUsage(keyword, signature);
-            if (std::string error = readQuotedToken(keyword, text, pos, token); !error.empty()) {
-                return error;
-            }
-        } else {
-            const std::size_t begin = pos;
-            while (pos < text.size() && !isSpace(text[pos])) ++pos;
-            token.assign(text.substr(begin, pos - begin));
-        }
-        args.push_back(std::move(token));
-    }
-    skipSpaces(text, pos);
-    if (pos < text.size()) {
-        const auto types = signature.view();
-        if (!types.empty() && types.back() == ArgType::text) {
-            return "Caracteres extras apos aspas em " + std::string(keyword);
-        }
-        return actionUsage(keyword, signature);
-    }
-    return {};
-}
-
-std::string escapeQuotedText(const std::string_view text) {
-    std::string escaped;
-    escaped.reserve(text.size() + 4);
-    for (const char ch : text) {
-        if (ch == '\\') escaped += "\\\\";
-        else if (ch == '"') escaped += "\\\"";
-        else if (ch == '\n') escaped += "\\n";
-        else escaped.push_back(ch);
-    }
-    return escaped;
-}
-
-void writeStatement(std::ostream& out, const std::string_view keyword,
-                    const ArgSignature& signature, const ActionArgs args) {
-    out << keyword;
-    const auto types = signature.view();
-    for (std::size_t i = 0; i < args.size(); ++i) {
-        out << ' ';
-        if (types[i] == ArgType::text) out << '"' << escapeQuotedText(args[i]) << '"';
-        else out << args[i];
-    }
-    out << '\n';
-}
-
-InteractionLoadResult loadStream(SDL_IOStream* file, const Room* room) {
-    std::size_t dataSize = 0;
-    std::unique_ptr<void, decltype(&SDL_free)> data(
-            SDL_LoadFile_IO(file, &dataSize, false), SDL_free);
-    const auto status = SDL_GetIOStatus(file);
-    if (!data || (status != SDL_IO_STATUS_READY && status != SDL_IO_STATUS_EOF)) {
-        return {{}, "Falha de leitura"};
-    }
-    return InteractionFiles::parse(
-            std::string_view(static_cast<const char*>(data.get()), dataSize), room);
 }
 } // namespace
 
@@ -302,29 +159,17 @@ InteractionLoadResult InteractionFiles::parse(const std::string_view content, co
 }
 
 InteractionLoadResult InteractionFiles::load(const std::filesystem::path& path, const Room* room) {
-    const auto filename = pathToUtf8(path);
-    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> file(
-            SDL_IOFromFile(filename.c_str(), "rb"), SDL_CloseIO);
-    if (!file) {
-        return {{}, "Nao foi possivel abrir " + pathToUtf8(path.filename())};
-    }
-    return loadStream(file.get(), room);
+    const TextLoad file = readFile(path);
+    if (!file.text) return {{}, file.error};
+    return parse(*file.text, room);
 }
 
 InteractionLoadResult InteractionFiles::loadOptionalForRoom(const std::filesystem::path& roomPath,
                                                             const Room* room) {
-    const auto rulesPath = companionPath(roomPath);
-    const auto filename = pathToUtf8(rulesPath);
-    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> file(
-            SDL_IOFromFile(filename.c_str(), "rb"), SDL_CloseIO);
-    if (!file) {
-        std::error_code ec;
-        if (std::filesystem::exists(rulesPath, ec)) {
-            return {{}, "Nao foi possivel abrir " + pathToUtf8(rulesPath.filename())};
-        }
-        return {RoomInteractions{}, {}};
-    }
-    return loadStream(file.get(), room);
+    const TextLoad file = readOptionalFile(companionPath(roomPath));
+    if (!file.text) return {{}, file.error};
+    if (file.text->empty()) return {RoomInteractions{}, {}};
+    return parse(*file.text, room);
 }
 
 bool InteractionFiles::save(const std::filesystem::path& path,
@@ -334,13 +179,7 @@ bool InteractionFiles::save(const std::filesystem::path& path,
     error = interactions.validationError(room);
     if (!error.empty()) return false;
 
-    auto temporary = path;
-    temporary += ".tmp";
-    std::ofstream out(temporary);
-    if (!out) {
-        error = "Nao foi possivel salvar " + pathToUtf8(path.filename());
-        return false;
-    }
+    std::ostringstream out;
     out.imbue(std::locale::classic());
     out << "# PointClick: regras declarativas de interacao\n";
 
@@ -362,13 +201,6 @@ bool InteractionFiles::save(const std::filesystem::path& path,
         }
     }
 
-    out.close();
-    std::error_code ioError;
-    if (out) std::filesystem::rename(temporary, path, ioError);
-    if (!out || ioError) {
-        std::filesystem::remove(temporary, ioError);
-        error = "Falha ao gravar o arquivo de regras";
-        return false;
-    }
-    return true;
+    return writeTextAtomic(path, out.str(), "regras", error);
 }
+

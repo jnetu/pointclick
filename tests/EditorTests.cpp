@@ -1,3 +1,4 @@
+#include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "content/RoomPresets.hpp"
@@ -8,6 +9,7 @@
 #include "graphics/Renderer.hpp"
 #include "input/InputRouter.hpp"
 #include "input/InputSystem.hpp"
+#include "ui/DialogueMenu.hpp"
 
 #include <SDL3/SDL.h>
 #include <cassert>
@@ -912,6 +914,251 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     }
 }
 
+void assertSameSteps(const std::vector<InteractionEffect>& a, const std::vector<InteractionEffect>& b) {
+    assert(a.size() == b.size());
+    for (std::size_t i = 0; i < a.size(); ++i) {
+        assert(a[i].effect == b[i].effect && a[i].args == b[i].args);
+    }
+}
+
+void assertSameDialogues(const RoomDialogues& a, const RoomDialogues& b) {
+    assert(a.nodes.size() == b.nodes.size());
+    for (std::size_t n = 0; n < a.nodes.size(); ++n) {
+        const DialogueNode& x = a.nodes[n];
+        const DialogueNode& y = b.nodes[n];
+        assert(x.id == y.id && x.choices.size() == y.choices.size());
+        assertSameSteps(x.lines, y.lines);
+        for (std::size_t c = 0; c < x.choices.size(); ++c) {
+            const DialogueChoice& p = x.choices[c];
+            const DialogueChoice& q = y.choices[c];
+            assert(p.id == q.id && p.text == q.text && p.once == q.once && p.next == q.next);
+            assert(p.conditions.size() == q.conditions.size());
+            for (std::size_t i = 0; i < p.conditions.size(); ++i) {
+                assert(p.conditions[i].condition == q.conditions[i].condition);
+                assert(p.conditions[i].args == q.conditions[i].args);
+            }
+            assertSameSteps(p.effects, q.effects);
+        }
+    }
+}
+
+void testDialogueFiles(const std::filesystem::path& directory) {
+    // 1. The shipped gallery.dlg loads against gallery.room and matches gallery.rules.
+    const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+    const auto gallery = RoomFiles::load(roomsDir / "gallery.room");
+    assert(gallery.room);
+    const auto shipped = DialogueFiles::loadOptionalForRoom(roomsDir / "gallery.room",
+                                                            &*gallery.room);
+    assert(shipped.dialogues && shipped.error.empty());
+    const DialogueNode* table = shipped.dialogues->findNode("mesa");
+    assert(table && table->choices.size() == 3);
+    assert(table->findChoice("ler_bilhete")->conditions.size() == 1);
+    assert(table->findChoice("gavetas")->once && table->findChoice("gavetas")->next == "fundo_falso");
+    const auto galleryRules = InteractionFiles::loadOptionalForRoom(roomsDir / "gallery.room",
+                                                                    &*gallery.room);
+    assert(galleryRules.interactions);
+    assert(dialogueReferencesError(*galleryRules.interactions, *shipped.dialogues).empty());
+    const auto firstRoom = RoomFiles::load(roomsDir / "first.room");
+    const auto firstNone = DialogueFiles::loadOptionalForRoom(roomsDir / "first.room",
+                                                              &*firstRoom.room);
+    assert(firstNone.dialogues && firstNone.dialogues->empty() && firstNone.error.empty());
+    assert(!DialogueFiles::load(directory / "missing.dlg").dialogues);
+
+    // 2. Round trip: parse -> save -> load keeps every field, and saving is stable.
+    Room room = RoomPresets::firstRoom();
+    room.scenery[1].animations["open"] = SpriteClip{.file = "red_open.png"};
+    const std::string authored = R"(# comentario
+[node guarda]
+say "Alto la! #1"   # comentario apos a fala
+play_animation red_box open
+
+[choice chave "Tenho a \"chave\"."]
+has_item brass_key
+flag_not_set guard_open
+once
+take_item brass_key
+set_flag guard_open
+goto liberado
+
+[choice tchau "Tchau."]
+
+[node liberado]
+say "Pode passar."
+wait 0.5
+)";
+    const auto parsed = DialogueFiles::parse(authored, &room);
+    assert(parsed.dialogues && parsed.error.empty());
+    const DialogueChoice* key = parsed.dialogues->findNode("guarda")->findChoice("chave");
+    assert(key->text == "Tenho a \"chave\"." && key->once && key->next == "liberado");
+    assert(key->conditions.size() == 2 && key->effects.size() == 2);
+    assert(parsed.dialogues->findNode("guarda")->lines[0].args[0] == "Alto la! #1");
+    assert(parsed.dialogues->findNode("guarda")->findChoice("tchau")->effects.empty());
+
+    const auto path = directory / "roundtrip.dlg";
+    std::string error;
+    assert(DialogueFiles::save(path, *parsed.dialogues, error, &room));
+    const auto reloaded = DialogueFiles::load(path, &room);
+    assert(reloaded.dialogues && reloaded.error.empty());
+    assertSameDialogues(*parsed.dialogues, *reloaded.dialogues);
+    const auto path2 = directory / "roundtrip2.dlg";
+    assert(DialogueFiles::save(path2, *reloaded.dialogues, error, &room));
+    std::ifstream first(path), second(path2);
+    const std::string firstText((std::istreambuf_iterator<char>(first)), {});
+    const std::string secondText((std::istreambuf_iterator<char>(second)), {});
+    assert(!firstText.empty() && firstText == secondText);
+    assert(!std::filesystem::exists(directory / "roundtrip.dlg.tmp"));
+
+    // Invalid definitions are refused before touching the file.
+    RoomDialogues broken = *parsed.dialogues;
+    broken.nodes[0].choices[0].next = "nowhere";
+    assert(!DialogueFiles::save(path, broken, error, &room));
+    assert(error == "Destino de goto desconhecido: nowhere");
+    assert(DialogueFiles::load(path, &room).dialogues);
+
+    // 3. Line-by-line validation names the line and the expected form.
+    const struct {
+        const char* text;
+        const char* expectedError;
+    } invalidCases[] = {
+        {"say \"oi\"\n", "Linha 1: Dialogo deve comecar com [node <id>]"},
+        {"[node a b]\nsay \"x\"\n", "Linha 1: Use [node <id>]"},
+        {"[node a]\n", "Linha 1: No de dialogo vazio: a"},
+        {"[node a]\n[node b]\nsay \"x\"\n", "Linha 1: No de dialogo vazio: a"},
+        {"[node a]\nsay \"x\"\n[node a]\nsay \"y\"\n", "Linha 3: No de dialogo repetido: a"},
+        {"[choice c \"x\"]\n", "Linha 1: Escolha deve vir depois de um [node <id>]"},
+        {"[node a]\n[choice c]\n", "Linha 2: Use [choice <id> \"texto\"]"},
+        {"[node a]\n[choice c \"\"]\n", "Linha 2: Escolha sem texto: c"},
+        {"[node a]\n[choice c \"x\"]\n[choice c \"y\"]\n", "Linha 3: Escolha repetida no no a: c"},
+        {"[node a]\n[menu]\n", "Linha 2: Bloco desconhecido: menu (use [node <id>] ou [choice <id> \"texto\"])"},
+        {"[node a]\nhas_item k\n", "Linha 2: has_item so vale dentro de [choice <id> \"texto\"]"},
+        {"[node a]\ngoto a\n", "Linha 2: goto so vale dentro de [choice <id> \"texto\"]"},
+        {"[node a]\n[choice c \"x\"]\nsay \"y\"\nhas_item k\n", "Linha 4: Condicao deve vir antes dos efeitos"},
+        {"[node a]\n[choice c \"x\"]\ngoto a\nsay \"y\"\n", "Linha 4: goto deve ser a ultima linha da escolha"},
+        {"[node a]\n[choice c \"x\"]\ngoto\n", "Linha 3: Use goto <no>"},
+        {"[node a]\n[choice c \"x\"]\ngoto b\n", "Linha 3: Destino de goto desconhecido: b"},
+        {"[node a]\n[choice c \"x\"]\nonce\nonce\n", "Linha 4: once repetido na escolha"},
+        {"[node a]\n[choice c \"x\"]\nonce agora\n", "Linha 3: Use once"},
+        {"[node a]\nstart_dialogue a\n", "Linha 2: start_dialogue nao vale dentro de dialogos; use goto <no>"},
+        {"[node a]\nhide_object fantasma\n", "Linha 2: Objeto desconhecido na sala: fantasma"},
+        {"[node a]\ndance\n", "Linha 2: Comando de dialogo desconhecido: dance"},
+        {"[node a]\n[choice c \"x\"]\nset_solid red_box 2\n", "Linha 3: Use set_solid <objeto> <0|1>"},
+    };
+    for (const auto& testCase : invalidCases) {
+        const auto bad = DialogueFiles::parse(testCase.text, &room);
+        assert(!bad.dialogues);
+        if (bad.error != testCase.expectedError) {
+            SDL_Log("dialogue case: got '%s' expected '%s'", bad.error.c_str(), testCase.expectedError);
+        }
+        assert(bad.error == testCase.expectedError);
+    }
+}
+
+// The choice menu is a ViewportUiConsumer: modal only while a choice is expected, driven by
+// click/touch on a row, or up/down + confirm (keyboard, D-pad) and gamepad South.
+void testDialogueMenuInput() {
+    Game game(RoomPresets::firstRoom());
+    DialogueChoice a{.id = "a", .text = "Primeira", .conditions = {},
+                     .effects = {InteractionEffect::make("set_flag", {"picked_a"})}};
+    DialogueChoice b{.id = "b", .text = "Segunda", .conditions = {},
+                     .effects = {InteractionEffect::make("set_flag", {"picked_b"})}};
+    DialogueChoice c{.id = "c", .text = "Terceira", .conditions = {},
+                     .effects = {InteractionEffect::make("set_flag", {"picked_c"})}};
+    game.setDialogues(RoomDialogues{{DialogueNode{
+            "menu", {InteractionEffect::make("say", {"Escolha"})}, {a, b, c}}}});
+    DialogueMenu menu(game);
+    InputRouter router;
+    router.addUiConsumer(&menu);
+    DebugEditor editor;
+
+    const auto press = [&](const SDL_FPoint point) {
+        TranslatedInput input;
+        input.pointerMoved = true;
+        input.primaryPressed = true;
+        input.viewportPoint = point;
+        input.insideViewport = true;
+        return router.routeTranslated(input, editor, game);
+    };
+    const auto navigate = [&](const UiNavAction action) {
+        TranslatedInput input;
+        input.navAction = action;
+        return router.routeTranslated(input, editor, game);
+    };
+    const auto center = [](const SDL_FRect rect) {
+        return SDL_FPoint{rect.x + rect.w * 0.5F, rect.y + rect.h * 0.5F};
+    };
+
+    // Closed: presses reach the world.
+    assert(!press({900.0F, 600.0F}).consumedByUi);
+    assert(game.player().moving());
+    for (int i = 0; i < 200 && game.player().moving(); ++i) game.tick(0.05F);
+    assert(!navigate(UiNavAction::down).consumedByUi);
+
+    // Layout: rows stack inside the panel, at the bottom of the 1280x720 viewport.
+    const SDL_FRect panel = DialogueMenu::panelRect(3);
+    assert(panel.y + panel.h <= 720.0F && panel.x >= 0.0F && panel.x + panel.w <= 1280.0F);
+    const SDL_FRect row1 = DialogueMenu::optionRect(1, 3);
+    assert(DialogueMenu::optionAt(center(row1), 3) == 1u);
+    assert(!DialogueMenu::optionAt({10.0F, 10.0F}, 3));
+
+    // Click/touch on a row chooses it.
+    assert(game.startDialogue("menu"));
+    assert(game.awaitingDialogueChoice());
+    const SDL_FPoint feet = game.player().feet();
+    assert(press({200.0F, 100.0F}).consumedByUi); // modal: outside the rows does nothing
+    assert(game.awaitingDialogueChoice() && !game.player().moving());
+    assert(game.player().feet().x == feet.x);
+    assert(press(center(row1)).consumedByUi);
+    assert(game.session().hasFlag("picked_b") && !game.dialogueActive());
+
+    // Keyboard / D-pad: down wraps, confirm picks the highlighted row.
+    assert(game.startDialogue("menu"));
+    assert(menu.highlighted() == 0);
+    assert(navigate(UiNavAction::up).consumedByUi);
+    assert(menu.highlighted() == 2);
+    assert(navigate(UiNavAction::down).consumedByUi);
+    assert(menu.highlighted() == 0);
+    assert(navigate(UiNavAction::cancel).consumedByUi && game.awaitingDialogueChoice());
+    assert(navigate(UiNavAction::confirm).consumedByUi);
+    assert(game.session().hasFlag("picked_a"));
+
+    // Gamepad: D-pad highlights, South (a press at the unmoved virtual cursor) confirms it.
+    assert(game.startDialogue("menu"));
+    TranslatedInput hover;
+    hover.pointerMoved = true;
+    hover.viewportPoint = {200.0F, 100.0F};
+    hover.insideViewport = true;
+    (void)router.routeTranslated(hover, editor, game);
+    assert(navigate(UiNavAction::down).consumedByUi);
+    assert(navigate(UiNavAction::down).consumedByUi);
+    assert(press({200.0F, 100.0F}).consumedByUi);
+    assert(game.session().hasFlag("picked_c"));
+
+    // Hover follows the pointer and is consumed inside the panel.
+    assert(game.startDialogue("menu"));
+    hover.viewportPoint = center(DialogueMenu::optionRect(2, 3));
+    assert(router.routeTranslated(hover, editor, game).consumedByUi);
+    assert(menu.highlighted() == 2 && !game.pointerInside());
+
+    // Draws without a window of its own (software renderer) while open.
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    assert(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Dialogue test", 1280, 720, SDL_WINDOW_HIDDEN);
+    assert(window);
+    Renderer renderer;
+    assert(renderer.initialize(window));
+    renderer.render(game, 1.0F, nullptr, nullptr, &menu);
+    SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(pixels);
+    if (const char* capture = std::getenv("POINTCLICK_DIALOGUE_CAPTURE")) {
+        assert(SDL_SaveBMP(pixels, capture));
+    }
+    SDL_DestroySurface(pixels);
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 // Every catalog entry, present and future, must survive parse -> save -> load with its typed
 // arguments, so a new effect or condition is covered without writing a new test.
 std::string sampleArgument(const ArgType type) {
@@ -923,7 +1170,8 @@ std::string sampleArgument(const ArgType type) {
     case ArgType::number: return "1.5";
     case ArgType::itemId:
     case ArgType::flagId:
-    case ArgType::roomId: return "sample_id";
+    case ArgType::roomId:
+    case ArgType::dialogueId: return "sample_id";
     }
     return {};
 }
@@ -1017,5 +1265,7 @@ int main() {
     testEditorPreservesSessionState(directory);
     testInteractionRulesFilesAndValidation(directory);
     testActionCatalogRoundtrip(directory);
+    testDialogueFiles(directory);
+    testDialogueMenuInput();
     std::filesystem::remove_all(directory);
 }

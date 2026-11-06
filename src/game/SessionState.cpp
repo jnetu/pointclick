@@ -9,6 +9,7 @@ void SessionState::reset() {
     flags_.clear();
     items_.clear();
     roomOverrides_.clear();
+    dialogueChoices_.clear();
 }
 
 void SessionState::setFlag(const std::string_view id, const int value) {
@@ -115,6 +116,29 @@ bool SessionState::isObjectSolid(const std::string_view roomId,
         return *overrideValue;
     }
     return object.type == SceneObjectType::solid;
+}
+
+namespace {
+std::string dialogueChoiceKey(const std::string_view roomId, const std::string_view nodeId,
+                              const std::string_view choiceId) {
+    std::string key;
+    key.reserve(roomId.size() + nodeId.size() + choiceId.size() + 2);
+    key.append(roomId).append(1, '/').append(nodeId).append(1, '/').append(choiceId);
+    return key;
+}
+} // namespace
+
+void SessionState::markDialogueChoice(const std::string_view roomId,
+                                      const std::string_view nodeId,
+                                      const std::string_view choiceId) {
+    if (!validIdentifier(roomId) || !validIdentifier(nodeId) || !validIdentifier(choiceId)) return;
+    dialogueChoices_.insert(dialogueChoiceKey(roomId, nodeId, choiceId));
+}
+
+bool SessionState::dialogueChoiceTaken(const std::string_view roomId,
+                                       const std::string_view nodeId,
+                                       const std::string_view choiceId) const {
+    return dialogueChoices_.contains(dialogueChoiceKey(roomId, nodeId, choiceId));
 }
 
 const ObjectStateOverride* SessionState::findOverride(const std::string_view roomId,

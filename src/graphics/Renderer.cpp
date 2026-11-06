@@ -2,6 +2,7 @@
 #include "graphics/SceneRenderer.hpp"
 #include "graphics/DiagnosticsOverlay.hpp"
 #include "graphics/DebugOverlay.hpp"
+#include "graphics/DialogueMenuRenderer.hpp"
 #include "game/World.hpp"
 #include "game/Game.hpp"
 #include <SDL3/SDL.h>
@@ -78,7 +79,8 @@ bool Renderer::containsViewportPoint(const SDL_FPoint viewportPoint) {
 }
 
 void Renderer::render(const Game& game, const float interpolation,
-                      const DebugEditor* editor, const InputSystem* input) {
+                      const DebugEditor* editor, const InputSystem* input,
+                      const DialogueMenu* dialogueMenu) {
     SDL_SetRenderDrawColor(renderer_, 8, 10, 16, 255);
     SDL_RenderClear(renderer_);
     if (lastRoomRevision_ != game.roomRevision()) {
@@ -87,6 +89,7 @@ void Renderer::render(const Game& game, const float interpolation,
     }
     SceneRenderer::draw(renderer_, sprites_, game, interpolation);
     DiagnosticsOverlay::draw(renderer_, window_, game, interpolation);
+    if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, game, *dialogueMenu);
     if (editor) DebugOverlay::draw(renderer_, game, *editor, interpolation);
     if (input && input->activeDevice() == InputDevice::gamepad) {
         const SDL_FPoint cursor = input->cursorViewport();

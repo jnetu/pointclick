@@ -298,6 +298,7 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` não esperam) |
 | **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
 | **Efeito** | `wait <segundos>` | Espera um tempo (ex.: `wait 1.5`, sempre com ponto) |
+| **Efeito** | `start_dialogue <no>` | Abre um nó do `<sala>.dlg` e espera a conversa terminar |
 | **Efeito** | `change_room <roomId>` | Troca para `<roomId>.room` quando a sequência terminar |
 
 A tabela acima espelha o catálogo de ações em `src/game/ActionCatalog.cpp`. Os
@@ -329,6 +330,78 @@ change_room gallery
 
 Falas lineares de diálogo são só uma sequência de `say`; cada clique avança para a
 próxima.
+
+### Diálogos com escolhas (`<sala>.dlg`)
+
+Conversas com escolhas ficam num terceiro arquivo companheiro **opcional**, com o mesmo nome
+da sala e extensão `.dlg` (por exemplo, `gallery.dlg` ao lado de `gallery.room` e
+`gallery.rules`). Uma regra abre a conversa com `start_dialogue <no>`:
+
+```ini
+# gallery.rules
+[interact table]
+start_dialogue mesa
+```
+
+O `.dlg` tem dois tipos de bloco. `[node <id>]` abre um nó; as linhas logo abaixo são
+efeitos do catálogo (`say`, `play_animation`, `wait`...) que rodam quando o nó abre.
+`[choice <id> "texto"]` é uma opção do nó acima dela, mostrada no menu com esse texto. Dentro
+de uma escolha, nesta ordem:
+
+| Linha | Descrição |
+| --- | --- |
+| condições (`has_item`, `flag_set`...) | Mesmas condições do `.rules`; a opção só aparece se todas valerem |
+| `once` | A opção some depois de escolhida uma vez (fica salvo no progresso da partida) |
+| efeitos (`say`, `give_item`, `set_flag`, `change_room`...) | Rodam em sequência quando a opção é escolhida |
+| `goto <no>` | Última linha, opcional: abre outro nó (ou o mesmo, para voltar ao menu). Sem `goto`, a conversa termina |
+
+```ini
+# gallery.dlg
+[node mesa]
+say "Uma mesa de madeira solida. O que fazer?"
+
+# So aparece depois de achar o bilhete na planta.
+[choice ler_bilhete "Ler o bilhete sobre a mesa."]
+has_item gallery_note
+say "Coloquei o bilhete sobre a mesa para ler melhor."
+set_flag read_gallery_note
+
+[choice gavetas "Procurar nas gavetas."]
+once
+say "Gavetas vazias... mas uma delas tem fundo falso."
+goto fundo_falso
+
+[choice sair "Deixar a mesa."]
+say "Melhor seguir em frente."
+
+[node fundo_falso]
+say "Forcar o fundo falso?"
+
+[choice forcar "Forcar."]
+say "Nada alem de poeira."
+goto mesa
+
+[choice deixar "Deixar quieto."]
+```
+
+Como se joga: as falas do nó aparecem e, junto com a última, o menu com as opções disponíveis
+(na ordem do arquivo) na parte de baixo da tela. Escolha clicando ou tocando na linha, com
+as setas/D-pad + Enter/Start, ou com o botão A do controle (com o cursor sobre a linha, ou
+depois de marcá-la com o D-pad). Clicar
+fora das opções não faz nada. A resposta da opção roda como uma sequência (o clique pula a
+fala); quando há `goto`, a última fala da resposta é esperada antes do próximo nó abrir. Se
+nenhuma opção estiver disponível, a conversa termina depois das falas do nó. Ao terminar, a
+regra que chamou `start_dialogue` continua do passo seguinte; `change_room` dentro da
+conversa só acontece quando tudo terminar.
+
+Regras do formato: IDs de nó são únicos no arquivo e IDs de escolha são únicos no nó (letras,
+números, `_` e `-`); o texto da opção não pode ser vazio; todo `goto` aponta para um nó do
+arquivo; todo `start_dialogue` do `.rules` aponta para um nó do `.dlg`; `start_dialogue` não
+vale dentro do `.dlg` (use `goto`); condições, `once` e `goto` só valem dentro de
+`[choice ...]`. Um erro aponta a linha (por exemplo,
+`Linha 12: Destino de goto desconhecido: porao`). O comando `load` do painel DEBUG recarrega
+`.room`, `.rules` e `.dlg` juntos. O texto usa a fonte de depuração, então prefira ASCII sem
+acentos por enquanto, como nas falas.
 
 ### Exemplo prático: chave coletável, NPC condicional e porta trancada
 

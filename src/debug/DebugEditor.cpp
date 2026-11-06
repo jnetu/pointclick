@@ -1,4 +1,5 @@
 #include "debug/DebugEditor.hpp"
+#include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
 #include "game/RoomParameters.hpp"
@@ -29,8 +30,10 @@ void DebugEditor::activate(Game& game) {
     panelVisible_ = true;
     baseline_ = game.room();
     baselineInteractions_ = game.interactions();
+    baselineDialogues_ = game.dialogues();
     undo_.reset();
     undoInteractions_.reset();
+    undoDialogues_.reset();
     activation_.clear();
     command_.clear();
     status_ = "Editor ativo. Alteracoes so persistem com save.";
@@ -60,20 +63,31 @@ bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
 }
 
 bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer,
-                         std::optional<RoomInteractions> nextInteractions) {
+                         std::optional<RoomInteractions> nextInteractions,
+                         std::optional<RoomDialogues> nextDialogues) {
     if (nextInteractions) {
         status_ = nextInteractions->validationError(&room);
         if (!status_.empty()) return false;
     }
+    if (nextDialogues) {
+        status_ = nextDialogues->validationError(&room);
+        if (!status_.empty()) return false;
+    }
     Room previous = game.room();
     RoomInteractions previousInteractions = game.interactions();
+    RoomDialogues previousDialogues = game.dialogues();
     if (!game.applyRoom(std::move(room), resetPlayer, status_)) return false;
     if (nextInteractions) {
         std::string rulesError;
         (void)game.setInteractions(std::move(*nextInteractions), rulesError);
     }
+    if (nextDialogues) {
+        std::string dialoguesError;
+        (void)game.setDialogues(std::move(*nextDialogues), dialoguesError);
+    }
     undo_ = std::move(previous);
     undoInteractions_ = std::move(previousInteractions);
+    undoDialogues_ = std::move(previousDialogues);
     status_ = "Aplicado. Rota reiniciada; save para gravar.";
     return true;
 }
@@ -155,19 +169,27 @@ void DebugEditor::submit(Game& game) {
                 status_ = result.error;
             } else {
                 auto rulesResult = InteractionFiles::loadOptionalForRoom(roomPath, &*result.room);
+                auto dialoguesResult = DialogueFiles::loadOptionalForRoom(roomPath, &*result.room);
                 if (!rulesResult.interactions) {
                     status_ = rulesResult.error;
+                } else if (!dialoguesResult.dialogues) {
+                    status_ = dialoguesResult.error;
+                } else if (const std::string missing = dialogueReferencesError(
+                                   *rulesResult.interactions, *dialoguesResult.dialogues);
+                           !missing.empty()) {
+                    status_ = missing;
                 } else if (commit(game, std::move(*result.room), true,
-                                  std::move(*rulesResult.interactions))) {
+                                  std::move(*rulesResult.interactions),
+                                  std::move(*dialoguesResult.dialogues))) {
                     status_ = "Sala carregada: " + name;
                 }
             }
         }
     } else if (verb == "undo" && finished(input)) {
-        if (undo_) commit(game, *undo_, false, undoInteractions_);
+        if (undo_) commit(game, *undo_, false, undoInteractions_, undoDialogues_);
         else status_ = "Nenhuma edicao para desfazer";
     } else if (verb == "reset" && finished(input)) {
-        if (baseline_) commit(game, *baseline_, true, baselineInteractions_);
+        if (baseline_) commit(game, *baseline_, true, baselineInteractions_, baselineDialogues_);
     } else if (verb == "move" || verb == "size" || verb == "base" || verb == "solid") {
         std::string id;
         input >> id;

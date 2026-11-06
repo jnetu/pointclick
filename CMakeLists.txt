@@ -18,6 +18,7 @@ add_library(pointclick_core STATIC
         src/game/ActionCatalog.cpp
         src/game/Animation.cpp
         src/game/Camera.cpp
+        src/game/Dialogue.cpp
         src/game/FloatingText.cpp
         src/game/Game.cpp
         src/game/Interaction.cpp
@@ -29,13 +30,16 @@ add_library(pointclick_core STATIC
         src/game/SessionState.cpp
         src/game/SpriteClip.cpp
         src/game/RoomParameters.cpp
+        src/content/DialogueFiles.cpp
         src/content/InteractionFiles.cpp
         src/content/RoomPresets.cpp
         src/content/RoomFiles.cpp
         src/content/SpriteFields.cpp
+        src/content/TextFormat.cpp
         src/debug/DebugEditor.cpp
         src/input/InputSystem.cpp
-        src/input/InputRouter.cpp)
+        src/input/InputRouter.cpp
+        src/ui/DialogueMenu.cpp)
 target_compile_features(pointclick_core PUBLIC cxx_std_20)
 target_include_directories(pointclick_core PUBLIC src ${POINTCLICK_SDL3_INCLUDE_DIRS})
 target_link_libraries(pointclick_core PUBLIC SDL3::SDL3)
@@ -47,7 +51,8 @@ add_library(pointclick_graphics STATIC
         src/graphics/SceneRenderer.cpp
         src/graphics/SpriteLibrary.cpp
         src/graphics/DiagnosticsOverlay.cpp
-        src/graphics/DebugOverlay.cpp)
+        src/graphics/DebugOverlay.cpp
+        src/graphics/DialogueMenuRenderer.cpp)
 target_link_libraries(pointclick_graphics PUBLIC pointclick_core)
 add_executable(pointclick src/main.cpp src/core/Application.cpp)
 target_link_libraries(pointclick PRIVATE pointclick_graphics)

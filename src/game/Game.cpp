@@ -52,6 +52,11 @@ public:
     }
     bool walking() const override { return game_.player_.moving(); }
 
+    bool startDialogue(const std::string_view nodeId) override {
+        return game_.dialogue_.request(game_.dialogues_, nodeId);
+    }
+    bool dialogueActive() const override { return game_.dialogue_.active(); }
+
     void changeRoom(const std::string_view roomId) override {
         game_.scriptRoomTarget_ = std::string(roomId);
     }
@@ -128,6 +133,8 @@ bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
         pendingRoomTransition_.reset();
         // A sequence never crosses rooms: its object references belong to the old one.
         script_.cancel();
+        dialogue_.cancel();
+        dialogues_.nodes.clear();
         scriptRoomTarget_.reset();
         navigationDirty_ = false;
     }
@@ -151,6 +158,24 @@ bool Game::setInteractions(RoomInteractions interactions, std::string& error) {
     if (pendingInteraction_ && !interactions_.hasRulesForObject(pendingInteraction_->objectId)) {
         pendingInteraction_.reset();
     }
+    return true;
+}
+
+void Game::setDialogues(RoomDialogues dialogues) {
+    std::string error;
+    if (!setDialogues(std::move(dialogues), error)) {
+        throw std::invalid_argument(error);
+    }
+}
+
+bool Game::setDialogues(RoomDialogues dialogues, std::string& error) {
+    error = dialogues.validationError(&room_);
+    if (!error.empty()) {
+        return false;
+    }
+    // The player points into dialogues_; steps already pushed to the runner are copies.
+    dialogue_.cancel();
+    dialogues_ = std::move(dialogues);
     return true;
 }
 
@@ -238,24 +263,46 @@ bool Game::resolveInteraction(const InteractionTrigger& trigger) {
         return false;
     }
     Host host(*this);
+    dialogue_.cancel(); // start() drops every stacked sequence, a dialogue's included
     script_.start(rule->effects, host);
     settleScript();
     return true;
 }
 
 void Game::settleScript() {
+    Host host(*this);
+    dialogue_.settle(script_, host);
     if (navigationDirty_) {
         navigationDirty_ = false;
         refreshNavigation();
     }
-    if (!script_.busy() && scriptRoomTarget_) {
+    if (!script_.busy() && !dialogue_.active() && scriptRoomTarget_) {
         pendingRoomTransition_ = std::move(*scriptRoomTarget_);
         scriptRoomTarget_.reset();
     }
 }
 
+bool Game::startDialogue(const std::string_view nodeId) {
+    if (inCutscene() || !dialogue_.request(dialogues_, nodeId)) {
+        return false;
+    }
+    pendingInteraction_.reset();
+    player_.setPath({});
+    settleScript();
+    return true;
+}
+
+bool Game::chooseDialogueOption(const std::size_t index) {
+    Host host(*this);
+    if (!dialogue_.choose(index, script_, host)) {
+        return false;
+    }
+    settleScript();
+    return true;
+}
+
 bool Game::useItemOnObject(const std::string_view itemId, const std::string_view objectId) {
-    if (script_.busy() || !session_.hasItem(itemId)) {
+    if (inCutscene() || !session_.hasItem(itemId)) {
         return false;
     }
     return startObjectInteraction(
@@ -263,7 +310,7 @@ bool Game::useItemOnObject(const std::string_view itemId, const std::string_view
 }
 
 bool Game::useItemAt(const std::string_view itemId, const SDL_FPoint worldPoint) {
-    if (script_.busy() || !session_.hasItem(itemId)) {
+    if (inCutscene() || !session_.hasItem(itemId)) {
         return false;
     }
     const SceneObject* target = pickInteractiveObject(room_, session_, interactions_, worldPoint);
@@ -283,7 +330,7 @@ void Game::onPointerMove(const SDL_FPoint position, const bool insideViewport) {
 
 void Game::onClick(const SDL_FPoint position) {
     onPointerMove(position, true);
-    if (script_.busy()) {
+    if (inCutscene()) {
         // Cutscene: a click only skips the line being spoken.
         floatingText_.hide();
         return;
@@ -314,7 +361,7 @@ void Game::tick(const float deltaSeconds) {
     floatingText_.tick(deltaSeconds);
     objectAnimations_.tick(deltaSeconds);
     player_.tick(deltaSeconds, room_.speedAt(player_.feet().y));
-    if (script_.busy()) {
+    if (script_.busy() || dialogue_.active()) {
         Host host(*this);
         script_.tick(deltaSeconds, host);
         settleScript();
@@ -361,7 +408,19 @@ const std::optional<PendingInteraction>& Game::pendingInteraction() const {
     return pendingInteraction_;
 }
 
-bool Game::inCutscene() const { return script_.busy(); }
+bool Game::inCutscene() const { return script_.busy() || dialogue_.active(); }
+
+const RoomDialogues& Game::dialogues() const { return dialogues_; }
+
+bool Game::dialogueActive() const { return dialogue_.active(); }
+
+bool Game::awaitingDialogueChoice() const {
+    return dialogue_.phase() == DialoguePhase::choosing;
+}
+
+std::span<const DialogueChoice* const> Game::dialogueOptions() const {
+    return dialogue_.options();
+}
 
 const std::optional<std::string>& Game::pendingRoomTransition() const {
     return pendingRoomTransition_;

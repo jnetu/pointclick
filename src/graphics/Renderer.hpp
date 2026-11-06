@@ -8,6 +8,7 @@ struct SDL_Renderer;
 struct SDL_Window;
 class Game;
 class DebugEditor;
+class DialogueMenu;
 
 class Renderer {
 public:
@@ -22,7 +23,7 @@ public:
     [[nodiscard]] ViewportCoordinateMapper viewportMapper() const noexcept;
     [[nodiscard]] static bool containsViewportPoint(SDL_FPoint viewportPoint);
     void render(const Game& game, float interpolation, const DebugEditor* editor = nullptr,
-                const InputSystem* input = nullptr);
+                const InputSystem* input = nullptr, const DialogueMenu* dialogueMenu = nullptr);
     void shutdown();
 
 private:

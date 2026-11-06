@@ -26,6 +26,12 @@ public:
     virtual bool walkToObject(std::string_view objectId) = 0;
     [[nodiscard]] virtual bool walking() const = 0;
 
+    // Opens a dialogue node; false when the room has no such node. The host runs the node's
+    // steps on top of the current sequence once the calling action returns.
+    virtual bool startDialogue(std::string_view nodeId) = 0;
+    // True from startDialogue until the conversation ends (including while choosing).
+    [[nodiscard]] virtual bool dialogueActive() const = 0;
+
     // Applied when the script ends, so later steps still run in the current room.
     virtual void changeRoom(std::string_view roomId) = 0;
 };

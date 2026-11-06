@@ -5,6 +5,7 @@
 #include "graphics/Renderer.hpp"
 #include "input/InputRouter.hpp"
 #include "input/InputSystem.hpp"
+#include "ui/DialogueMenu.hpp"
 
 struct SDL_Window;
 
@@ -24,6 +25,7 @@ private:
 
     SDL_Window* window_ = nullptr;
     Game game_;
+    DialogueMenu dialogueMenu_{game_};
     Renderer renderer_;
     DebugEditor debugEditor_;
     InputSystem inputSystem_;

@@ -103,6 +103,15 @@ const EffectDescriptor kEffects[]{
      [](ActionArgs, ActionContext& context) {
          return context.step.elapsed >= context.step.value ? kDone : kRunning;
      }},
+    // Blocks until the conversation ends; the dialogue's own steps run on top of this one.
+    {"start_dialogue", "Abre um no de dialogo da sala e espera a conversa terminar",
+     {dialogueId}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         return context.host.startDialogue(args[0]) ? kRunning : kDone;
+     },
+     [](ActionArgs, ActionContext& context) {
+         return context.host.dialogueActive() ? kRunning : kDone;
+     }},
     {"change_room", "Troca para <sala>.room quando a sequencia terminar", {roomId}, nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.changeRoom(args[0]);
@@ -158,6 +167,7 @@ std::string_view argPlaceholder(const ArgType type) {
     case text: return "\"texto\"";
     case boolean: return "<0|1>";
     case number: return "<segundos>";
+    case dialogueId: return "<dialogo>";
     }
     return "<?>";
 }
@@ -238,6 +248,7 @@ std::string argumentsError(const std::string_view keyword, const ArgSignature& s
         case flagId:
         case roomId:
         case animation:
+        case dialogueId:
             if (!validIdentifier(value)) return "Identificador invalido: " + value;
             break;
         }

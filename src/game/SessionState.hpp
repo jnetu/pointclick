@@ -6,6 +6,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 struct SceneObject;
@@ -44,6 +45,12 @@ public:
                                                           std::string_view objectId) const;
     [[nodiscard]] bool isObjectSolid(std::string_view roomId, const SceneObject& object) const;
 
+    // Dialogue progress: which `once` choices were already taken, per room + node + choice.
+    void markDialogueChoice(std::string_view roomId, std::string_view nodeId,
+                            std::string_view choiceId);
+    [[nodiscard]] bool dialogueChoiceTaken(std::string_view roomId, std::string_view nodeId,
+                                           std::string_view choiceId) const;
+
 private:
     struct TransparentStringHash {
         using is_transparent = void;
@@ -66,4 +73,6 @@ private:
     StringMap<int> flags_;
     std::vector<std::string> items_;
     StringMap<StringMap<ObjectStateOverride>> roomOverrides_;
+    // "room/node/choice"; identifiers never contain '/'.
+    std::unordered_set<std::string, TransparentStringHash, std::equal_to<>> dialogueChoices_;
 };

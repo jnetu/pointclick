@@ -13,7 +13,6 @@ Leia também `docs/ARCHITECTURE.md` antes de mudanças estruturais e `docs/GAME_
 ## Dívidas conhecidas (não replique; corrija quando tocar na área)
 
 - Rota, cruz de destino e diagnóstico desenhados em produção (devem ir para flags de debug).
-- Saves de partida ainda não existem e devem usar `SDL_GetPrefPath` com escrita atômica (`TextFormat::writeTextAtomic`).
 
 ## Build e testes
 

@@ -1,9 +1,18 @@
 #include "support/RoomPresets.hpp"
+#include "content/RoomFiles.hpp"
+#include "content/RoomLibrary.hpp"
+#include "content/SaveFiles.hpp"
+#include "game/Autosave.hpp"
 #include "game/Camera.hpp"
 #include "game/Game.hpp"
 #include "game/Navigation.hpp"
 
+#include <algorithm>
 #include <cassert>
+#include <chrono>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <vector>
 #include <variant>
 #include <string>
@@ -930,6 +939,281 @@ void testCameraTargetFor() {
     assert(near(target.y, 0.0F));
 }
 
+std::string readAll(const std::filesystem::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), {}};
+}
+
+void testSaveRoundTrip(const std::filesystem::path& directory) {
+    SessionState session;
+    session.setFlag("porta_aberta");
+    session.setFlag("visitas", 3);
+    session.setFlag("apagada");
+    session.clearFlag("apagada");
+    session.addItem("lanterna"); // inventory order, not alphabetical
+    session.addItem("chave");
+    session.setObjectVisible("first", "red_box", false);
+    session.setObjectSolid("first", "red_box", false);
+    session.setObjectSolid("gallery", "porta", true);
+    session.setObjectSolid("gallery", "cofre", true);
+    session.clearObjectSolidOverride("gallery", "cofre"); // cleared = not saved
+    session.markDialogueChoice("gallery", "mesa", "gavetas");
+    session.markDialogueChoice("first", "guarda", "oi");
+
+    const SavedGame saved{"gallery", {220.5F, 460.25F}, session.snapshot()};
+    assert(saved.session.flags.size() == 2 && saved.session.flags[0].id == "porta_aberta");
+    assert(saved.session.items == (std::vector<std::string>{"lanterna", "chave"}));
+    assert(saved.session.objects.size() == 2);
+    assert(saved.session.dialogueChoices.size() == 2
+           && saved.session.dialogueChoices[0].roomId == "first");
+
+    const auto path = directory / "save.slot";
+    std::string error;
+    assert(SaveFiles::save(path, saved, error));
+    assert(!std::filesystem::exists(directory / "save.slot.tmp"));
+    const std::string firstWrite = readAll(path);
+    assert(firstWrite.find("version = 1\n") != std::string::npos);
+    assert(firstWrite.find("object.first.red_box.visible = 0\n") != std::string::npos);
+    assert(firstWrite.find("dialogue = gallery/mesa/gavetas\n") != std::string::npos);
+    assert(firstWrite.find("cofre") == std::string::npos);
+
+    const SaveLoadResult loaded = SaveFiles::load(path);
+    assert(loaded.save && loaded.error.empty());
+    assert(*loaded.save == saved);
+    SessionState restored;
+    restored.setFlag("antiga"); // replaced, not merged
+    assert(restored.restore(loaded.save->session, error));
+    assert(restored.snapshot() == session.snapshot());
+    assert(!restored.hasFlag("antiga") && restored.flagValue("visitas") == 3);
+    assert(restored.items() == session.items());
+    assert(!restored.isObjectVisible("first", "red_box"));
+    assert(restored.objectSolidOverride("gallery", "porta") == std::optional<bool>(true));
+    assert(!restored.objectSolidOverride("gallery", "cofre"));
+    assert(restored.dialogueChoiceTaken("gallery", "mesa", "gavetas"));
+
+    // Deterministic: the same progress built in another order writes the same bytes.
+    SessionState reordered;
+    reordered.markDialogueChoice("first", "guarda", "oi");
+    reordered.markDialogueChoice("gallery", "mesa", "gavetas");
+    reordered.setObjectSolid("gallery", "porta", true);
+    reordered.setObjectSolid("first", "red_box", false);
+    reordered.setObjectVisible("first", "red_box", false);
+    reordered.setFlag("visitas", 3);
+    reordered.setFlag("porta_aberta");
+    reordered.addItem("lanterna");
+    reordered.addItem("chave");
+    assert(SaveFiles::save(path, {"gallery", {220.5F, 460.25F}, reordered.snapshot()}, error));
+    assert(readAll(path) == firstWrite);
+    assert(SaveFiles::serialize(*loaded.save) == firstWrite);
+
+    // No file is no save and no error.
+    const SaveLoadResult missing = SaveFiles::load(directory / "nenhum.slot");
+    assert(!missing.save && missing.error.empty());
+}
+
+void testSaveRestoresPuzzleProgress(const std::filesystem::path& directory) {
+    const Room room = RoomPresets::firstRoom();
+    const SDL_FPoint behindLock{865.0F, 573.0F}; // inside red_box's collision footprint
+    Game game(room);
+    game.setInteractions(RoomPresets::firstRoomInteractions());
+    assert(!game.scene().navigation().canStandAt(behindLock));
+
+    game.onClick({430.0F, 410.0F}); // blue_box: the key
+    for (int i = 0; i < 300 && !game.session().hasItem("brass_key"); ++i) game.tick(0.05F);
+    assert(game.session().hasItem("brass_key"));
+    assert(game.useItemOnObject("brass_key", "red_box"));
+    for (int i = 0; i < 300 && !game.session().hasFlag("red_box_unlocked"); ++i) game.tick(0.05F);
+    for (int i = 0; i < 300 && (game.inCutscene() || game.scene().player().moving()); ++i) {
+        game.tick(0.05F);
+    }
+    assert(game.session().hasFlag("red_box_unlocked") && !game.session().hasItem("brass_key"));
+    assert(game.scene().navigation().canStandAt(behindLock));
+
+    const auto path = directory / "puzzle.slot";
+    std::string error;
+    const SavedGame saved = game.savedGame();
+    assert(saved.roomId == "first");
+    assert(SaveFiles::save(path, saved, error));
+
+    // A new process: the progress goes in before the room, then the feet go back.
+    const SaveLoadResult loaded = SaveFiles::load(path);
+    assert(loaded.save);
+    SessionState progress;
+    assert(progress.restore(loaded.save->session, error));
+    Game resumed(room, std::move(progress));
+    resumed.setInteractions(RoomPresets::firstRoomInteractions());
+    const SDL_FPoint feet = resumed.placePlayerNear(loaded.save->feet);
+    assert(near(feet.x, saved.feet.x) && near(feet.y, saved.feet.y));
+    assert(resumed.session().hasFlag("found_brass_key"));
+    assert(resumed.session().hasFlag("red_box_unlocked"));
+    assert(!resumed.session().hasItem("brass_key"));
+    assert(!resumed.scene().isObjectSolid(resumed.scene().room().scenery[1]));
+    assert(resumed.scene().navigation().canStandAt(behindLock));
+    // The open box lets the route go straight through where it used to be.
+    std::string ignored;
+    assert(resumed.teleportPlayer({760.0F, 573.0F}, ignored));
+    resumed.onClick({970.0F, 573.0F});
+    for (int i = 0; i < 200 && resumed.scene().player().moving(); ++i) resumed.tick(0.05F);
+    assert(near(resumed.scene().player().feet().x, 970.0F));
+    assert(resumed.savedGame().session == saved.session);
+
+    // Feet saved on a spot that is blocked now fall back to the nearest walkable point.
+    Game locked(room);
+    const SDL_FPoint fallback = locked.placePlayerNear(behindLock);
+    assert(locked.scene().navigation().canStandAt(fallback));
+    assert(!near(fallback.x, behindLock.x) || !near(fallback.y, behindLock.y));
+}
+
+void testBadSaveFiles(const std::filesystem::path& directory) {
+    const auto errorOf = [](const std::string_view text) {
+        const SaveLoadResult result = SaveFiles::parse(text);
+        assert(!result.save);
+        return result.error;
+    };
+    const std::string header = "version = 1\nroom = first\nfeet = 10, 20\n";
+    assert(SaveFiles::parse(header + "# ok\nflag.a = -2\n").save);
+    assert(errorOf("") == "Save vazio ou sem version");
+    assert(errorOf("# so comentario\n") == "Save vazio ou sem version");
+    assert(errorOf("version = 2\nroom = first\n") == "Linha 1: Versao de save desconhecida: 2");
+    assert(errorOf("version = 0\n") == "Linha 1: Versao de save desconhecida: 0");
+    assert(errorOf("room = first\nversion = 1\n") == "Linha 1: A primeira chave deve ser version");
+    assert(errorOf(header + "camera = 1, 2\n") == "Linha 4: Chave desconhecida: camera");
+    assert(errorOf(header + "item = chave!\n") == "Linha 4: Chave ou valor invalido: item");
+    assert(errorOf(header + "item = chave\nitem = chave\n") == "Linha 5: Item repetido: chave");
+    assert(errorOf(header + "flag.a = 1\nflag.a = 2\n") == "Linha 5: Chave repetida: flag.a");
+    assert(errorOf(header + "flag.a = 0\n") == "Linha 4: Chave ou valor invalido: flag.a");
+    assert(errorOf(header + "flag.a b = 1\n") == "Linha 4: Chave ou valor invalido: flag.a b");
+    assert(errorOf(header + "object.first.box.visible = 2\n")
+           == "Linha 4: Chave ou valor invalido: object.first.box.visible");
+    assert(errorOf(header + "object.first.box.color = 1\n")
+           == "Linha 4: Chave ou valor invalido: object.first.box.color");
+    assert(errorOf(header + "dialogue = a/b\n") == "Linha 4: Chave ou valor invalido: dialogue");
+    assert(errorOf(header + "item chave\n") == "Linha 4: Esperado chave = valor");
+    assert(errorOf("version = 1\nroom = sala x\n") == "Linha 2: Chave ou valor invalido: room");
+    assert(errorOf("version = 1\nroom = first\nfeet = nan, 1\n")
+           == "Linha 3: Chave ou valor invalido: feet");
+    assert(errorOf("version = 1\nfeet = 1, 2\n") == "Falta a chave room");
+    assert(errorOf("version = 1\nroom = first\n") == "Falta a chave feet");
+
+    // An invalid snapshot never touches the progress in place.
+    SessionState session;
+    session.addItem("chave");
+    SessionSnapshot invalid;
+    invalid.items = {"ok", "nao ok"};
+    std::string error;
+    assert(!session.restore(invalid, error) && error == "Item invalido: nao ok");
+    assert(session.hasItem("chave") && !session.hasItem("ok"));
+
+    // Boot: missing = new game quietly; refused = new game, the file kept as .bad.
+    const auto rooms = directory / "save-rooms";
+    std::filesystem::create_directories(rooms);
+    assert(RoomFiles::save(rooms / "first.room", RoomPresets::firstRoom(), error));
+    RoomLibrary library;
+    assert(library.open(rooms, error));
+    const auto slot = directory / "boot.slot";
+    ResumeResult none = SaveFiles::resume(slot, library);
+    assert(!none.save && none.error.empty());
+
+    std::ofstream(slot) << "version = 1\nroom = sumida\nfeet = 10, 20\n";
+    ResumeResult gone = SaveFiles::resume(slot, library);
+    assert(!gone.save && !gone.bundle && gone.error.starts_with("Sala sumida: "));
+    assert(!std::filesystem::exists(slot));
+    assert(readAll(directory / "boot.slot.bad").find("room = sumida") != std::string::npos);
+
+    std::ofstream(slot) << "version = 9\n";
+    ResumeResult future = SaveFiles::resume(slot, library);
+    assert(!future.save && future.error == "Linha 1: Versao de save desconhecida: 9");
+    assert(readAll(directory / "boot.slot.bad") == "version = 9\n"); // the newest refused one
+
+    std::ofstream(slot) << "version = 1\nroom = first\nfeet = 300, 600\nitem = chave\n";
+    ResumeResult ok = SaveFiles::resume(slot, library);
+    assert(ok.save && ok.bundle && ok.error.empty());
+    assert(ok.bundle->room.id == "first" && ok.save->session.items.size() == 1);
+    assert(std::filesystem::exists(slot));
+}
+
+void testAtomicSaveFailureKeepsPrevious(const std::filesystem::path& directory) {
+    const auto path = directory / "atomic.slot";
+    std::string error;
+    SavedGame saved{"first", {100.0F, 600.0F}, {}};
+    saved.session.items = {"chave"};
+    assert(SaveFiles::save(path, saved, error));
+    const std::string previous = readAll(path);
+
+    // Missing folder: the write fails and creates nothing.
+    assert(!SaveFiles::save(directory / "nao-existe" / "atomic.slot", saved, error));
+    assert(!error.empty());
+    assert(!std::filesystem::exists(directory / "nao-existe"));
+
+    // The temporary cannot be written (a folder sits on its name): the old save survives.
+    std::filesystem::create_directory(directory / "atomic.slot.tmp");
+    saved.session.items = {"outra"};
+    error.clear();
+    assert(!SaveFiles::save(path, saved, error) && !error.empty());
+    assert(readAll(path) == previous);
+    std::filesystem::remove(directory / "atomic.slot.tmp");
+
+    // Invalid data is refused before any write.
+    saved.session.items = {"nao ok"};
+    assert(!SaveFiles::save(path, saved, error) && error == "Item invalido: nao ok");
+    assert(readAll(path) == previous);
+}
+
+void testAutosavePolicy() {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {
+            InteractionEffect::make("say", {"Pesada."}), // blocking: not the last step
+            InteractionEffect::make("set_flag", {"looked"}),
+        },
+    }}});
+
+    AutosavePolicy autosave;
+    // WILL and DID background are one trip: one write.
+    const SavedGame* first = autosave.enterBackground(game);
+    assert(first && first->roomId == "first");
+    autosave.markWritten();
+    assert(!autosave.enterBackground(game));
+    assert(autosave.inBackground());
+    // Back and away again with nothing new: the file already has it.
+    autosave.enterForeground();
+    assert(!autosave.enterBackground(game));
+    assert(!autosave.quit(game));
+
+    // A failed write is retried on the next trip, still once per trip.
+    autosave.enterForeground();
+    game.session().setFlag("progresso");
+    assert(autosave.enterBackground(game));
+    assert(!autosave.enterBackground(game)); // DID after WILL, the write failed
+    autosave.enterForeground();
+    assert(autosave.enterBackground(game));
+    autosave.markWritten();
+    autosave.enterForeground();
+
+    // Mid-cutscene the snapshot stays the last stable one.
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 300 && !game.inCutscene(); ++i) game.tick(0.05F);
+    assert(game.inCutscene());
+    game.session().setFlag("meio_da_cena");
+    autosave.capture(game);
+    assert(!autosave.enterBackground(game)); // nothing stable that is not on disk yet
+    const auto& stable = autosave.stable()->session.flags;
+    assert(std::none_of(stable.begin(), stable.end(),
+                        [](const auto& flag) { return flag.id == "meio_da_cena"; }));
+    autosave.enterForeground();
+
+    // Once the sequence ends, quitting writes the finished state.
+    game.onClick({200.0F, 600.0F}); // skip the line
+    for (int i = 0; i < 20 && game.inCutscene(); ++i) game.tick(0.05F);
+    assert(!game.inCutscene() && game.session().hasFlag("looked"));
+    const SavedGame* atQuit = autosave.quit(game);
+    assert(atQuit && atQuit->session == game.session().snapshot());
+    autosave.markWritten();
+    assert(!autosave.quit(game)); // SDL_EVENT_QUIT then TERMINATING
+}
+
 int main() {
     testMovementAndRetargeting();
     testRoomPerspective();
@@ -946,4 +1230,15 @@ int main() {
     testGameEventQueue();
     testNearestReachableInLargeRoom();
     testCameraTargetFor();
+
+    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto directory = std::filesystem::temp_directory_path()
+                           / ("pointclick-save-tests-" + std::to_string(suffix));
+    std::filesystem::create_directory(directory);
+    testSaveRoundTrip(directory);
+    testSaveRestoresPuzzleProgress(directory);
+    testBadSaveFiles(directory);
+    testAtomicSaveFailureKeepsPrevious(directory);
+    testAutosavePolicy();
+    std::filesystem::remove_all(directory);
 }

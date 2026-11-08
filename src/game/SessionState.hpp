@@ -18,11 +18,47 @@ struct ObjectStateOverride {
     std::optional<bool> solidOverride;
 };
 
+// Value copy of the whole SessionState, for saves. snapshot() sorts every list (items keep the
+// inventory order), so the same progress always serializes to the same file.
+struct SessionSnapshot {
+    struct Flag {
+        std::string id;
+        int value = 0;
+        bool operator==(const Flag&) const = default;
+    };
+    struct ObjectOverride {
+        std::string roomId;
+        std::string objectId;
+        std::optional<bool> visible;
+        std::optional<bool> solidOverride;
+        bool operator==(const ObjectOverride&) const = default;
+    };
+    struct DialogueChoice {
+        std::string roomId;
+        std::string nodeId;
+        std::string choiceId;
+        bool operator==(const DialogueChoice&) const = default;
+    };
+
+    std::vector<Flag> flags;               // by id
+    std::vector<std::string> items;        // inventory order
+    std::vector<ObjectOverride> objects;   // by room, then object; at least one value each
+    std::vector<DialogueChoice> dialogueChoices; // by room, node, choice
+
+    // Identifiers, duplicates and empty overrides. Empty means it can be restored.
+    [[nodiscard]] std::string validationError() const;
+    bool operator==(const SessionSnapshot&) const = default;
+};
+
 // Persistent gameplay progress across room loads and live DebugEditor edits.
 // Authored definitions (Room, SceneObject) remain immutable during gameplay.
 class SessionState {
 public:
     void reset();
+
+    [[nodiscard]] SessionSnapshot snapshot() const;
+    // Replaces the whole progress. Validates first: on false nothing changed.
+    bool restore(const SessionSnapshot& snapshot, std::string& error);
 
     // Boolean flags and integer counters (0 / absent means cleared).
     void setFlag(std::string_view id, int value = 1);

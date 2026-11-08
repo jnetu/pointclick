@@ -118,6 +118,19 @@ bool Scene::teleportPlayer(const SDL_FPoint position, std::string& error) {
     return true;
 }
 
+SDL_FPoint Scene::placePlayerNear(const SDL_FPoint position) {
+    SDL_FPoint feet = room_.clampDestination(position);
+    if (!navigation_.canStandAt(feet)) {
+        const auto nearest = findNearestWalkable(room_, navigation_, feet);
+        if (!nearest) return player_.feet();
+        feet = *nearest;
+    }
+    player_ = Player(feet);
+    pendingInteraction_.reset();
+    camera_.snapTo(player_.feet());
+    return feet;
+}
+
 bool Scene::playObjectAnimation(const std::string_view objectId,
                                 const std::string_view animation, const bool restart,
                                 std::string& error) {

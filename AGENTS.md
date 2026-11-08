@@ -26,7 +26,8 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Diálogo com escolhas (formato `.dlg`) | `assets/rooms/*.dlg`, `src/content/DialogueFiles.*`, `src/game/Dialogue.*` | `start_dialogue` em `src/game/ActionCatalog.cpp`, `Game::chooseDialogueOption`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` (round-trip), `docs/GAME_DESIGN.md` |
 | Menu de escolhas na tela | `src/ui/DialogueMenu.*` (layout + `ViewportUiConsumer`) | `src/graphics/DialogueMenuRenderer.cpp`, registro em `src/core/Application.cpp`, `tests/EditorTests.cpp` |
 | Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles` |
-| Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp` |
+| Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`; campo novo também em `SessionSnapshot` e `src/content/SaveFiles.cpp` |
+| Save/load de partida (formato `save.slot`, autosave) | `src/content/SaveFiles.*`, `src/game/SavedGame.hpp`, `src/game/Autosave.*` | `SessionState::snapshot/restore`, `Application::resumeSavedGame`/`processGameEvents`/`lifecycleWatch`, `tests/GameTests.cpp`, `docs/ARCHITECTURE.md` |
 | UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
 | Efeitos visuais de transição de sala | `RoomChangeRequested` / `RoomEntered` em `Application::processGameEvents` | efeito visual temporizado em `graphics/` |
 | Notificação nova para fora do domínio (áudio, autosave, legendas) | struct nova em `src/game/GameEvent.hpp` + `emit` em `src/game/Game.cpp` | consumidor em `Application::processGameEvents`, `testGameEventQueue` em `tests/GameTests.cpp` |
@@ -39,7 +40,8 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   coletados, flags ou tempo corrente.
 - `SessionState` guarda o progresso persistente da sessão (flags/contadores,
   itens de inventário, overrides por `roomId + objectId` de visibilidade e
-  colisão `solidOverride`, e as escolhas `once` de diálogo já feitas). Editar a sala em tempo real no `DebugEditor`
+  colisão `solidOverride`, e as escolhas `once` de diálogo já feitas). É o que vai para o
+  save (`SessionSnapshot`), junto com a sala atual e os pés; nada além disso. Editar a sala em tempo real no `DebugEditor`
   (`Game::applyRoom(room, false, error)`) ou trocar de sala **nunca** apaga o
   `SessionState`.
 - `World::width` × `World::height` (`1280 × 720`) definem o campo de visão fixo da

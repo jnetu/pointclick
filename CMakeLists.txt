@@ -20,6 +20,7 @@ option(POINTCLICK_ENABLE_TOOLS "In-game DEBUG editor and its overlay (OFF for st
 # Domain: rules, definitions and state. No rendering, no file I/O.
 add_library(pointclick_game STATIC
         src/game/ActionCatalog.cpp
+        src/game/Autosave.cpp
         src/game/Animation.cpp
         src/game/Camera.cpp
         src/game/Dialogue.cpp
@@ -47,6 +48,7 @@ add_library(pointclick_content STATIC
         src/content/InteractionFiles.cpp
         src/content/RoomFiles.cpp
         src/content/RoomLibrary.cpp
+        src/content/SaveFiles.cpp
         src/content/SpriteFields.cpp
         src/content/TextFormat.cpp)
 target_link_libraries(pointclick_content PUBLIC pointclick_game)

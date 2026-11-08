@@ -23,7 +23,10 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
-| `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto |
+| `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto; `snapshot()`/`restore()` por valor (`SessionSnapshot`) para o save |
+| `game/SavedGame` | O que o save guarda: sala atual, pés e `SessionSnapshot` (tipo de valor, sem I/O) |
+| `game/Autosave` | `AutosavePolicy`: último snapshot estável (fora de cutscene) e quando gravar (uma vez por ida ao background, ao sair) |
+| `content/SaveFiles` | Formato `save.slot`, leitura com erro por linha, gravação atômica, caminho no `SDL_GetPrefPath`, quarentena `.bad` e retomada (`resume`) |
 | `game/ScriptRunner`, `game/ScriptHost` | Executor de sequências empilháveis de ações por tick, modo cutscene e contrato da cena para as ações |
 | `game/Dialogue` | Definição dos diálogos (`RoomDialogues` → `DialogueNode` → `DialogueChoice`) e `DialoguePlayer`, a conversa em andamento sobre o `ScriptRunner` |
 | `game/ActionCatalog` | Catálogo tipado de condições e efeitos das regras (`ArgType`, validação, execução, eventos de saída) |
@@ -48,7 +51,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `graphics/RenderOverlay` | Ponto de extensão para camadas desenhadas por cima (a ferramenta de debug se registra aqui) |
 | `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
 | `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox, cursor virtual do controle e conversão janela/toque/viewport |
-| `core/Application` | Janela, ciclo de vida mobile/console, carregamento `.room` + `.rules` + `.dlg`, transições de sala e loop em passo fixo |
+| `core/Application` | Janela, ciclo de vida mobile/console, retomada do save ou `first.room`, autosave, carregamento `.room` + `.rules` + `.dlg`, transições de sala e loop em passo fixo |
 
 Cada camada é uma biblioteca estática, e o linker recusa dependências proibidas:
 
@@ -183,6 +186,8 @@ na fachada; crie um tipo de evento em `game/GameEvent.hpp` e emita no `Game`.
 | `LineSpoken{text}` | um `say` começou |
 | `CutsceneStarted` / `CutsceneEnded` | `inCutscene()` mudou |
 
+`RoomEntered` e `CutsceneEnded` são os pontos estáveis do autosave (ver "Save/load de partida").
+
 ## Separação Tripla de Estado e Interações Declarativas
 
 O projeto separa estritamente três categorias de estado:
@@ -288,6 +293,56 @@ confere, em O(1), se o corte cabe no PNG carregado.
 O jogo simula a 60 Hz e o render interpola posição, câmera e tempo de animação
 (`AnimationPlayback::interpolatedElapsed`) entre os dois últimos ticks.
 
+## Save/load de partida
+
+O save guarda só o progresso, nunca definições nem simulação:
+
+- **Tipos de domínio** (sem I/O): `SessionState::snapshot()` devolve um `SessionSnapshot` de
+  valor com listas ordenadas (flags por id, itens na ordem do inventário, overrides por
+  `sala + objeto`, escolhas `once` por `sala/no/escolha`), e `restore()` o valida e troca todo o
+  progresso de uma vez (nada muda se falhar). `SavedGame` = `roomId` + pés + `SessionSnapshot`;
+  `Game::savedGame()` o monta.
+- **Formato** (`content/SaveFiles`), texto `chave = valor` como o `.room`: comentários `#`,
+  `std::locale::classic()`, erro com número de linha, chaves desconhecidas, repetidas e IDs
+  inválidos (`validIdentifier`) recusados.
+
+  ```text
+  version = 1                        # primeira chave; a leitura aceita 1..atual, a gravação usa a atual
+  room = gallery                     # <id>.room
+  feet = 220, 460
+  flag.porta_aberta = 1              # inteiro != 0
+  item = chave                       # repetível, em ordem
+  object.first.red_box.visible = 0   # cada campo opcional
+  object.first.red_box.solid = 0
+  dialogue = gallery/mesa/gavetas    # repetível
+  ```
+
+  A gravação é determinística (o mesmo progresso gera os mesmos bytes). Uma versão nova do
+  formato incrementa `SaveFiles::currentVersion` e mantém a leitura das anteriores.
+- **Caminho**: `SDL_GetPrefPath(SaveFiles::organization, SaveFiles::application)` +
+  `save.slot` (`SaveFiles::defaultSlot`, string liberada com `SDL_free`). Tudo recebe o
+  caminho do arquivo, então os testes usam uma pasta temporária. Sem pasta gravável, o jogo
+  roda sem save. Escrita por `TextFormat::writeTextAtomic` (`.tmp` + rename): uma falha mantém
+  o save anterior.
+- **Carga** (`Application::resumeSavedGame`, no `initialize`): `SaveFiles::resume` lê o save e
+  carrega a sala por `RoomLibrary::loadBundle`. O `SessionState` é restaurado **antes** de a
+  sala ser aplicada (`Game(Room, SessionState)`), porque a navegação depende de visibilidade e
+  colisão; depois `Game::placePlayerNear` põe os pés onde estavam, ou no ponto caminhável mais
+  próximo, ou fica no `playerStart`. Save ausente = novo jogo em `first.room`. Corrompido, de
+  versão desconhecida ou com sala que não carrega = log uma vez, o arquivo vira
+  `save.slot.bad` (nunca apagado) e novo jogo.
+- **Quando grava**: `AutosavePolicy` guarda o último snapshot **estável**, capturado em
+  `RoomEntered` e `CutsceneEnded` (consumidos em `Application::processGameEvents`) e no momento
+  do autosave se não houver cutscene/diálogo. No meio de uma sequência vale o snapshot anterior
+  a ela, para um puzzle nunca recarregar pela metade. Grava uma vez por ida ao background
+  (`WILL_` e `DID_ENTER_BACKGROUND` chegam como o mesmo sinal) e ao sair (`SDL_EVENT_QUIT`,
+  `TERMINATING`), e pula a escrita se o arquivo já tem esse snapshot. O SDL pede que esses
+  eventos de ciclo de vida sejam tratados num `SDL_AddEventWatch` (o sistema pode congelar o app
+  logo depois); `Application::lifecycleWatch` faz isso na thread principal, e a cópia do evento
+  que chega pelo `InputRouter` cai na mesma política sem gravar de novo.
+
+Fora do escopo: vários slots, menu de save/load e nuvem.
+
 ## Evoluir diálogos, inventário visual e transições
 
 Os cinco nomes de locomoção do jogador (`idle`, `left`, `right`, `up`, `down`)
@@ -335,7 +390,8 @@ câmera fixa e suave com clamp nas bordas, Walk-to-Interact (aproximação, canc
 no meio do caminho, disparo imediato quando já posicionado e picking por profundidade),
 coleta de itens, diálogos com escolhas condicionais (`once`, `goto`, retomada da regra,
 menu por clique/setas/gamepad e round-trip do `.dlg`), puzzles/NPCs condicionais com desbloqueio dinâmico de `Navigation`,
-persistência de `SessionState` entre salas e durante edições do `DebugEditor` (`set`,
+save/load (round-trip determinístico, retomada do puzzle da chave, arquivos ruins com linha,
+quarentena `.bad`, escrita atômica e autosave uma vez por ida ao background), persistência de `SessionState` entre salas e durante edições do `DebugEditor` (`set`,
 `move`, `undo`, `reset`), parser/serialização/validação por linha de `.rules`,
 configurações inválidas, entrada multiplataforma e independência de resolução (720p,
 1080p, 2K, 4K e Ultrawide). Os testes de sprites cobrem cortes, animação, seleção de

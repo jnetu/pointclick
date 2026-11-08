@@ -1,4 +1,5 @@
 #include "core/Application.hpp"
+#include "content/TextFormat.hpp"
 #include "game/Identifier.hpp"
 
 #include <SDL3/SDL.h>
@@ -20,7 +21,7 @@ constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
 }
 
-// The Game is created in initialize(), from first.room on disk.
+// The Game is created in initialize(), from the save or from first.room on disk.
 Application::Application(std::filesystem::path roomDirectory)
         : roomDirectory_(std::move(roomDirectory)) {
 #if POINTCLICK_TOOLS
@@ -48,21 +49,11 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
                 roomFilename.data(), loaded.error.c_str());
         return false;
     }
+    if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr);
     std::string error;
-    if (!gameplay_) {
-        try {
-            gameplay_ = std::make_unique<Gameplay>(std::move(loaded.bundle->room));
-        } catch (const std::exception& exception) {
-            SDL_Log("Could not apply room: %s", exception.what());
-            return false;
-        }
-        inputRouter_.addUiConsumer(&gameplay_->dialogueMenu);
-    } else if (!gameplay_->game.applyRoom(std::move(loaded.bundle->room), true, error)) {
-        SDL_Log("Could not apply room: %s", error.c_str());
-        return false;
-    }
     Game& game = gameplay_->game;
-    if (!game.setInteractions(std::move(loaded.bundle->interactions), error)
+    if (!game.applyRoom(std::move(loaded.bundle->room), true, error)
+        || !game.setInteractions(std::move(loaded.bundle->interactions), error)
         || !game.setDialogues(std::move(loaded.bundle->dialogues), error)) {
         SDL_Log("Could not apply room: %s", error.c_str());
         return false;
@@ -70,22 +61,111 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
     return true;
 }
 
+bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
+    std::string error;
+    SessionState progress;
+    if (save && !progress.restore(save->session, error)) {
+        SDL_Log("Could not restore the saved progress: %s", error.c_str());
+        return false;
+    }
+    // Built aside and committed only when complete: a refused save leaves no half game behind.
+    std::unique_ptr<Gameplay> gameplay;
+    try {
+        gameplay = std::make_unique<Gameplay>(std::move(bundle.room), std::move(progress));
+    } catch (const std::exception& exception) {
+        SDL_Log("Could not apply room: %s", exception.what());
+        return false;
+    }
+    Game& game = gameplay->game;
+    if (!game.setInteractions(std::move(bundle.interactions), error)
+        || !game.setDialogues(std::move(bundle.dialogues), error)) {
+        SDL_Log("Could not apply room: %s", error.c_str());
+        return false;
+    }
+    if (save) (void)game.placePlayerNear(save->feet);
+    gameplay_ = std::move(gameplay);
+    inputRouter_.addUiConsumer(&gameplay_->dialogueMenu);
+    return true;
+}
+
+bool Application::resumeSavedGame() {
+    if (savePath_.empty()) return false;
+    ResumeResult resumed = SaveFiles::resume(savePath_, library_);
+    if (!resumed.save) {
+        if (!resumed.error.empty()) {
+            SDL_Log("Ignoring the save (kept as %s.bad), starting a new game: %s",
+                    TextFormat::pathToUtf8(savePath_.filename()).c_str(), resumed.error.c_str());
+        }
+        return false;
+    }
+    if (startGameplay(std::move(*resumed.bundle), &*resumed.save)) return true;
+    std::string renameError;
+    (void)SaveFiles::quarantine(savePath_, renameError);
+    SDL_Log("Ignoring the save (kept as %s.bad), starting a new game",
+            TextFormat::pathToUtf8(savePath_.filename()).c_str());
+    return false;
+}
+
 void Application::processGameEvents() {
     gameplay_->game.drainEvents(gameEvents_);
     const std::string* nextRoomId = nullptr;
+    bool stablePoint = false;
     for (const GameEvent& event : gameEvents_) {
         if (const auto* change = std::get_if<RoomChangeRequested>(&event)) {
             nextRoomId = &change->roomId; // several in one drain: the last request wins
+        } else if (std::holds_alternative<RoomEntered>(event)
+                   || std::holds_alternative<CutsceneEnded>(event)) {
+            stablePoint = true;
         }
-        // RoomEntered, LineSpoken and the cutscene edges have no shell consumer yet
-        // (audio, fades, autosave and subtitles will subscribe here).
+        // LineSpoken and CutsceneStarted have no shell consumer yet (audio, fades, subtitles).
     }
-    if (!nextRoomId) return;
-    if (!validIdentifier(*nextRoomId)) {
+    // A pending room change is not a stable point yet: its RoomEntered will be.
+    const bool loadingRoom = nextRoomId && validIdentifier(*nextRoomId);
+    if (nextRoomId && !loadingRoom) {
         SDL_Log("Invalid room transition target: %s", nextRoomId->c_str());
-        return;
     }
-    (void)loadRoomWithRules(*nextRoomId + ".room");
+    if (loadingRoom && loadRoomWithRules(*nextRoomId + ".room")) return;
+    if (stablePoint) autosave_.capture(gameplay_->game);
+}
+
+void Application::onEnterBackground() {
+    suspended_ = true;
+    if (gameplay_) writeAutosave(autosave_.enterBackground(gameplay_->game));
+}
+
+void Application::onQuit() {
+    running_ = false;
+    if (gameplay_) writeAutosave(autosave_.quit(gameplay_->game));
+}
+
+void Application::writeAutosave(const SavedGame* save) {
+    if (!save || savePath_.empty()) return;
+    std::string error;
+    if (SaveFiles::save(savePath_, *save, error)) {
+        autosave_.markWritten();
+        autosaveErrorLogged_ = false;
+    } else if (!autosaveErrorLogged_) {
+        SDL_Log("Could not write the autosave: %s", error.c_str());
+        autosaveErrorLogged_ = true;
+    }
+}
+
+bool Application::lifecycleWatch(void* userdata, SDL_Event* event) {
+    auto* application = static_cast<Application*>(userdata);
+    // Off the loop's thread the Game may be mid-tick; the polled copy of the event covers it.
+    if (!SDL_IsMainThread() || !application->gameplay_) return true;
+    switch (event->type) {
+    case SDL_EVENT_WILL_ENTER_BACKGROUND:
+    case SDL_EVENT_DID_ENTER_BACKGROUND:
+        application->onEnterBackground();
+        break;
+    case SDL_EVENT_TERMINATING:
+        application->onQuit();
+        break;
+    default:
+        break;
+    }
+    return true;
 }
 
 bool Application::initialize() {
@@ -123,9 +203,14 @@ bool Application::initialize() {
         return false;
     }
     renderer_.setSpriteRoot(library_.spritesDirectory());
-    if (!loadRoomWithRules("first.room")) {
+    if (std::string error; (savePath_ = SaveFiles::defaultSlot(error)).empty()) {
+        SDL_Log("No writable folder for saves, playing without them: %s", error.c_str());
+    }
+    if (!resumeSavedGame() && !loadRoomWithRules("first.room")) {
         return false;
     }
+    autosave_.capture(gameplay_->game);
+    lifecycleWatchInstalled_ = SDL_AddEventWatch(&Application::lifecycleWatch, this);
 
     // Only the tools take free text. Avoid opening the on-screen virtual keyboard on
     // mobile/console boot; store builds never start text input.
@@ -208,13 +293,14 @@ void Application::processEvents() {
         const InputRouteResult result = inputRouter_.handleEvent(
                 event, inputSystem_, gameplay_->game, mapper, renderInterpolation_);
         if (result.quitRequested) {
-            running_ = false;
+            onQuit();
         }
         if (result.enteredBackground) {
-            suspended_ = true;
+            onEnterBackground(); // WILL and DID (and the watch) write once per trip
         }
         if (result.enteredForeground) {
             suspended_ = false;
+            autosave_.enterForeground();
             resetFrameClock_ = true;
         }
         if (result.invalidateGraphics) {
@@ -243,6 +329,10 @@ void Application::syncTextInputState() {
 }
 
 void Application::shutdown() {
+    if (lifecycleWatchInstalled_) {
+        SDL_RemoveEventWatch(&Application::lifecycleWatch, this);
+        lifecycleWatchInstalled_ = false;
+    }
     if (window_ != nullptr && SDL_TextInputActive(window_)) {
         SDL_StopTextInput(window_);
     }

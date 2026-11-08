@@ -4,6 +4,7 @@
 #include "game/GameEvent.hpp"
 #include "game/Interaction.hpp"
 #include "game/Room.hpp"
+#include "game/SavedGame.hpp"
 #include "game/Scene.hpp"
 #include "game/ScriptRunner.hpp"
 #include "game/SessionState.hpp"
@@ -21,6 +22,9 @@
 class Game {
 public:
     explicit Game(Room room);
+    // Resumes a saved progress: the session is in place before the room is applied, so the
+    // first navigation already sees what the save hid or unlocked.
+    Game(Room room, SessionState progress);
 
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
@@ -39,6 +43,9 @@ public:
 
     // Gameplay and tool commands.
     bool teleportPlayer(SDL_FPoint position, std::string& error);
+    // Restoring saved feet: there if walkable, else the nearest walkable point, else where the
+    // player already stands (the spawn after a load). Returns where the feet ended up.
+    SDL_FPoint placePlayerNear(SDL_FPoint position);
     bool playObjectAnimation(std::string_view objectId, std::string_view animation,
                              bool restart, std::string& error);
     bool useItemOnObject(std::string_view itemId, std::string_view objectId);
@@ -57,6 +64,9 @@ public:
     [[nodiscard]] const SessionState& session() const { return session_; }
     // A scripted sequence or a conversation holds the scene: world clicks only skip the line.
     [[nodiscard]] bool inCutscene() const;
+    // Room, feet and progress as they are now. Meant for stable moments (!inCutscene()): a
+    // running script is not part of a save.
+    [[nodiscard]] SavedGame savedGame() const;
     [[nodiscard]] bool dialogueActive() const;
     // The menu is up: the node's lines ended and a choice is expected (still inCutscene()).
     [[nodiscard]] bool awaitingDialogueChoice() const;

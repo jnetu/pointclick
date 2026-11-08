@@ -37,6 +37,8 @@ public:
 
     void refreshNavigation();
     bool teleportPlayer(SDL_FPoint position, std::string& error);
+    // teleportPlayer that never fails: blocked = nearest walkable point; none = stay put.
+    SDL_FPoint placePlayerNear(SDL_FPoint position);
     bool playObjectAnimation(std::string_view objectId, std::string_view animation,
                              bool restart, std::string& error);
 

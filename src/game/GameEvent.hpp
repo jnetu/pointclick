@@ -4,8 +4,9 @@
 #include <variant>
 
 // Outbound notifications from the domain, in the order they happened. Game appends them;
-// core/Application drains the queue once per tick and routes each event (room loading today;
-// audio, transitions, autosave and analytics later) without Game knowing those systems.
+// core/Application drains the queue once per tick and routes each event (room loading and the
+// autosave's stable points today; audio, transitions and analytics later) without Game knowing
+// those systems.
 // A new kind of notification = one struct here + one emit point in Game.
 
 // A load (spawn at playerStart) committed; live DebugEditor edits do not emit it.

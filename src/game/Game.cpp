@@ -54,6 +54,10 @@ Game::Game(Room room) {
     loadRoom(std::move(room));
 }
 
+Game::Game(Room room, SessionState progress) : session_(std::move(progress)) {
+    loadRoom(std::move(room));
+}
+
 void Game::loadRoom(Room room) {
     std::string error;
     if (!applyRoom(std::move(room), true, error)) throw std::invalid_argument(error);
@@ -115,6 +119,10 @@ bool Game::setDialogues(RoomDialogues dialogues, std::string& error) {
 
 bool Game::teleportPlayer(const SDL_FPoint position, std::string& error) {
     return scene_.teleportPlayer(position, error);
+}
+
+SDL_FPoint Game::placePlayerNear(const SDL_FPoint position) {
+    return scene_.placePlayerNear(position);
 }
 
 bool Game::playObjectAnimation(const std::string_view objectId,
@@ -255,6 +263,10 @@ void Game::tick(const float deltaSeconds) {
 }
 
 bool Game::inCutscene() const { return script_.busy() || dialogue_.active(); }
+
+SavedGame Game::savedGame() const {
+    return {scene_.room().id, scene_.player().feet(), session_.snapshot()};
+}
 
 bool Game::dialogueActive() const { return dialogue_.active(); }
 

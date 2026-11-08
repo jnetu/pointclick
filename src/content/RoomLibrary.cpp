@@ -3,6 +3,7 @@
 #include "content/ActorFiles.hpp"
 #include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
+#include "content/TextFormat.hpp"
 
 #include <system_error>
 #include <utility>
@@ -34,9 +35,21 @@ std::filesystem::path RoomLibrary::playerActorPath() const {
     return roomsDirectory_.parent_path() / "actors" / "player.actor";
 }
 
+std::string RoomLibrary::roomIdFor(const std::string_view filename) {
+    return TextFormat::pathToUtf8(std::filesystem::path(filename).stem());
+}
+
 RoomLoadResult RoomLibrary::loadRoom(const std::string_view filename) const {
-    return RoomFiles::load(roomsDirectory_ / std::filesystem::path(filename),
-                           playerArt_.empty() ? nullptr : &playerArt_);
+    RoomLoadResult loaded = RoomFiles::load(roomsDirectory_ / std::filesystem::path(filename),
+                                            playerArt_.empty() ? nullptr : &playerArt_);
+    // change_room finds rooms by file name and SessionState keys progress by Room::id, so the
+    // two must agree; otherwise progress would be stored under another room's id.
+    if (const std::string expected = roomIdFor(filename); loaded.room && loaded.room->id != expected) {
+        return {std::nullopt, "id = " + loaded.room->id + " nao corresponde ao arquivo "
+                                      + TextFormat::pathToUtf8(std::filesystem::path(filename).filename())
+                                      + " (use id = " + expected + ")"};
+    }
+    return loaded;
 }
 
 RoomBundleResult RoomLibrary::loadBundle(const std::string_view filename) const {
@@ -58,6 +71,9 @@ RoomBundleResult RoomLibrary::loadBundle(const std::string_view filename) const 
 
 bool RoomLibrary::saveRoom(const std::string_view filename, const Room& room,
                            std::string& error) const {
-    return RoomFiles::save(roomsDirectory_ / std::filesystem::path(filename), room, error,
+    // Saving under another name makes a copy that is that room: its id follows the file.
+    Room named = room;
+    named.id = roomIdFor(filename);
+    return RoomFiles::save(roomsDirectory_ / std::filesystem::path(filename), named, error,
                            playerArt_.empty() ? nullptr : &playerArt_);
 }

@@ -155,7 +155,7 @@ void testRoomFiles(const std::filesystem::path& directory) {
     { std::ofstream out(emptyPath, std::ios::binary); }
     const auto empty = RoomFiles::load(emptyPath, sharedPlayerArt());
     assert(empty.room && empty.error.empty());
-    assert(empty.room->id == RoomPresets::defaults().id);
+    assert(empty.room->id == "empty"); // no `id` key: named after the file, not "first"
 
     const auto nulPath = directory / "nul.room";
     {
@@ -880,7 +880,9 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     // 4. DebugEditor 'load' rejects a room if its companion .rules file has a syntax error,
     // preserving the active simulation!
     const auto brokenCompanionRoom = directory / "broken_rules.room";
-    assert(RoomFiles::save(brokenCompanionRoom, testRoom, saveError));
+    Room brokenRulesRoom = testRoom;
+    brokenRulesRoom.id = "broken_rules"; // the library requires id == file name
+    assert(RoomFiles::save(brokenCompanionRoom, brokenRulesRoom, saveError));
     {
         std::ofstream badCompanion(directory / "broken_rules.rules", std::ios::binary);
         badCompanion << "[interact blue_box]\nsay \"sem fechar aspas\n";
@@ -1338,6 +1340,29 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     std::ifstream saved(directory / "art.room");
     const std::string text((std::istreambuf_iterator<char>(saved)), {});
     assert(text.find("player.idle.") == std::string::npos);
+
+    // The file name is the room's identity (change_room and SessionState must agree on it).
+    Room declared = first.bundle->room;
+    declared.id = "outra";
+    assert(RoomFiles::save(directory / "trocada.room", declared, error));
+    const auto mismatched = scratch.loadBundle("trocada.room");
+    assert(!mismatched.bundle);
+    assert(mismatched.error == "id = outra nao corresponde ao arquivo trocada.room (use id = trocada)");
+    assert(!scratch.loadRoom("trocada.room").room);
+    // A file without `id` is the room named after it, not Room's default "first".
+    std::ifstream declaredFile(directory / "trocada.room");
+    std::string withoutId;
+    for (std::string line; std::getline(declaredFile, line);) {
+        if (!line.starts_with("id = ")) withoutId += line + '\n';
+    }
+    declaredFile.close();
+    std::ofstream(directory / "semid.room") << withoutId;
+    const auto unnamed = scratch.loadBundle("semid.room");
+    assert(unnamed.bundle && unnamed.bundle->room.id == "semid");
+    // Saving under another name writes that name's id, so the copy loads back as its own room.
+    assert(scratch.saveRoom("copia.room", declared, error));
+    const auto copy = scratch.loadBundle("copia.room");
+    assert(copy.bundle && copy.bundle->room.id == "copia");
 
     assert(ActorFiles::parse("").error == "Ator sem animacoes");
     assert(ActorFiles::parse("idle.file = a.png\nidle.file = b.png").error

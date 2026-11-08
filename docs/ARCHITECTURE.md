@@ -195,7 +195,8 @@ O projeto separa estritamente três categorias de estado:
    Armazena flags/contadores (`setFlag`, `clearFlag`, `hasFlag`), itens ordenados do
    inventário (`addItem`, `removeItem`, `hasItem`, `items`) e overrides de objetos por
    `roomId + objectId` (`setObjectVisible` / `isObjectVisible` e `setObjectSolid` /
-   `isObjectSolid`). Persiste intacto através de trocas de sala (`loadRoom`) e de
+   `isObjectSolid`). O `roomId` é o nome do arquivo `<id>.room`: `RoomLibrary` recusa
+   um arquivo cujo `id` difere do nome e grava o `id` do nome ao salvar. Persiste intacto através de trocas de sala (`loadRoom`) e de
    edições em tempo real no `DebugEditor` (`applyRoom(room, false, error)`).
 
 Em `Interaction` / `InteractionFiles`, cada `InteractionRule` possui:

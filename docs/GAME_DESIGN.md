@@ -74,8 +74,13 @@ aceitam letras, números, `_` e `-`, com a extensão `.room`.
 ## Criar outra sala
 
 Copie `assets/rooms/first.room`, dê outro nome ao arquivo e altere `id`.
+O nome do arquivo é a identidade da sala: `biblioteca.room` precisa ter
+`id = biblioteca` (ou omitir `id`, que então vale o nome do arquivo). É por esse
+nome que `change_room` encontra a sala e que o progresso da partida é guardado;
+um arquivo com `id` diferente do nome é recusado ao carregar.
 Edite os valores e use `load nome.room` no jogo, sem recompilar. Também é
-possível salvar a sala atual com outro nome e continuar editando essa cópia.
+possível salvar a sala atual com outro nome e continuar editando essa cópia;
+o `save` grava o `id` do novo nome.
 A pasta do editor aparece na parte inferior do painel.
 
 O formato aceita comentários iniciados por `#`. Chaves não reconhecidas,

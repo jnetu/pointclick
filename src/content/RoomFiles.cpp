@@ -91,6 +91,8 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     std::istringstream input(std::string(static_cast<const char*>(data.get()), dataSize));
     // Defaults come from Room itself; art never comes from C++ (RoomPresets is for tests).
     Room room;
+    // A file without an `id` key is the room named after it, never Room's default "first".
+    room.id = pathToUtf8(path.stem());
     if (inheritedPlayerArt) room.playerAnimations = *inheritedPlayerArt;
     SceneObject* object = nullptr;
     std::string section = "room";

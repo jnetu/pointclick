@@ -40,6 +40,9 @@ public:
     [[nodiscard]] std::filesystem::path playerActorPath() const;
     [[nodiscard]] const AnimationSet& playerArt() const { return playerArt_; }
 
+    // The file name is the room's identity: "<id>.room". Loading rejects a file whose `id`
+    // differs from its name; saving writes the id of the target name.
+    [[nodiscard]] static std::string roomIdFor(std::string_view filename);
     [[nodiscard]] RoomLoadResult loadRoom(std::string_view filename) const;
     [[nodiscard]] RoomBundleResult loadBundle(std::string_view filename) const;
     // Leaves out clips equal to the shared player art.

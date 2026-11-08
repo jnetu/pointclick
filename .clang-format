@@ -1,0 +1,32 @@
+# Estilo do pointclick, calibrado no código existente.
+# Aplique só nos trechos que você tocar (ex.: git clang-format), não em lote.
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++20
+IndentWidth: 4
+ContinuationIndentWidth: 8
+ConstructorInitializerIndentWidth: 8
+ColumnLimit: 120
+UseTab: Never
+PointerAlignment: Left
+ReferenceAlignment: Left
+NamespaceIndentation: None
+FixNamespaceComments: true
+SpacesBeforeTrailingComments: 1
+AccessModifierOffset: -4
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortBlocksOnASingleLine: Always
+AllowShortLoopsOnASingleLine: false
+AllowShortLambdasOnASingleLine: All
+AllowShortEnumsOnASingleLine: true
+BreakBeforeBraces: Attach
+BreakConstructorInitializers: BeforeColon
+PackConstructorInitializers: BinPack
+AlignAfterOpenBracket: Align
+BinPackArguments: true
+BinPackParameters: true
+AlwaysBreakTemplateDeclarations: Yes
+IncludeBlocks: Preserve
+SortIncludes: CaseSensitive
+InsertNewlineAtEOF: true

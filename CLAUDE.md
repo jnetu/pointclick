@@ -20,11 +20,14 @@ Leia também `docs/ARCHITECTURE.md` antes de mudanças estruturais e `docs/GAME_
 ```sh
 cmake --preset debug
 cmake --build --preset debug
-ctest --test-dir build/debug --output-on-failure
+ctest --preset debug
 ```
 
-O preset usa Ninja; se não estiver no `PATH`, use a build do CLion em `cmake-build-debug`
+Os presets `debug`/`release` usam o gerador padrão da plataforma (ou `CMAKE_GENERATOR`);
+`ninja-debug`/`ninja-release` fixam Ninja. A build do CLion fica em `cmake-build-debug`
 (`cmake --build cmake-build-debug && ctest --test-dir cmake-build-debug --output-on-failure`).
+SDL3: uma versão de referência (`POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`)
+vale para o pacote do sistema (mínimo) e para o CPM. Estilo: `.clang-format` só nos trechos tocados.
 Para rodar com os assets da raiz: `pointclick --rooms assets/rooms`.
 Build sem o editor (como numa loja): `-DPOINTCLICK_ENABLE_TOOLS=OFF`.
 

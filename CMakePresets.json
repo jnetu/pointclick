@@ -9,11 +9,17 @@
     {
       "name": "base",
       "hidden": true,
-      "generator": "Ninja",
+      "description": "Sem gerador fixo: usa o padrao da plataforma ou a variavel de ambiente CMAKE_GENERATOR.",
       "binaryDir": "${sourceDir}/build/${presetName}",
       "cacheVariables": {
         "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
+    },
+    {
+      "name": "ninja-base",
+      "hidden": true,
+      "inherits": "base",
+      "generator": "Ninja"
     },
     {
       "name": "debug",
@@ -30,16 +36,39 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "ninja-debug",
+      "displayName": "PointClick Debug (Ninja)",
+      "inherits": "ninja-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "ninja-release",
+      "displayName": "PointClick Release (Ninja)",
+      "inherits": "ninja-base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
+    { "name": "debug", "configurePreset": "debug", "configuration": "Debug" },
+    { "name": "release", "configurePreset": "release", "configuration": "Release" },
+    { "name": "ninja-debug", "configurePreset": "ninja-debug", "configuration": "Debug" },
+    { "name": "ninja-release", "configurePreset": "ninja-release", "configuration": "Release" }
+  ],
+  "testPresets": [
     {
-      "name": "debug",
-      "configurePreset": "debug"
+      "name": "test-base",
+      "hidden": true,
+      "output": { "outputOnFailure": true }
     },
-    {
-      "name": "release",
-      "configurePreset": "release"
-    }
+    { "name": "debug", "inherits": "test-base", "configurePreset": "debug", "configuration": "Debug" },
+    { "name": "release", "inherits": "test-base", "configurePreset": "release", "configuration": "Release" },
+    { "name": "ninja-debug", "inherits": "test-base", "configurePreset": "ninja-debug", "configuration": "Debug" },
+    { "name": "ninja-release", "inherits": "test-base", "configurePreset": "ninja-release", "configuration": "Release" }
   ]
 }

@@ -133,7 +133,7 @@ esvazia a fila do `Game` e carrega a sala de um `RoomChangeRequested` (emitido q
 uma sequência com `change_room <roomId>` termina).
 
 A leitura de `.room` e `.rules` usa `SDL_IOFromFile` e `SDL_LoadFile_IO` do SDL3
-3.4.16, com caminhos UTF-8 e o tamanho explícito dos dados. O stream permanece aberto
+(versão de referência `POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`), com caminhos UTF-8 e o tamanho explícito dos dados. O stream permanece aberto
 para conferir erros de leitura antes do parser; stream e buffer são liberados por RAII.
 Sem `--rooms`, o caminho continua sendo `SDL_GetBasePath()/assets/rooms`.
 No Android, a base é `./` e o SDL remove esse prefixo ao procurar no pacote.
@@ -325,8 +325,9 @@ quando mudar essa largura. Não há colisão física por pixel de sprite.
 ## Verificação
 
 ```sh
+cmake --preset debug
 cmake --build --preset debug
-ctest --test-dir build/debug --output-on-failure
+ctest --preset debug
 ```
 
 Os testes cobrem movimento, perspectiva, desvio, quinas, salas panorâmicas,

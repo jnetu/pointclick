@@ -10,6 +10,11 @@ cmake --build --preset debug
 ./build/debug/pointclick --rooms assets/rooms
 ```
 
+O preset `debug` usa o gerador padrão da plataforma (ou `CMAKE_GENERATOR`);
+com Ninja no `PATH`, use `ninja-debug`/`ninja-release`. O SDL3 do sistema só é
+usado se for >= `POINTCLICK_SDL3_VERSION` (`cmake/Dependencies.cmake`); caso
+contrário, o CPM baixa e compila essa mesma versão.
+
 Digite **DEBUG** para abrir o editor durante o jogo. Use cima/baixo para
 selecionar e esquerda/direita para alterar valores. **Tab** oculta o painel
 para testar a sala; **Esc** sai do editor. Também há comandos:

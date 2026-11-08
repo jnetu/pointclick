@@ -1,0 +1,34 @@
+# Texto normalizado para LF no repositório e na cópia de trabalho (todas as plataformas).
+* text=auto eol=lf
+
+# Formatos editáveis do jogo: sempre texto LF (o tokenizer não depende de CRLF).
+*.room   text eol=lf
+*.rules  text eol=lf
+*.dlg    text eol=lf
+*.actor  text eol=lf
+
+# Scripts de shell quebram com CRLF.
+*.sh     text eol=lf
+
+# Arquivos de projeto do Windows, se surgirem, mantêm CRLF.
+*.bat    text eol=crlf
+*.cmd    text eol=crlf
+*.ps1    text eol=crlf
+
+# Binários: sem normalização nem diff textual.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.bmp    binary
+*.webp   binary
+*.ico    binary
+*.icns   binary
+*.wav    binary
+*.ogg    binary
+*.mp3    binary
+*.flac   binary
+*.ttf    binary
+*.otf    binary
+*.zip    binary
+*.tar.gz binary

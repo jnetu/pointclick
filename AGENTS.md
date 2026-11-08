@@ -80,7 +80,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 ```sh
 cmake --preset debug
 cmake --build --preset debug
-ctest --test-dir build/debug --output-on-failure
+ctest --preset debug
 ```
 
 Há também uma build local em `cmake-build-debug`, caso já esteja configurada.

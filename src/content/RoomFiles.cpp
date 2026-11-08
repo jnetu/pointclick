@@ -1,31 +1,21 @@
 #include "content/RoomFiles.hpp"
 #include "content/SpriteFields.hpp"
+#include "content/TextFormat.hpp"
 #include "game/RoomParameters.hpp"
 
-#include <SDL3/SDL_iostream.h>
 #include <SDL3/SDL_stdinc.h>
 
 #include <algorithm>
 #include <cmath>
-#include <fstream>
 #include <iomanip>
 #include <limits>
 #include <locale>
-#include <memory>
 #include <set>
 #include <sstream>
 
 namespace {
-std::string pathToUtf8(const std::filesystem::path& path) {
-    const auto utf8 = path.u8string();
-    return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
-}
-
-std::string trim(std::string value) {
-    const auto first = value.find_first_not_of(" \t\r\n");
-    if (first == std::string::npos) return {};
-    return value.substr(first, value.find_last_not_of(" \t\r\n") - first + 1);
-}
+using TextFormat::pathToUtf8;
+using TextFormat::trim;
 
 bool numbers(std::string text, const std::span<float> values) {
     std::replace(text.begin(), text.end(), ',', ' ');
@@ -76,19 +66,9 @@ void writeRect(std::ostream& out, const SDL_FRect rect) {
 
 RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
                               const AnimationSet* inheritedPlayerArt) {
-    const auto filename = pathToUtf8(path);
-    std::unique_ptr<SDL_IOStream, decltype(&SDL_CloseIO)> file(
-            SDL_IOFromFile(filename.c_str(), "rb"), SDL_CloseIO);
-    if (!file) return {{}, "Nao foi possivel abrir " + pathToUtf8(path.filename())};
-    std::size_t dataSize = 0;
-    std::unique_ptr<void, decltype(&SDL_free)> data(
-            SDL_LoadFile_IO(file.get(), &dataSize, false), SDL_free);
-    // SDL 3.4.16 can return partial data on a read error; inspect the open stream.
-    const auto status = SDL_GetIOStatus(file.get());
-    if (!data || (status != SDL_IO_STATUS_READY && status != SDL_IO_STATUS_EOF)) {
-        return {{}, "Falha de leitura"};
-    }
-    std::istringstream input(std::string(static_cast<const char*>(data.get()), dataSize));
+    auto loaded = TextFormat::readFile(path);
+    if (!loaded.text) return {{}, std::move(loaded.error)};
+    std::istringstream input(std::move(*loaded.text));
     // Defaults come from Room itself; art never comes from C++ (tests/support/RoomPresets is test-only).
     Room room;
     // A file without an `id` key is the room named after it, never Room's default "first".
@@ -174,10 +154,7 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
                      const AnimationSet* inheritedPlayerArt) {
     error = room.validationError();
     if (!error.empty()) return false;
-    auto temporary = path;
-    temporary += ".tmp";
-    std::ofstream out(temporary);
-    if (!out) { error = "Nao foi possivel salvar " + pathToUtf8(path.filename()); return false; }
+    std::ostringstream out;
     out.imbue(std::locale::classic());
     out << std::setprecision(std::numeric_limits<float>::max_digits10);
     out << "# PointClick: coordenadas logicas; cores RGBA; retangulos x,y,w,h\n[room]\nid = " << room.id << '\n';
@@ -211,13 +188,5 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
             }
         }
     }
-    out.close();
-    std::error_code ioError;
-    if (out) std::filesystem::rename(temporary, path, ioError);
-    if (!out || ioError) {
-        std::filesystem::remove(temporary, ioError);
-        error = "Falha ao gravar o arquivo de sala";
-        return false;
-    }
-    return true;
+    return TextFormat::writeTextAtomic(path, out.str(), "sala", error);
 }

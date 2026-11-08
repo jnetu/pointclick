@@ -16,38 +16,32 @@
 #include <string_view>
 #include <vector>
 
-// Thin coordinator. Owns the progress (SessionState), the room being played (Scene) and what
-// runs scripts over both (ScriptRunner, DialoguePlayer, the ScriptHost adapter). Commands come
-// in as intents (clicks, item use, dialogue choices); notifications go out as GameEvent.
+// Thin coordinator over SessionState, Scene and the script runners. Commands come in as intents
+// (clicks, item use, dialogue choices); notifications go out as GameEvent.
 class Game {
 public:
     explicit Game(Room room);
-    // Resumes a saved progress: the session is in place before the room is applied, so the
-    // first navigation already sees what the save hid or unlocked.
+    // Resumes a save: progress is applied before the room, so navigation already sees it.
     Game(Room room, SessionState progress);
 
     Game(const Game&) = delete;
     Game& operator=(const Game&) = delete;
 
-    // Content. loadRoom throws on invalid data; applyRoom validates and commits atomically.
-    // Edits (resetPlayer = false) preserve feet and SessionState; loads place the player at
-    // the entry point: spawnId names a `[spawn]` of the room, empty = playerStart. An unknown
-    // spawn refuses the whole load.
+    // loadRoom throws on invalid data; applyRoom validates and commits atomically. Edits
+    // (resetPlayer = false) keep feet and SessionState; loads enter at spawnId (empty =
+    // playerStart), and an unknown spawn refuses the load.
     void loadRoom(Room room);
     bool applyRoom(Room room, bool resetPlayer, std::string& error,
                    std::string_view spawnId = {});
     void setInteractions(RoomInteractions interactions);
     bool setInteractions(RoomInteractions interactions, std::string& error);
-    // The room's dialogue nodes (<room>.dlg). Validated against the room; replacing them ends a
-    // conversation in progress. start_dialogue targets are cross-checked by the loader
-    // (dialogueReferencesError); an unknown node at runtime just does nothing.
+    // <room>.dlg nodes, validated against the room; replacing them ends the conversation.
     void setDialogues(RoomDialogues dialogues);
     bool setDialogues(RoomDialogues dialogues, std::string& error);
 
     // Gameplay and tool commands.
     bool teleportPlayer(SDL_FPoint position, std::string& error);
-    // Restoring saved feet: there if walkable, else the nearest walkable point, else where the
-    // player already stands (the spawn after a load). Returns where the feet ended up.
+    // Saved feet: there if walkable, else nearest walkable, else stays. Returns the final point.
     SDL_FPoint placePlayerNear(SDL_FPoint position, std::optional<Facing> facing = std::nullopt);
     bool playObjectAnimation(std::string_view objectId, std::string_view animation,
                              bool restart, std::string& error);
@@ -67,16 +61,14 @@ public:
     [[nodiscard]] const SessionState& session() const { return session_; }
     // A scripted sequence or a conversation holds the scene: world clicks only skip the line.
     [[nodiscard]] bool inCutscene() const;
-    // Room, feet and progress as they are now. Meant for stable moments (!inCutscene()): a
-    // running script is not part of a save.
+    // For stable moments (!inCutscene()): running scripts are not saved.
     [[nodiscard]] SavedGame savedGame() const;
     [[nodiscard]] bool dialogueActive() const;
     // The menu is up: the node's lines ended and a choice is expected (still inCutscene()).
     [[nodiscard]] bool awaitingDialogueChoice() const;
     [[nodiscard]] std::span<const DialogueChoice* const> dialogueOptions() const;
 
-    // Notifications since the last drain, oldest first. drainEvents swaps them into `out`
-    // (cleared first) so a caller-owned buffer is reused frame after frame.
+    // Oldest first; drainEvents swaps into `out` (cleared first) to reuse the caller's buffer.
     [[nodiscard]] std::span<const GameEvent> pendingEvents() const { return events_; }
     void drainEvents(std::vector<GameEvent>& out);
 
@@ -85,8 +77,7 @@ private:
 
     bool startObjectInteraction(const InteractionTrigger& trigger);
     bool resolveInteraction(const InteractionTrigger& trigger);
-    // Applies what scripts deferred (dirty navigation, the room change once they end) and
-    // publishes cutscene edges.
+    // Applies what scripts deferred (navigation, room change) and publishes cutscene edges.
     void settleScript();
     void publishCutsceneChange();
     void emit(GameEvent event);

@@ -96,7 +96,7 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
                 return result;
             }
 
-            // Layer 3: Future Gameplay UIs in logical viewport (1280x720) space.
+            // Layer 3: gameplay UIs in viewport space.
             for (ViewportUiConsumer* consumer : uiConsumers_) {
                 if (consumer != nullptr && consumer->onPrimaryPress(translated.viewportPoint)) {
                     result.consumedByUi = true;

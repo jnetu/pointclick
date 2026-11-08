@@ -8,8 +8,7 @@
 
 class Game;
 
-// Extension point for future gameplay UIs (Dialogue, Inventory, Pause Menu)
-// operating in the fixed 1280x720 logical viewport before world conversion.
+// Gameplay UI (dialogue menu, future inventory/pause) in the 1280x720 viewport, before the world.
 class ViewportUiConsumer {
 public:
     virtual ~ViewportUiConsumer() = default;
@@ -20,8 +19,7 @@ public:
     virtual bool onTextInput([[maybe_unused]] std::string_view text) { return false; }
 };
 
-// Optional tools layer (the in-game editor). Registered on InputRouter when the build has
-// tools; the router never knows the concrete class.
+// Optional tools layer (in-game editor); the router never knows the concrete class.
 class ToolInputConsumer {
 public:
     virtual ~ToolInputConsumer() = default;

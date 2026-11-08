@@ -9,11 +9,9 @@
 
 class Game;
 
-// Gameplay UI for dialogue choices, in the fixed 1280x720 viewport. It only acts while
-// Game::awaitingDialogueChoice() (a moment inside the cutscene): then it is modal, consumes every
-// press and navigation, and turns them into Game::chooseDialogueOption. The rest of the cutscene
-// (lines being spoken, replies) falls through to Game, where a click skips the line.
-// Layout lives here so the hit-test and graphics/DialogueMenuRenderer share it.
+// Dialogue choices UI. Acts only while Game::awaitingDialogueChoice(): then it is modal and turns
+// presses into Game::chooseDialogueOption; the rest of the cutscene falls through to Game.
+// Layout lives here so the hit-test and DialogueMenuRenderer share it.
 class DialogueMenu final : public ViewportUiConsumer {
 public:
     static constexpr float kMargin = 24.0F;

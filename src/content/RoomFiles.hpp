@@ -10,9 +10,8 @@ struct RoomLoadResult {
 };
 
 namespace RoomFiles {
-// inheritedPlayerArt (assets/actors/player.actor) seeds Room::playerAnimations; player.<clip>.*
-// keys in the room add clips or override fields of inherited ones. Without it the room must
-// declare every locomotion clip itself.
+// inheritedPlayerArt (player.actor) seeds Room::playerAnimations; player.<clip>.* keys add or
+// override clips. Without it the room declares every locomotion clip itself.
 [[nodiscard]] RoomLoadResult load(const std::filesystem::path& path,
                                   const AnimationSet* inheritedPlayerArt = nullptr);
 // Writes via a temporary file so a failed write preserves the previous room. Clips equal to

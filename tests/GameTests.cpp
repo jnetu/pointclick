@@ -349,7 +349,7 @@ void testWalkToInteractAndDepthPicking() {
     }});
 
     // 1. Click in the overlapping region (740, 470): must pick front_banner (higher depth),
-    // start walking, and NOT trigger the effect before arrival.
+    // start walking, and not trigger the effect before arrival.
     game.onClick({740.0F, 470.0F});
     assert(game.scene().player().moving());
     assert(game.scene().pendingInteraction().has_value());
@@ -473,7 +473,7 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     SpriteClip openClip{.file = "door_open.png"};
     AnimationSet doorAnims{{"idle", closedClip}, {"open", openClip}};
 
-    // Gate spans the entire walkable height at x = 700, partitioning the room until unlocked!
+    // Gate spans the entire walkable height at x = 700, partitioning the room until unlocked.
     room.scenery = {
         {{360.0F, 470.0F, 60.0F, 50.0F}, {240, 210, 80, 255}, SceneObjectType::decoration,
          {}, "silver_key", {}, "idle"},
@@ -547,7 +547,7 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     }});
 
     // 1. Before unlocking iron_gate, clicking relic behind the gate walks only up to the gate
-    // and MUST NOT collect relic through the solid wall.
+    // and must not collect relic through the solid wall.
     game.onClick({1055.0F, 515.0F});
     for (int i = 0; i < 100; ++i) {
         game.tick(0.05F);
@@ -576,9 +576,8 @@ void testConditionalNpcPuzzleAndRoomPersistence() {
     assert(game.session().hasItem("silver_key"));
     assert(!game.scene().isObjectVisible("silver_key"));
 
-    // 4. Talk to guard again now that we have silver_key AND talked_to_guard:
-    // consumes silver_key, sets gate_open, switches iron_gate animation to "open",
-    // and rebuilds Navigation so iron_gate is passable!
+    // 4. Talk to guard with silver_key and talked_to_guard: key consumed, gate_open set,
+    // iron_gate plays "open" and becomes passable.
     game.onClick({535.0F, 430.0F});
     for (int i = 0; i < 80; ++i) {
         game.tick(0.05F);
@@ -717,9 +716,8 @@ RoomDialogues guardDialogues() {
                                        {ask, key, bye}}}};
 }
 
-// A rule opens a dialogue (start_dialogue blocks under it), the menu lists only the options whose
-// conditions hold, a reply with goto is read before its node reopens, once-options stay hidden
-// (SessionState), and the rule resumes when the conversation ends.
+// A rule opens a dialogue: only options whose conditions hold are listed, a goto reply is read
+// before its node reopens, once-options stay hidden and the rule resumes at the end.
 void testDialogueWithChoices() {
     Game game(RoomPresets::firstRoom());
     game.setInteractions(RoomInteractions{{{
@@ -814,10 +812,7 @@ void testDialogueWithChoices() {
     assert(!game.dialogueActive() && game.scene().floatingText().text() == "Silencio.");
 }
 
-// Game reports outward through GameEvent: loads, lines, cutscene edges and room requests, in
-// the order they happened. Live edits stay silent and a room change drops stale requests.
-// change_room <room> <spawn>: the request carries the spawn, the load places the feet and the
-// facing there, and an unknown spawn refuses the whole load (nothing changes).
+// change_room <room> <spawn>: the load places feet and facing there; an unknown spawn refuses it.
 void testRoomSpawns() {
     Room hall = RoomPresets::firstRoom();
     hall.id = "hall";
@@ -885,6 +880,8 @@ void testRoomSpawns() {
     assert(invalid.validationError() == "Spawn fora da sala: far");
 }
 
+// GameEvent order: loads, lines, cutscene edges, room requests. Live edits stay silent and a room
+// change drops stale requests.
 void testGameEventQueue() {
     Room room = RoomPresets::firstRoom();
     Game game(room);

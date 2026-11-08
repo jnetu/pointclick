@@ -15,11 +15,9 @@
 
 class SessionState;
 
-// The room being played: its loaded content (Room, rules, dialogue nodes) and the local
-// simulation that goes with it (navigation, player, camera, object animations, the line on
-// screen, walk-to-interact). Nothing here outlives a room change except what SessionState keeps.
-// The scene only reads the session (visibility, solidity, inventory for use_item); changes to
-// it come from scripts, coordinated by Game.
+// The room being played: its content plus local simulation (navigation, player, camera,
+// animations, line on screen, walk-to-interact). Nothing outlives a room change; the scene only
+// reads SessionState, which scripts change through Game.
 class Scene {
 public:
     explicit Scene(const SessionState& session);
@@ -27,10 +25,8 @@ public:
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
 
-    // Validates and commits atomically: nothing changes when it returns false. resetPlayer
-    // places the feet at the room's entry point (spawnId, or playerStart when empty; an
-    // unknown spawn is an error) and snaps the camera; otherwise feet, facing and object
-    // animations survive.
+    // Atomic: nothing changes on false. resetPlayer enters at spawnId (empty = playerStart) and
+    // snaps the camera; otherwise feet, facing and animations survive.
     bool apply(Room room, bool resetPlayer, std::string& error, std::string_view spawnId = {});
     bool setInteractions(RoomInteractions interactions, std::string& error);
     bool setDialogues(RoomDialogues dialogues, std::string& error);

@@ -13,9 +13,8 @@
 struct Room;
 class SessionState;
 
-// Typed signatures for the declarative .rules vocabulary. Parser, serializer, validation,
-// execution and documentation all read this catalog: a new effect or condition is one entry
-// plus one function. Mirrors the RoomParameters model for non-numeric data.
+// Typed .rules vocabulary read by parser, serializer, validation and execution: a new effect or
+// condition is one entry plus one function (like RoomParameters, for non-numeric data).
 enum class ArgType : std::uint8_t {
     objectId,  // validated against the room when one is given
     itemId,

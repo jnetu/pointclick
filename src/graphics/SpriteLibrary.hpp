@@ -9,9 +9,8 @@
 struct SDL_Renderer;
 struct SDL_Texture;
 
-// Renderer-owned PNG cache keyed by file. Missing or invalid assets render as a checkerboard.
-// The cache survives room edits and room changes; clear() is for render-device resets and
-// art hot-reload, and beginRoom() drops what the previous room no longer used.
+// PNG cache keyed by file; missing or invalid assets draw as a checkerboard. clear() is for
+// device resets and hot-reload.
 class SpriteLibrary {
 public:
     SpriteLibrary() = default;
@@ -22,8 +21,7 @@ public:
     void initialize(SDL_Renderer* renderer);
     void setRoot(std::filesystem::path root);
     void clear();
-    // Starts a new room: textures no room drew in the last two room changes are released, so
-    // going back and forth between two rooms never reloads and memory stays bounded.
+    // Releases textures unused in the last two rooms: going back and forth never reloads.
     void beginRoom();
     [[nodiscard]] std::size_t cachedImageCount() const noexcept { return images_.size(); }
     [[nodiscard]] bool draw(const SpriteClip& clip, SDL_FRect target,

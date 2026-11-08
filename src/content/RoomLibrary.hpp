@@ -48,10 +48,9 @@ public:
     [[nodiscard]] static std::string roomIdFor(std::string_view filename);
     [[nodiscard]] RoomLoadResult loadRoom(std::string_view filename) const;
     [[nodiscard]] RoomBundleResult loadBundle(std::string_view filename) const;
-    // Every change_room in the bundle's rules and dialogue (lines and choices) names a room
-    // that loads, and its spawn exists there. Reads the target rooms, so it is a content check
-    // (tests, tools, a future manifest pass at boot), not part of each room change; at runtime
-    // an unknown room or spawn just refuses the transition. Empty means valid.
+    // Every change_room (rules and dialogue) names a room that loads and a spawn it has.
+    // Content check only (reads the target rooms); at runtime a bad target just refuses the
+    // transition. Empty means valid.
     [[nodiscard]] std::string transitionsError(const RoomBundle& bundle) const;
     // Leaves out clips equal to the shared player art.
     [[nodiscard]] bool saveRoom(std::string_view filename, const Room& room,

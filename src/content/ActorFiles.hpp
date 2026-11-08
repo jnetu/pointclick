@@ -12,9 +12,8 @@ struct ActorLoadResult {
     std::string error;
 };
 
-// assets/actors/<id>.actor: an actor's clips, shared by every room, in the same fields as a
-// room's sprites ("idle.file = player_idle.png", "left.fps = 8"). Rooms inherit them and may
-// override single fields with player.<clip>.<field>.
+// assets/actors/<id>.actor: clips shared by every room, in the .room sprite fields
+// ("left.fps = 8"). A room may override single fields with player.<clip>.<field>.
 namespace ActorFiles {
 [[nodiscard]] ActorLoadResult parse(std::string_view content);
 [[nodiscard]] ActorLoadResult load(const std::filesystem::path& path);

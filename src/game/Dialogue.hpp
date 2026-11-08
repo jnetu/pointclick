@@ -61,9 +61,8 @@ enum class DialoguePhase : std::uint8_t {
     reply,    // the chosen option's effects hold the runner
 };
 
-// Drives one conversation over the shared ScriptRunner: a node's lines and a choice's effects are
-// pushed as sequences on top of whatever opened the dialogue. Holds pointers into the
-// RoomDialogues it was given, so the owner cancels it before replacing them.
+// Drives one conversation by pushing node lines and choice effects onto the shared ScriptRunner.
+// Points into its RoomDialogues: cancel it before replacing them.
 class DialoguePlayer {
 public:
     // Deferred open, so a start_dialogue action never re-enters the runner. Unknown node = false.

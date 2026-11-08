@@ -600,7 +600,7 @@ void testMultiplatformInputAndRouting() {
     assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
     assert(!editor.active()); // Toggled closed by gamepad BACK.
     assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
-    assert(editor.active() && editor.panelVisible()); // Re-opened without typing "DEBUG"!
+    assert(editor.active() && editor.panelVisible()); // Re-opened without typing "DEBUG".
 
     const float initialFarSpeed = game.scene().room().playerFarSpeed;
     assert(editor.selected() == 0);
@@ -731,7 +731,7 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(game.session().hasItem("magenta_gem"));
     assert(!game.scene().isObjectVisible("magenta_gem"));
 
-    // 2. Live edits in DebugEditor (set, move, undo, reset) MUST preserve SessionState!
+    // 2. Live edits in DebugEditor (set, move, undo, reset) preserve SessionState.
     DebugEditor editor;
     const RoomLibrary library = openLibrary(directory);
     editor.setLibrary(library);
@@ -768,7 +768,7 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
     editor.onToolAction(ToolAction::close, game);
 
-    // 3. Headless SceneRenderer check: hidden magenta_gem is NOT drawn; showing it draws it again!
+    // 3. Headless SceneRenderer check: hidden magenta_gem is not drawn; showing it draws it again.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
     assert(SDL_Init(SDL_INIT_VIDEO));
@@ -878,7 +878,7 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     assert(reloaded.interactions->rules[1].effects.size() == 8);
 
     // 4. DebugEditor 'load' rejects a room if its companion .rules file has a syntax error,
-    // preserving the active simulation!
+    // preserving the active simulation.
     const auto brokenCompanionRoom = directory / "broken_rules.room";
     Room brokenRulesRoom = testRoom;
     brokenRulesRoom.id = "broken_rules"; // the library requires id == file name
@@ -896,7 +896,7 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     assert(editorGame.scene().room().playerFarSpeed == 155.0F);
     command(editor, editorGame, "load broken_rules.room");
     assert(editor.status() == "Linha 2: Texto entre aspas nao fechado");
-    assert(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back!
+    assert(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back.
 
     // 5. Clear line-by-line error messages for invalid rule syntax and invalid room references.
     const struct {
@@ -1083,10 +1083,8 @@ wait 0.5
     }
 }
 
-// The choice menu is a ViewportUiConsumer: modal only while a choice is expected, driven by
-// click/touch on a row, or up/down + confirm (keyboard, D-pad) and gamepad South.
-// Free text reaches only the tools and gameplay UIs; the world drops it. Typing during a cutscene
-// (with or without the tools layer, including the letters before "DEBUG") never replaces the line.
+// Choice menu: modal only while a choice is expected; click/touch, up/down + confirm, gamepad South.
+// The world drops free text, so typing during a cutscene never replaces the line.
 void testTypedTextNeverBecomesSpeech() {
     Game game(RoomPresets::firstRoom());
     game.setInteractions(RoomInteractions{{{

@@ -30,11 +30,10 @@ struct ResumeResult {
 //   item = <id>                          repeatable, inventory order
 //   object.<room>.<object>.visible = 0|1 and .solid = 0|1 (each optional)
 //   dialogue = <room>/<node>/<choice>    repeatable, `once` choices already taken
-// '#' starts a comment; unknown keys, repeated keys and invalid IDs are errors with the line.
-// Any new key bumps currentVersion (a reader rejects keys it does not know, so an older build
-// must refuse the file by its version, not by a confusing key error); every older version
-// keeps parsing, with the new fields at their defaults.
-// Version history: 1 = room, feet, flags, items, objects, dialogue; 2 = + facing.
+// '#' starts a comment; unknown or repeated keys and invalid IDs are errors with the line.
+// A new key bumps currentVersion, so an older build refuses the file by version instead of a
+// confusing key error; older versions keep parsing with new fields at their defaults.
+// History: 1 = room, feet, flags, items, objects, dialogue; 2 = + facing.
 namespace SaveFiles {
 inline constexpr int currentVersion = 2;
 inline constexpr std::string_view slotName = "save.slot";
@@ -58,12 +57,9 @@ bool quarantine(const std::filesystem::path& path, std::string& error);
 // platform has no writable folder; the game then runs without saves.
 [[nodiscard]] std::filesystem::path defaultSlot(std::string& error);
 
-// Loads the save at path and the room it names. Missing: nothing, no error. Refused (corrupt,
-// unknown version): renamed to .bad and the reason in error.
-// The progress does not depend on the room, so a saved room that no longer loads (removed or
-// renamed by an update, broken file) does not cost it: the save resumes in fallbackRoom at its
-// playerStart, with the reason in warning, and the file stays (the next autosave rewrites it).
-// Only when fallbackRoom fails too is the save refused.
+// Loads the save and its room. Missing: nothing, no error. Refused (corrupt, unknown version):
+// renamed to .bad, reason in error. A saved room that no longer loads costs no progress: it
+// resumes in fallbackRoom at playerStart (reason in warning); refused only if that fails too.
 [[nodiscard]] ResumeResult resume(const std::filesystem::path& path, const RoomLibrary& library,
                                   std::string_view fallbackRoom = RoomLibrary::startRoomFile);
 } // namespace SaveFiles

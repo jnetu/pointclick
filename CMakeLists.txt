@@ -47,7 +47,6 @@ add_library(pointclick_content STATIC
         src/content/InteractionFiles.cpp
         src/content/RoomFiles.cpp
         src/content/RoomLibrary.cpp
-        src/content/RoomPresets.cpp
         src/content/SpriteFields.cpp
         src/content/TextFormat.cpp)
 target_link_libraries(pointclick_content PUBLIC pointclick_game)
@@ -104,17 +103,27 @@ endforeach()
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 include(CTest)
 if(BUILD_TESTING)
+    # Rooms built in C++ exist only here: the shipped binary never links them.
+    add_library(pointclick_test_support STATIC tests/support/RoomPresets.cpp)
+    target_include_directories(pointclick_test_support PUBLIC tests)
+    target_link_libraries(pointclick_test_support PUBLIC pointclick_game)
+    if(MSVC)
+        target_compile_options(pointclick_test_support PRIVATE /W4 /permissive-)
+    else()
+        target_compile_options(pointclick_test_support PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
     # GameTests links the domain and content only: gameplay runs without any renderer.
     add_executable(pointclick_tests tests/GameTests.cpp)
-    target_link_libraries(pointclick_tests PRIVATE pointclick_content)
+    target_link_libraries(pointclick_tests PRIVATE pointclick_content pointclick_test_support)
     add_executable(pointclick_sprite_tests tests/SpriteTests.cpp)
-    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_content pointclick_graphics)
+    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_content pointclick_graphics
+            pointclick_test_support)
     target_compile_definitions(pointclick_sprite_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests)
     if(POINTCLICK_ENABLE_TOOLS)
         add_executable(pointclick_editor_tests tests/EditorTests.cpp)
-        target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools)
+        target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools pointclick_test_support)
         target_compile_definitions(pointclick_editor_tests PRIVATE
                 POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
         list(APPEND POINTCLICK_TEST_TARGETS pointclick_editor_tests)

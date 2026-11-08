@@ -1,7 +1,7 @@
 #include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
 #include "content/RoomFiles.hpp"
-#include "content/RoomPresets.hpp"
+#include "support/RoomPresets.hpp"
 #include "game/ActionCatalog.hpp"
 #include "game/RoomParameters.hpp"
 #include "content/ActorFiles.hpp"

@@ -1,11 +1,11 @@
 #include "core/Application.hpp"
-#include "content/RoomPresets.hpp"
 #include "game/Identifier.hpp"
 
 #include <SDL3/SDL.h>
 
 #include <algorithm>
 #include <chrono>
+#include <exception>
 #include <string>
 #include <thread>
 #include <utility>
@@ -20,10 +20,9 @@ constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
 }
 
-// The preset only fills the Game until initialize() loads first.room from disk.
+// The Game is created in initialize(), from first.room on disk.
 Application::Application(std::filesystem::path roomDirectory)
-        : roomDirectory_(std::move(roomDirectory)), game_(RoomPresets::firstRoom()) {
-    inputRouter_.addUiConsumer(&dialogueMenu_);
+        : roomDirectory_(std::move(roomDirectory)) {
 #if POINTCLICK_TOOLS
     debugEditor_.setLibrary(library_);
     inputRouter_.setToolConsumer(&debugEditor_);
@@ -50,9 +49,21 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
         return false;
     }
     std::string error;
-    if (!game_.applyRoom(std::move(loaded.bundle->room), true, error)
-        || !game_.setInteractions(std::move(loaded.bundle->interactions), error)
-        || !game_.setDialogues(std::move(loaded.bundle->dialogues), error)) {
+    if (!gameplay_) {
+        try {
+            gameplay_ = std::make_unique<Gameplay>(std::move(loaded.bundle->room));
+        } catch (const std::exception& exception) {
+            SDL_Log("Could not apply room: %s", exception.what());
+            return false;
+        }
+        inputRouter_.addUiConsumer(&gameplay_->dialogueMenu);
+    } else if (!gameplay_->game.applyRoom(std::move(loaded.bundle->room), true, error)) {
+        SDL_Log("Could not apply room: %s", error.c_str());
+        return false;
+    }
+    Game& game = gameplay_->game;
+    if (!game.setInteractions(std::move(loaded.bundle->interactions), error)
+        || !game.setDialogues(std::move(loaded.bundle->dialogues), error)) {
         SDL_Log("Could not apply room: %s", error.c_str());
         return false;
     }
@@ -60,7 +71,7 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
 }
 
 void Application::processGameEvents() {
-    game_.drainEvents(gameEvents_);
+    gameplay_->game.drainEvents(gameEvents_);
     const std::string* nextRoomId = nullptr;
     for (const GameEvent& event : gameEvents_) {
         if (const auto* change = std::get_if<RoomChangeRequested>(&event)) {
@@ -139,6 +150,7 @@ void Application::mainLoop() {
     auto previousTime = Clock::now();
     auto nextRenderTime = previousTime;
     double tickAccumulator = 0.0;
+    Game& game = gameplay_->game; // initialize() succeeded, so first.room is loaded
 
     while (running_) {
         processEvents();
@@ -167,17 +179,17 @@ void Application::mainLoop() {
         tickAccumulator += frameSeconds;
 
         while (tickAccumulator >= kTickSeconds) {
-            game_.tick(static_cast<float>(kTickSeconds));
+            game.tick(static_cast<float>(kTickSeconds));
             processGameEvents();
             tickAccumulator -= kTickSeconds;
         }
 
         renderInterpolation_ = static_cast<float>(tickAccumulator / kTickSeconds);
-        inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_, game_,
+        inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_, game,
                             renderInterpolation_);
 
         if (currentTime >= nextRenderTime) {
-            renderer_.render(game_, renderInterpolation_, &inputSystem_, &dialogueMenu_);
+            renderer_.render(game, renderInterpolation_, &inputSystem_, &gameplay_->dialogueMenu);
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {
@@ -194,7 +206,7 @@ void Application::processEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         const InputRouteResult result = inputRouter_.handleEvent(
-                event, inputSystem_, game_, mapper, renderInterpolation_);
+                event, inputSystem_, gameplay_->game, mapper, renderInterpolation_);
         if (result.quitRequested) {
             running_ = false;
         }

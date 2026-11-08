@@ -1,4 +1,4 @@
-#include "content/RoomPresets.hpp"
+#include "support/RoomPresets.hpp"
 
 Room RoomPresets::defaults() {
     Room room;
@@ -22,7 +22,7 @@ Room RoomPresets::defaults() {
     return room;
 }
 
-// Built-in example for tests and embedding. The application loads first.room.
+// Built-in example for tests. The application loads first.room from disk.
 Room RoomPresets::firstRoom() {
     Room room = RoomPresets::defaults();
     room.scenery = {

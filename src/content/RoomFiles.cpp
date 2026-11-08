@@ -89,7 +89,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         return {{}, "Falha de leitura"};
     }
     std::istringstream input(std::string(static_cast<const char*>(data.get()), dataSize));
-    // Defaults come from Room itself; art never comes from C++ (RoomPresets is for tests).
+    // Defaults come from Room itself; art never comes from C++ (tests/support/RoomPresets is test-only).
     Room room;
     // A file without an `id` key is the room named after it, never Room's default "first".
     room.id = pathToUtf8(path.stem());

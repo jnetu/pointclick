@@ -12,6 +12,8 @@
 #include "debug/DebugOverlay.hpp"
 #endif
 
+#include <memory>
+#include <utility>
 #include <vector>
 
 struct SDL_Window;
@@ -23,6 +25,7 @@ public:
 
 private:
     bool initialize();
+    // Loads <id>.room with its companions; the first call creates the gameplay from it.
     bool loadRoomWithRules(std::string_view roomFilename);
     // Routes the domain's notifications; today only room changes need the shell.
     void processGameEvents();
@@ -33,10 +36,16 @@ private:
 
     SDL_Window* window_ = nullptr;
     std::filesystem::path roomDirectory_;
+    // Exists only once first.room is loaded: the binary carries no placeholder room.
+    struct Gameplay {
+        explicit Gameplay(Room room) : game(std::move(room)) {}
+        Game game;
+        DialogueMenu dialogueMenu{game};
+    };
+
     RoomLibrary library_;
-    Game game_;
+    std::unique_ptr<Gameplay> gameplay_;
     std::vector<GameEvent> gameEvents_; // reused drain buffer
-    DialogueMenu dialogueMenu_{game_};
     Renderer renderer_;
 #if POINTCLICK_TOOLS
     DebugEditor debugEditor_;

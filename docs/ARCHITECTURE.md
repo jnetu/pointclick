@@ -15,7 +15,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `content/DialogueFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.dlg` |
 | `content/TextFormat` | Tokenizer comum (comentários, aspas, instruções do catálogo), leitura SDL e gravação atômica |
 | `content/SpriteFields` | Leitura e gravação dos campos de um clip, independente da sala |
-| `content/RoomPresets` | Sala, sprites e regras de exemplo embutidos **só para testes** (o leitor de salas não os usa) |
+| `tests/support/RoomPresets` | Sala, sprites e regras de exemplo em C++ **só para testes** (target `pointclick_test_support`; nem o jogo nem o leitor de salas os linkam) |
 | `content/ActorFiles` | Leitura de `assets/actors/<id>.actor`: clips de um ator compartilhados por todas as salas |
 | `content/RoomLibrary` | Layout dos assets (`rooms/`, `actors/`, `sprites/`) e carga de sala + `.rules` + `.dlg` validados juntos; usado pelo jogo e pelo editor |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |

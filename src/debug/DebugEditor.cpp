@@ -59,7 +59,8 @@ bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
 
 bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer,
                          std::optional<RoomInteractions> nextInteractions,
-                         std::optional<RoomDialogues> nextDialogues) {
+                         std::optional<RoomDialogues> nextDialogues,
+                         const std::string_view spawnId) {
     if (nextInteractions) {
         status_ = nextInteractions->validationError(&room);
         if (!status_.empty()) return false;
@@ -71,7 +72,7 @@ bool DebugEditor::commit(Game& game, Room room, const bool resetPlayer,
     Room previous = game.scene().room();
     RoomInteractions previousInteractions = game.scene().interactions();
     RoomDialogues previousDialogues = game.scene().dialogues();
-    if (!game.applyRoom(std::move(room), resetPlayer, status_)) return false;
+    if (!game.applyRoom(std::move(room), resetPlayer, status_, spawnId)) return false;
     if (nextInteractions) {
         std::string rulesError;
         (void)game.setInteractions(std::move(*nextInteractions), rulesError);
@@ -151,8 +152,13 @@ void DebugEditor::submit(Game& game) {
         } else status_ = "Use: teleport 640 500";
     } else if (verb == "save" || verb == "load") {
         std::string name;
-        if (!(input >> name) || !finished(input) || !validFilename(name)) {
-            status_ = "Use: " + verb + " nome.room (sem pastas)";
+        std::string spawn; // load only: enter through a [spawn] of the room
+        const bool named = static_cast<bool>(input >> name);
+        if (verb == "load" && named && !finished(input)) input >> spawn;
+        if (!named || !finished(input) || !validFilename(name)
+            || (!spawn.empty() && !validIdentifier(spawn))) {
+            status_ = verb == "load" ? "Use: load nome.room [spawn] (sem pastas)"
+                                     : "Use: save nome.room (sem pastas)";
             return;
         }
         if (!library_) {
@@ -163,8 +169,8 @@ void DebugEditor::submit(Game& game) {
             status_ = std::move(loaded.error);
         } else if (commit(game, std::move(loaded.bundle->room), true,
                           std::move(loaded.bundle->interactions),
-                          std::move(loaded.bundle->dialogues))) {
-            status_ = "Sala carregada: " + name;
+                          std::move(loaded.bundle->dialogues), spawn)) {
+            status_ = "Sala carregada: " + name + (spawn.empty() ? "" : " em " + spawn);
         }
     } else if (verb == "undo" && finished(input)) {
         if (undo_) commit(game, *undo_, false, undoInteractions_, undoDialogues_);

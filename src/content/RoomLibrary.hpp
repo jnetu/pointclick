@@ -31,6 +31,9 @@ struct RoomBundleResult {
 // The game and the tools load and save rooms through it, so both see the same inherited art.
 class RoomLibrary {
 public:
+    // Where a new game starts, and where a save whose room no longer loads resumes.
+    static constexpr std::string_view startRoomFile = "first.room";
+
     // roomsDirectory is <assets>/rooms. A missing player.actor is allowed (rooms then declare
     // their own player clips); an invalid one is an error.
     [[nodiscard]] bool open(std::filesystem::path roomsDirectory, std::string& error);
@@ -45,6 +48,11 @@ public:
     [[nodiscard]] static std::string roomIdFor(std::string_view filename);
     [[nodiscard]] RoomLoadResult loadRoom(std::string_view filename) const;
     [[nodiscard]] RoomBundleResult loadBundle(std::string_view filename) const;
+    // Every change_room in the bundle's rules and dialogue (lines and choices) names a room
+    // that loads, and its spawn exists there. Reads the target rooms, so it is a content check
+    // (tests, tools, a future manifest pass at boot), not part of each room change; at runtime
+    // an unknown room or spawn just refuses the transition. Empty means valid.
+    [[nodiscard]] std::string transitionsError(const RoomBundle& bundle) const;
     // Leaves out clips equal to the shared player art.
     [[nodiscard]] bool saveRoom(std::string_view filename, const Room& room,
                                 std::string& error) const;

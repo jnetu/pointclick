@@ -112,9 +112,13 @@ const EffectDescriptor kEffects[]{
      [](ActionArgs, ActionContext& context) {
          return context.host.dialogueActive() ? kRunning : kDone;
      }},
-    {"change_room", "Troca para <sala>.room quando a sequencia terminar", {roomId}, nullptr,
+    {"change_room",
+     "Troca para <sala>.room quando a sequencia terminar; o player entra no [spawn] indicado "
+     "(sem spawn: player.start)",
+     ArgSignature({roomId, spawnId}, 1), nullptr,
      [](const ActionArgs args, ActionContext& context) {
-         context.host.changeRoom(args[0]);
+         context.host.changeRoom(args[0], args.size() > 1 ? std::string_view(args[1])
+                                                          : std::string_view());
          return kDone;
      },
      nullptr},
@@ -168,6 +172,7 @@ std::string_view argPlaceholder(const ArgType type) {
     case boolean: return "<0|1>";
     case number: return "<segundos>";
     case dialogueId: return "<dialogo>";
+    case spawnId: return "<spawn>";
     }
     return "<?>";
 }
@@ -213,9 +218,12 @@ bool parseNumberArgument(const std::string_view text, float& value) {
 std::string actionUsage(const std::string_view keyword, const ArgSignature& signature) {
     std::string usage = "Use ";
     usage += keyword;
-    for (const ArgType type : signature.view()) {
-        usage += ' ';
-        usage += argPlaceholder(type);
+    const auto types = signature.view();
+    for (std::size_t i = 0; i < types.size(); ++i) {
+        const bool optional = i >= signature.required;
+        usage += optional ? " [" : " ";
+        usage += argPlaceholder(types[i]);
+        if (optional) usage += ']';
     }
     return usage;
 }
@@ -223,10 +231,10 @@ std::string actionUsage(const std::string_view keyword, const ArgSignature& sign
 std::string argumentsError(const std::string_view keyword, const ArgSignature& signature,
                            const ActionArgs args, const Room* room) {
     const auto types = signature.view();
-    if (args.size() != types.size()) {
+    if (!signature.accepts(args.size())) {
         return actionUsage(keyword, signature);
     }
-    for (std::size_t i = 0; i < types.size(); ++i) {
+    for (std::size_t i = 0; i < args.size(); ++i) {
         const std::string& value = args[i];
         switch (types[i]) {
         case text:
@@ -249,6 +257,7 @@ std::string argumentsError(const std::string_view keyword, const ArgSignature& s
         case roomId:
         case animation:
         case dialogueId:
+        case spawnId:
             if (!validIdentifier(value)) return "Identificador invalido: " + value;
             break;
         }

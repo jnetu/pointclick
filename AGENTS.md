@@ -12,6 +12,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Novo clip de objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md` |
 | Regra que escolhe animação | `src/game/Animation.*`, `src/game/ObjectAnimations.*` ou `src/game/Player.*` | `src/graphics/EntityRenderer.cpp` apenas se mudar a apresentação |
 | Nova direção de locomoção | `PlayerPose` e `playerLocomotionAnimations` em `src/game/Player.hpp` | regra em `Player.cpp` e clip no `.room` |
+| Ponto de entrada (`[spawn]`) e `change_room <sala> [spawn]` | `RoomSpawn`/`Room::entryPoint` em `src/game/Room.*`, `Scene::apply` | `src/content/RoomFiles.cpp`, `RoomLibrary::transitionsError`, `Application::processGameEvents`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Scene.cpp` | `tests/GameTests.cpp` |
 | Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
@@ -27,7 +28,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Menu de escolhas na tela | `src/ui/DialogueMenu.*` (layout + `ViewportUiConsumer`) | `src/graphics/DialogueMenuRenderer.cpp`, registro em `src/core/Application.cpp`, `tests/EditorTests.cpp` |
 | Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles` |
 | Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`; campo novo também em `SessionSnapshot` e `src/content/SaveFiles.cpp` |
-| Save/load de partida (formato `save.slot`, autosave) | `src/content/SaveFiles.*`, `src/game/SavedGame.hpp`, `src/game/Autosave.*` | `SessionState::snapshot/restore`, `Application::resumeSavedGame`/`processGameEvents`/`lifecycleWatch`, `tests/GameTests.cpp`, `docs/ARCHITECTURE.md` |
+| Save/load de partida (formato `save.slot`, autosave; chave nova = `currentVersion` + 1) | `src/content/SaveFiles.*`, `src/game/SavedGame.hpp`, `src/game/Autosave.*` | `SessionState::snapshot/restore`, `Application::resumeSavedGame`/`processGameEvents`/`lifecycleWatch`, `tests/GameTests.cpp`, `docs/ARCHITECTURE.md` |
 | UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
 | Efeitos visuais de transição de sala | `RoomChangeRequested` / `RoomEntered` em `Application::processGameEvents` | efeito visual temporizado em `graphics/` |
 | Notificação nova para fora do domínio (áudio, autosave, legendas) | struct nova em `src/game/GameEvent.hpp` + `emit` em `src/game/Game.cpp` | consumidor em `Application::processGameEvents`, `testGameEventQueue` em `tests/GameTests.cpp` |

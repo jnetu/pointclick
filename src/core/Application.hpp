@@ -29,7 +29,8 @@ public:
 private:
     bool initialize();
     // Loads <id>.room with its companions; the first call creates the gameplay from it.
-    bool loadRoomWithRules(std::string_view roomFilename);
+    // spawnId: a `[spawn]` of the room (empty = playerStart). Refused as a whole when unknown.
+    bool loadRoomWithRules(std::string_view roomFilename, std::string_view spawnId = {});
     // Creates the gameplay from a loaded room. With a save, its progress is restored before
     // the room is applied and the feet go back where they were. Nothing changes on false.
     bool startGameplay(RoomBundle bundle, const SavedGame* save);

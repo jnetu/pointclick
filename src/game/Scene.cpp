@@ -48,11 +48,23 @@ std::optional<SDL_FPoint> Scene::findNearestWalkable(const Room& room,
     return nearest;
 }
 
-bool Scene::apply(Room room, const bool resetPlayer, std::string& error) {
+bool Scene::apply(Room room, const bool resetPlayer, std::string& error,
+                  const std::string_view spawnId) {
     error = room.validationError();
     if (!error.empty()) return false;
+    SDL_FPoint start = player_.feet();
+    Facing facing = player_.facing();
+    if (resetPlayer) {
+        const std::optional<RoomSpawn> entry = room.entryPoint(spawnId);
+        if (!entry) {
+            error = "Spawn desconhecido na sala " + room.id + ": " + std::string(spawnId);
+            return false;
+        }
+        start = entry->feet;
+        facing = entry->facing;
+    }
     buildNavigation(room, scratchNavigation_);
-    SDL_FPoint feet = room.clampDestination(resetPlayer ? room.playerStart : player_.feet());
+    SDL_FPoint feet = room.clampDestination(start);
     if (!scratchNavigation_.canStandAt(feet)) {
         const auto nearest = findNearestWalkable(room, scratchNavigation_, feet);
         if (!nearest) { error = "A sala precisa de uma area caminhavel"; return false; }
@@ -62,7 +74,7 @@ bool Scene::apply(Room room, const bool resetPlayer, std::string& error) {
     animations.rebuild(room, resetPlayer ? nullptr : &objectAnimations_);
     room_ = std::move(room);
     std::swap(navigation_, scratchNavigation_);
-    player_ = Player(feet);
+    player_ = Player(feet, facing);
     camera_.configure(room_.width, room_.height);
     if (resetPlayer) {
         camera_.snapTo(player_.feet());
@@ -103,7 +115,7 @@ void Scene::refreshNavigation() {
     buildNavigation(room_, navigation_);
     if (!navigation_.canStandAt(player_.feet())) {
         if (const auto nearest = findNearestWalkable(room_, navigation_, player_.feet())) {
-            player_ = Player(*nearest);
+            player_ = Player(*nearest, player_.facing());
         }
     }
 }
@@ -111,21 +123,22 @@ void Scene::refreshNavigation() {
 bool Scene::teleportPlayer(const SDL_FPoint position, std::string& error) {
     const auto feet = room_.clampDestination(position);
     if (!navigation_.canStandAt(feet)) { error = "Posicao bloqueada"; return false; }
-    player_ = Player(feet);
+    player_ = Player(feet, player_.facing());
     pendingInteraction_.reset();
     camera_.snapTo(player_.feet());
     error.clear();
     return true;
 }
 
-SDL_FPoint Scene::placePlayerNear(const SDL_FPoint position) {
+SDL_FPoint Scene::placePlayerNear(const SDL_FPoint position,
+                                  const std::optional<Facing> facing) {
     SDL_FPoint feet = room_.clampDestination(position);
     if (!navigation_.canStandAt(feet)) {
         const auto nearest = findNearestWalkable(room_, navigation_, feet);
         if (!nearest) return player_.feet();
         feet = *nearest;
     }
-    player_ = Player(feet);
+    player_ = Player(feet, facing.value_or(player_.facing()));
     pendingInteraction_.reset();
     camera_.snapTo(player_.feet());
     return feet;

@@ -42,8 +42,8 @@ public:
     }
     bool dialogueActive() const override { return game_.dialogue_.active(); }
 
-    void changeRoom(const std::string_view roomId) override {
-        game_.scriptRoomTarget_ = std::string(roomId);
+    void changeRoom(const std::string_view roomId, const std::string_view spawnId) override {
+        game_.scriptRoomTarget_ = RoomChangeRequested{std::string(roomId), std::string(spawnId)};
     }
 
 private:
@@ -63,10 +63,11 @@ void Game::loadRoom(Room room) {
     if (!applyRoom(std::move(room), true, error)) throw std::invalid_argument(error);
 }
 
-bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
+bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error,
+                     const std::string_view spawnId) {
     const bool changingRoom = room.id != scene_.room().id;
     std::string roomId = room.id;
-    if (!scene_.apply(std::move(room), resetPlayer, error)) return false;
+    if (!scene_.apply(std::move(room), resetPlayer, error, spawnId)) return false;
     if (changingRoom) {
         scene_.clearContent();
         // A sequence never crosses rooms: its object references belong to the old one.
@@ -80,7 +81,7 @@ bool Game::applyRoom(Room room, const bool resetPlayer, std::string& error) {
         });
     }
     if (resetPlayer) {
-        emit(RoomEntered{std::move(roomId)});
+        emit(RoomEntered{std::move(roomId), std::string(spawnId)});
     }
     publishCutsceneChange();
     return true;
@@ -121,8 +122,8 @@ bool Game::teleportPlayer(const SDL_FPoint position, std::string& error) {
     return scene_.teleportPlayer(position, error);
 }
 
-SDL_FPoint Game::placePlayerNear(const SDL_FPoint position) {
-    return scene_.placePlayerNear(position);
+SDL_FPoint Game::placePlayerNear(const SDL_FPoint position, const std::optional<Facing> facing) {
+    return scene_.placePlayerNear(position, facing);
 }
 
 bool Game::playObjectAnimation(const std::string_view objectId,
@@ -167,7 +168,7 @@ void Game::settleScript() {
         scene_.refreshNavigation();
     }
     if (!script_.busy() && !dialogue_.active() && scriptRoomTarget_) {
-        emit(RoomChangeRequested{std::move(*scriptRoomTarget_)});
+        emit(std::move(*scriptRoomTarget_));
         scriptRoomTarget_.reset();
     }
     publishCutsceneChange();
@@ -265,7 +266,8 @@ void Game::tick(const float deltaSeconds) {
 bool Game::inCutscene() const { return script_.busy() || dialogue_.active(); }
 
 SavedGame Game::savedGame() const {
-    return {scene_.room().id, scene_.player().feet(), session_.snapshot()};
+    return {scene_.room().id, scene_.player().feet(), session_.snapshot(),
+            scene_.player().facing()};
 }
 
 bool Game::dialogueActive() const { return dialogue_.active(); }

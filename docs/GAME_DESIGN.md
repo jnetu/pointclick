@@ -63,6 +63,7 @@ mensagem e preservam o estado anterior.
 | `solid red_box 0` | Desativa a colisão; `1` reativa |
 | `save minha_sala.room` | Grava a configuração atual na pasta de salas |
 | `load minha_sala.room` | Carrega a sala e usa sua posição inicial |
+| `load minha_sala.room porta_esquerda` | Carrega a sala entrando pelo `[spawn porta_esquerda]` (teste de portas) |
 | `undo` | Desfaz a última edição/carregamento; uma chamada seguinte alterna os dois estados |
 | `reset` | Restaura a sala que estava ativa quando DEBUG foi aberto |
 
@@ -78,6 +79,32 @@ O nome do arquivo é a identidade da sala: `biblioteca.room` precisa ter
 `id = biblioteca` (ou omitir `id`, que então vale o nome do arquivo). É por esse
 nome que `change_room` encontra a sala e que o progresso da partida é guardado;
 um arquivo com `id` diferente do nome é recusado ao carregar.
+
+### Pontos de entrada (`[spawn]`)
+
+Uma sala com várias portas declara um bloco `[spawn <id>]` por entrada, com os pés
+(`feet = x, y`, coordenadas da sala) e a direção para onde o jogador olha ao chegar
+(`facing = left|right|up|down`, opcional, padrão `down`):
+
+```ini
+[spawn porta_esquerda]
+feet = 120, 520
+facing = right
+
+[spawn porta_direita]
+feet = 1150, 450
+facing = left
+```
+
+A regra da porta de outra sala diz por qual entrada chegar:
+`change_room biblioteca porta_esquerda`. Sem o segundo argumento
+(`change_room biblioteca`) o jogador entra em `player.start_x`/`player.start_y`, olhando
+para baixo, como antes. Um spawn fora da sala ou com ID repetido é recusado ao carregar;
+um spawn sobre um obstáculo usa o ponto caminhável mais próximo. Se o spawn pedido não
+existir na sala de destino, a troca inteira é recusada (log) e o jogador fica onde está; o
+teste `testRoomSpawnFilesAndTransitions` confere todos os `change_room` dos assets
+(`RoomLibrary::transitionsError`). O save guarda os pés e a direção, nunca o spawn usado,
+então renomear ou mover spawns não quebra partidas salvas.
 Edite os valores e use `load nome.room` no jogo, sem recompilar. Também é
 possível salvar a sala atual com outro nome e continuar editando essa cópia;
 o `save` grava o `id` do novo nome.
@@ -100,7 +127,9 @@ na imagem, ele desenha um quadriculado roxo e preto no lugar.
 Os clips do jogador ficam **uma vez só** em `assets/actors/player.actor`, e todas as salas
 os herdam. Cada direção tem seu conjunto de valores: `idle`, `left`, `right`, `up` e
 `down`. Esses cinco nomes são usados pelo movimento atual; `idle` é usado quando o
-jogador para. Outras animações podem ser cadastradas com `NOME.file`, `NOME.frames` e os
+jogador para. Clips opcionais `idle_left`, `idle_right`, `idle_up` e `idle_down` substituem
+o `idle` quando o jogador está parado olhando nessa direção (a do último passo ou a do
+`[spawn]` de chegada); sem eles, vale o `idle`. Outras animações podem ser cadastradas com `NOME.file`, `NOME.frames` e os
 mesmos sufixos abaixo, sem alterar o leitor. A regra que aciona uma nova animação ainda
 precisa ser implementada no jogo.
 
@@ -291,12 +320,13 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
 | **Efeito** | `wait <segundos>` | Espera um tempo (ex.: `wait 1.5`, sempre com ponto) |
 | **Efeito** | `start_dialogue <no>` | Abre um nó do `<sala>.dlg` e espera a conversa terminar |
-| **Efeito** | `change_room <roomId>` | Troca para `<roomId>.room` quando a sequência terminar |
+| **Efeito** | `change_room <roomId> [<spawn>]` | Troca para `<roomId>.room` quando a sequência terminar; entra pelo `[spawn]` indicado (sem ele: `player.start_*`) |
 
 A tabela acima espelha o catálogo de ações em `src/game/ActionCatalog.cpp`. Os
 argumentos são validados pelo tipo: identificadores só aceitam letras, números, `_`
 e `-`; `<objeto>` precisa existir na sala; `<animacao>` precisa existir no objeto;
-`"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`. Um erro aponta a linha
+`"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`. Argumentos entre colchetes
+na tabela são opcionais e só podem faltar no fim. Um erro aponta a linha
 e a forma esperada (por exemplo, `Linha 4: Use set_solid <objeto> <0|1>`).
 
 ### Sequências e cutscenes

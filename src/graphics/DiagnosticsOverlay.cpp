@@ -75,7 +75,8 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     case PlayerPose::up: poseName = "up"; break;
     case PlayerPose::down: poseName = "down"; break;
     }
-    const SpriteClip* clip = findAnimation(room.playerAnimations, scene.player().animationName());
+    const SpriteClip* clip = findAnimation(room.playerAnimations,
+                                          playerClipName(scene.player(), room.playerAnimations));
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 172.0F,
                               "anim: %s  frame: %d/%d", poseName,
                               clip ? clip->frameAt(scene.player().animationTime()) + 1 : 0,

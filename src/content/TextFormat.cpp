@@ -106,9 +106,14 @@ std::string TextFormat::readArguments(const std::string_view keyword,
                                       const std::string_view text,
                                       std::vector<std::string>& args) {
     std::size_t pos = 0;
-    for (const ArgType type : signature.view()) {
+    const auto signatureTypes = signature.view();
+    for (std::size_t index = 0; index < signatureTypes.size(); ++index) {
+        const ArgType type = signatureTypes[index];
         skipSpaces(text, pos);
-        if (pos >= text.size()) return actionUsage(keyword, signature);
+        if (pos >= text.size()) {
+            if (index >= signature.required) return {}; // optional tail left out
+            return actionUsage(keyword, signature);
+        }
         std::string token;
         if (type == ArgType::text) {
             if (text[pos] != '"') return actionUsage(keyword, signature);

@@ -42,7 +42,8 @@ int Application::run() {
     return 0;
 }
 
-bool Application::loadRoomWithRules(const std::string_view roomFilename) {
+bool Application::loadRoomWithRules(const std::string_view roomFilename,
+                                    const std::string_view spawnId) {
     RoomBundleResult loaded = library_.loadBundle(roomFilename);
     if (!loaded.bundle) {
         SDL_Log("Could not load room %.*s: %s", static_cast<int>(roomFilename.size()),
@@ -52,7 +53,7 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename) {
     if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr);
     std::string error;
     Game& game = gameplay_->game;
-    if (!game.applyRoom(std::move(loaded.bundle->room), true, error)
+    if (!game.applyRoom(std::move(loaded.bundle->room), true, error, spawnId)
         || !game.setInteractions(std::move(loaded.bundle->interactions), error)
         || !game.setDialogues(std::move(loaded.bundle->dialogues), error)) {
         SDL_Log("Could not apply room: %s", error.c_str());
@@ -82,7 +83,7 @@ bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
         SDL_Log("Could not apply room: %s", error.c_str());
         return false;
     }
-    if (save) (void)game.placePlayerNear(save->feet);
+    if (save) (void)game.placePlayerNear(save->feet, save->facing);
     gameplay_ = std::move(gameplay);
     inputRouter_.addUiConsumer(&gameplay_->dialogueMenu);
     return true;
@@ -91,6 +92,10 @@ bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
 bool Application::resumeSavedGame() {
     if (savePath_.empty()) return false;
     ResumeResult resumed = SaveFiles::resume(savePath_, library_);
+    if (!resumed.warning.empty()) {
+        SDL_Log("The saved room did not load, resuming the progress in %s: %s",
+                resumed.bundle->room.id.c_str(), resumed.warning.c_str());
+    }
     if (!resumed.save) {
         if (!resumed.error.empty()) {
             SDL_Log("Ignoring the save (kept as %s.bad), starting a new game: %s",
@@ -108,11 +113,11 @@ bool Application::resumeSavedGame() {
 
 void Application::processGameEvents() {
     gameplay_->game.drainEvents(gameEvents_);
-    const std::string* nextRoomId = nullptr;
+    const RoomChangeRequested* nextRoom = nullptr;
     bool stablePoint = false;
     for (const GameEvent& event : gameEvents_) {
         if (const auto* change = std::get_if<RoomChangeRequested>(&event)) {
-            nextRoomId = &change->roomId; // several in one drain: the last request wins
+            nextRoom = change; // several in one drain: the last request wins
         } else if (std::holds_alternative<RoomEntered>(event)
                    || std::holds_alternative<CutsceneEnded>(event)) {
             stablePoint = true;
@@ -120,11 +125,13 @@ void Application::processGameEvents() {
         // LineSpoken and CutsceneStarted have no shell consumer yet (audio, fades, subtitles).
     }
     // A pending room change is not a stable point yet: its RoomEntered will be.
-    const bool loadingRoom = nextRoomId && validIdentifier(*nextRoomId);
-    if (nextRoomId && !loadingRoom) {
-        SDL_Log("Invalid room transition target: %s", nextRoomId->c_str());
+    const bool loadingRoom = nextRoom && validIdentifier(nextRoom->roomId)
+                             && (nextRoom->spawnId.empty() || validIdentifier(nextRoom->spawnId));
+    if (nextRoom && !loadingRoom) {
+        SDL_Log("Invalid room transition target: %s %s", nextRoom->roomId.c_str(),
+                nextRoom->spawnId.c_str());
     }
-    if (loadingRoom && loadRoomWithRules(*nextRoomId + ".room")) return;
+    if (loadingRoom && loadRoomWithRules(nextRoom->roomId + ".room", nextRoom->spawnId)) return;
     if (stablePoint) autosave_.capture(gameplay_->game);
 }
 
@@ -206,7 +213,7 @@ bool Application::initialize() {
     if (std::string error; (savePath_ = SaveFiles::defaultSlot(error)).empty()) {
         SDL_Log("No writable folder for saves, playing without them: %s", error.c_str());
     }
-    if (!resumeSavedGame() && !loadRoomWithRules("first.room")) {
+    if (!resumeSavedGame() && !loadRoomWithRules(RoomLibrary::startRoomFile)) {
         return false;
     }
     autosave_.capture(gameplay_->game);

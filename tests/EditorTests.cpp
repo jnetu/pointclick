@@ -1237,7 +1237,8 @@ std::string sampleArgument(const ArgType type) {
     case ArgType::itemId:
     case ArgType::flagId:
     case ArgType::roomId:
-    case ArgType::dialogueId: return "sample_id";
+    case ArgType::dialogueId:
+    case ArgType::spawnId: return "sample_id";
     }
     return {};
 }
@@ -1372,6 +1373,115 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     assert(ActorFiles::parse("idle.colour = 1").error
            == "Linha 1: Chave ou valor invalido: idle.colour");
 }
+
+// [spawn <id>] in .room (feet + facing) round-trips; change_room takes an optional spawn; the
+// content check finds rooms and spawns that a change_room names but that do not exist.
+void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
+    const auto rooms = directory / "spawn" / "rooms";
+    std::filesystem::create_directories(rooms);
+    std::filesystem::create_directories(directory / "spawn" / "actors");
+    std::filesystem::copy_file(std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                               / "assets/actors/player.actor",
+                               directory / "spawn" / "actors" / "player.actor");
+    const auto write = [&](const std::string& name, const std::string& text) {
+        std::ofstream(rooms / name, std::ios::binary) << text;
+    };
+    write("hall.room", "[room]\nid = hall\n"
+                       "[spawn door_left] # porta da esquerda\nfeet = 120, 520\nfacing = right\n"
+                       "[spawn door_right]\nfeet = 1150.5, 450\n");
+    RoomLibrary library = openLibrary(rooms);
+    const RoomLoadResult hall = RoomFiles::load(rooms / "hall.room", sharedPlayerArt());
+    assert(hall.room && hall.error.empty());
+    assert(hall.room->spawns.size() == 2);
+    assert(hall.room->spawns[0] == (RoomSpawn{"door_left", {120.0F, 520.0F}, Facing::right}));
+    assert(hall.room->spawns[1] == (RoomSpawn{"door_right", {1150.5F, 450.0F}, Facing::down}));
+
+    std::string error;
+    assert(RoomFiles::save(rooms / "copy.room", *hall.room, error, sharedPlayerArt()));
+    std::ifstream savedFile(rooms / "copy.room");
+    const std::string saved((std::istreambuf_iterator<char>(savedFile)), {});
+    assert(saved.find("[spawn door_left]\nfeet = 120, 520\nfacing = right\n") != std::string::npos);
+    const RoomLoadResult copy = RoomFiles::load(rooms / "copy.room", sharedPlayerArt());
+    assert(copy.room && copy.room->spawns == hall.room->spawns);
+
+    const auto errorOf = [&](const std::string& text) {
+        write("bad.room", text);
+        const RoomLoadResult result = RoomFiles::load(rooms / "bad.room", sharedPlayerArt());
+        assert(!result.room);
+        return result.error;
+    };
+    assert(errorOf("[spawn a]\nfacing = up\n") == "Spawn sem feet: a");
+    assert(errorOf("[spawn a]\nfeet = 1, 2\nfacing = norte\n")
+           == "Linha 3: Chave ou valor invalido: facing");
+    assert(errorOf("[spawn a]\nfeet = 1\n") == "Linha 2: Chave ou valor invalido: feet");
+    assert(errorOf("[spawn a]\nfeet = 1, 2\nbounds = 1, 2, 3, 4\n")
+           == "Linha 3: Chave ou valor invalido: bounds");
+    assert(errorOf("[spawn a]\nfeet = 1, 2\n[spawn a]\nfeet = 3, 4\n")
+           == "Linha 4: Chave repetida: feet");
+    assert(errorOf("[spawn a b]\nfeet = 1, 2\n") == "ID de spawn invalido ou repetido");
+    assert(errorOf("[spawn a]\nfeet = 1300, 2\n") == "Spawn fora da sala: a");
+    // A [spawn] in the middle does not swallow the room keys after a [room] header.
+    write("mixed.room", "[spawn a]\nfeet = 1, 400\n[room]\nplayer.far_speed = 99\n");
+    const RoomLoadResult mixed = RoomFiles::load(rooms / "mixed.room", sharedPlayerArt());
+    assert(mixed.room && mixed.room->playerFarSpeed == 99.0F);
+
+    // change_room <sala> [<spawn>]: one or two arguments, never three.
+    const auto rulesOf = [](const std::string_view statement) {
+        return InteractionFiles::parse("[interact x]\n" + std::string(statement) + "\n", nullptr);
+    };
+    const auto plain = rulesOf("change_room hall");
+    assert(plain.interactions && plain.interactions->rules[0].effects[0].args.size() == 1);
+    const auto spawned = rulesOf("change_room hall door_left # porta");
+    assert(spawned.interactions);
+    assert(spawned.interactions->rules[0].effects[0].args
+           == (std::vector<std::string>{"hall", "door_left"}));
+    assert(rulesOf("change_room hall door_left extra").error
+           == "Linha 2: Use change_room <sala> [<spawn>]");
+    assert(rulesOf("change_room").error == "Linha 2: Use change_room <sala> [<spawn>]");
+    assert(rulesOf("change_room hall porta!").error == "Linha 2: Identificador invalido: porta!");
+    const auto path = rooms / "spawned.rules";
+    assert(InteractionFiles::save(path, *spawned.interactions, error, nullptr));
+    std::ifstream rulesFile(path);
+    const std::string rulesText((std::istreambuf_iterator<char>(rulesFile)), {});
+    assert(rulesText.find("change_room hall door_left\n") != std::string::npos);
+
+    // Content check over a bundle's transitions (rules and dialogue choices).
+    RoomBundle bundle{*hall.room, *spawned.interactions, {}};
+    assert(library.transitionsError(bundle).empty());
+    bundle.interactions.rules[0].effects[0].args[1] = "window";
+    assert(library.transitionsError(bundle) == "change_room hall: spawn desconhecido window");
+    bundle.interactions = *plain.interactions;
+    bundle.interactions.rules[0].effects[0].args[0] = "nowhere";
+    assert(library.transitionsError(bundle).starts_with("change_room nowhere: "));
+    bundle.interactions.rules.clear();
+    DialogueChoice leave{.id = "sair", .text = "Sair"};
+    leave.effects = {InteractionEffect::make("change_room", {"hall", "porta"})};
+    bundle.dialogues.nodes = {DialogueNode{.id = "guarda", .lines = {}, .choices = {leave}}};
+    assert(library.transitionsError(bundle) == "change_room hall: spawn desconhecido porta");
+
+    // DEBUG `load <sala>.room [spawn]` enters through the spawn; an unknown one changes nothing.
+    Game game(RoomPresets::firstRoom());
+    DebugEditor editor;
+    editor.setLibrary(library);
+    assert(editor.onTextInput("DEBUG", game) && editor.active());
+    command(editor, game, "load hall.room door_left");
+    assert(editor.status() == "Sala carregada: hall.room em door_left");
+    assert(game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right);
+    command(editor, game, "load first.room porta!");
+    assert(editor.status() == "Use: load nome.room [spawn] (sem pastas)");
+    command(editor, game, "load hall.room window");
+    assert(editor.status() == "Spawn desconhecido na sala hall: window");
+    assert(game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right);
+    command(editor, game, "save hall2.room extra");
+    assert(editor.status() == "Use: save nome.room (sem pastas)");
+
+    // The shipped rooms: every change_room points at a room and spawn that exist.
+    RoomLibrary assets = openLibrary(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms");
+    for (const char* name : {"first.room", "gallery.room"}) {
+        const RoomBundleResult shipped = assets.loadBundle(name);
+        assert(shipped.bundle && assets.transitionsError(*shipped.bundle).empty());
+    }
+}
 }
 
 int main() {
@@ -1390,5 +1500,6 @@ int main() {
     testDialogueMenuInput();
     testTypedTextNeverBecomesSpeech();
     testRoomLibraryAndActors(directory);
+    testRoomSpawnFilesAndTransitions(directory);
     std::filesystem::remove_all(directory);
 }

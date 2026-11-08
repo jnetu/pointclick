@@ -26,6 +26,7 @@ enum class ArgType : std::uint8_t {
     boolean,   // stored canonically as "0" or "1"
     number,    // seconds or other non-negative decimal, '.' separator
     dialogueId, // node of the room's .dlg; cross-checked by dialogueReferencesError
+    spawnId,    // `[spawn]` of another room; checked when that room is entered
 };
 
 [[nodiscard]] std::string_view argPlaceholder(ArgType type);
@@ -35,14 +36,24 @@ struct ArgSignature {
 
     std::array<ArgType, capacity> types{};
     std::size_t count = 0;
+    // Arguments after the first `required` ones may be left out (only at the end).
+    std::size_t required = 0;
 
     constexpr ArgSignature(const std::initializer_list<ArgType> list) {
         for (const ArgType type : list) {
             types[count++] = type; // Over capacity fails constant evaluation of the catalog.
         }
+        required = count;
+    }
+    constexpr ArgSignature(const std::initializer_list<ArgType> list, const std::size_t minimum)
+            : ArgSignature(list) {
+        required = minimum < count ? minimum : count;
     }
 
     [[nodiscard]] constexpr std::span<const ArgType> view() const { return {types.data(), count}; }
+    [[nodiscard]] constexpr bool accepts(const std::size_t given) const {
+        return given >= required && given <= count;
+    }
 };
 
 using ActionArgs = std::span<const std::string>;
@@ -85,7 +96,7 @@ struct ConditionDescriptor {
 [[nodiscard]] const ConditionDescriptor* findCondition(std::string_view keyword);
 [[nodiscard]] bool parseNumberArgument(std::string_view text, float& value);
 
-// "Use set_solid <objeto> <0|1>", generated from the signature.
+// "Use set_solid <objeto> <0|1>" or "Use change_room <sala> [<spawn>]", from the signature.
 [[nodiscard]] std::string actionUsage(std::string_view keyword, const ArgSignature& signature);
 
 // Shared by the file parser (with line numbers) and rule validation. Empty means valid.

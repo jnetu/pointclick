@@ -9,14 +9,18 @@
 // those systems.
 // A new kind of notification = one struct here + one emit point in Game.
 
-// A load (spawn at playerStart) committed; live DebugEditor edits do not emit it.
+// A load committed, the player at the room's entry point (spawnId, or playerStart when
+// empty); live DebugEditor edits do not emit it.
 struct RoomEntered {
     std::string roomId;
+    std::string spawnId;
 };
 
-// A finished script asked for another room. Application validates and loads <roomId>.room.
+// A finished script asked for another room (change_room <room> [spawn]). Application validates
+// and loads <roomId>.room with the player at spawnId (empty = playerStart).
 struct RoomChangeRequested {
     std::string roomId;
+    std::string spawnId;
 };
 
 // A scripted line started (subtitles, voice-over, dialogue log).

@@ -2,14 +2,29 @@
 
 #include "game/SceneObject.hpp"
 #include "game/Animation.hpp"
+#include "game/Facing.hpp"
 #include "game/World.hpp"
 
 #include <SDL3/SDL_rect.h>
 
 #include <array>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
+
+// A named way into the room (`[spawn <id>]`): change_room <room> <id> places the feet here,
+// looking at `facing`. Without a spawn id the player enters at playerStart looking down.
+struct RoomSpawn {
+    std::string id;
+    SDL_FPoint feet{};
+    Facing facing = Facing::down;
+
+    bool operator==(const RoomSpawn& other) const {
+        return id == other.id && feet.x == other.feet.x && feet.y == other.feet.y
+               && facing == other.facing;
+    }
+};
 
 // Room definition only. Content supplies player art defaults when loading files.
 // Pixel values always use logical world units; the camera viewport is World::width x World::height.
@@ -39,6 +54,7 @@ struct Room {
     std::array<float, 4> floorGuideFractions{0.18F, 0.38F, 0.62F, 0.85F};
     // Player tuning for this room; the live position belongs to Player.
     SDL_FPoint playerStart{640.0F, 360.0F};
+    std::vector<RoomSpawn> spawns;
     SDL_FPoint playerBaseSize{48.0F, 80.0F};
     float playerFarSpeed = 110.0F;
     float playerNearSpeed = 330.0F;
@@ -55,6 +71,9 @@ struct Room {
     [[nodiscard]] SDL_FPoint clampDestination(SDL_FPoint point) const;
     // Single lookup by stable ID; never address objects by vector position.
     [[nodiscard]] const SceneObject* findObject(std::string_view objectId) const;
+    [[nodiscard]] const RoomSpawn* findSpawn(std::string_view spawnId) const;
+    // The entry for change_room: empty id = playerStart facing down; unknown id = nullopt.
+    [[nodiscard]] std::optional<RoomSpawn> entryPoint(std::string_view spawnId) const;
 
     // Empty means valid. Invalid designer data must never enter the simulation.
     [[nodiscard]] std::string validationError() const;

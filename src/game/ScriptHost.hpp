@@ -32,6 +32,7 @@ public:
     // True from startDialogue until the conversation ends (including while choosing).
     [[nodiscard]] virtual bool dialogueActive() const = 0;
 
-    // Applied when the script ends, so later steps still run in the current room.
-    virtual void changeRoom(std::string_view roomId) = 0;
+    // Applied when the script ends, so later steps still run in the current room. spawnId names
+    // a `[spawn]` of the target room; empty = its playerStart.
+    virtual void changeRoom(std::string_view roomId, std::string_view spawnId) = 0;
 };

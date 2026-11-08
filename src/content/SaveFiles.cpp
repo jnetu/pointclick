@@ -115,6 +115,10 @@ SaveLoadResult SaveFiles::parse(const std::string_view text) {
             parsed = hasRoom = validIdentifier(value);
         } else if (key == "feet") {
             parsed = hasFeet = parsePoint(value, save.feet);
+        } else if (key == "facing" && *version >= 2) {
+            const auto facing = parseFacing(value);
+            parsed = facing.has_value();
+            if (parsed) save.facing = *facing;
         } else if (key.starts_with("flag.")) {
             SessionSnapshot::Flag flag{key.substr(5), 0};
             parsed = validIdentifier(flag.id) && parseInteger(value, flag.value)
@@ -180,7 +184,8 @@ std::string SaveFiles::serialize(const SavedGame& save) {
     out << "# PointClick: progresso da partida (gerado pelo jogo)\n"
         << "version = " << currentVersion << '\n'
         << "room = " << save.roomId << '\n'
-        << "feet = " << save.feet.x << ", " << save.feet.y << '\n';
+        << "feet = " << save.feet.x << ", " << save.feet.y << '\n'
+        << "facing = " << facingName(save.facing) << '\n';
     // Sorted like snapshot(), whatever order the caller built the lists in.
     SessionSnapshot session = save.session;
     std::sort(session.flags.begin(), session.flags.end(),
@@ -256,7 +261,8 @@ std::filesystem::path SaveFiles::defaultSlot(std::string& error) {
     return std::filesystem::path(utf8) / slotName;
 }
 
-ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibrary& library) {
+ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibrary& library,
+                               const std::string_view fallbackRoom) {
     ResumeResult out;
     SaveLoadResult loaded = load(path);
     if (loaded.save) {
@@ -266,7 +272,19 @@ ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibr
             out.bundle = std::move(room.bundle);
             return out;
         }
-        out.error = "Sala " + loaded.save->roomId + ": " + room.error;
+        std::string reason = "Sala " + loaded.save->roomId + ": " + room.error;
+        RoomBundleResult start = library.loadBundle(fallbackRoom);
+        if (start.bundle) {
+            // The feet belonged to the other room: enter the start room as a new game would.
+            loaded.save->roomId = start.bundle->room.id;
+            loaded.save->feet = start.bundle->room.playerStart;
+            loaded.save->facing = Facing::down;
+            out.save = std::move(loaded.save);
+            out.bundle = std::move(start.bundle);
+            out.warning = std::move(reason);
+            return out;
+        }
+        out.error = reason + "; " + std::string(fallbackRoom) + ": " + start.error;
     } else if (loaded.error.empty()) {
         return out; // no save yet
     } else {

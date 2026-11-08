@@ -40,7 +40,8 @@ private:
     void submit(Game& game);
     bool commit(Game& game, Room room, bool resetPlayer = false,
                 std::optional<RoomInteractions> nextInteractions = std::nullopt,
-                std::optional<RoomDialogues> nextDialogues = std::nullopt);
+                std::optional<RoomDialogues> nextDialogues = std::nullopt,
+                std::string_view spawnId = {});
     void setParameter(Game& game, std::string_view key, float value);
 
     bool active_ = false;

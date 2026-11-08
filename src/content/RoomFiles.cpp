@@ -10,6 +10,7 @@
 #include <iomanip>
 #include <limits>
 #include <locale>
+#include <optional>
 #include <set>
 #include <sstream>
 
@@ -46,6 +47,13 @@ bool parseColor(const std::string& text, SDL_Color& color) {
     return true;
 }
 
+bool parsePoint(const std::string& text, SDL_FPoint& point) {
+    float values[2];
+    if (!numbers(text, values)) return false;
+    point = {values[0], values[1]};
+    return true;
+}
+
 bool parseRect(const std::string& text, SDL_FRect& rect) {
     float values[4];
     if (!numbers(text, values)) return false;
@@ -75,6 +83,8 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     room.id = pathToUtf8(path.stem());
     if (inheritedPlayerArt) room.playerAnimations = *inheritedPlayerArt;
     SceneObject* object = nullptr;
+    // Index, not pointer: spawns is a vector that grows with each [spawn] header.
+    std::optional<std::size_t> spawn;
     std::string section = "room";
     std::set<std::string> keys;
     std::size_t lineNumber = 0;
@@ -85,8 +95,17 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         ++lineNumber;
         line = trim(line.substr(0, line.find('#')));
         if (line.empty()) continue;
-        if (line == "[room]") { object = nullptr; section = "room"; continue; }
+        if (line == "[room]") { object = nullptr; spawn.reset(); section = "room"; continue; }
+        if (line.starts_with("[spawn ") && line.ends_with(']')) {
+            const auto id = trim(line.substr(7, line.size() - 8));
+            object = nullptr;
+            spawn = room.spawns.size();
+            room.spawns.push_back({id, {}, Facing::down});
+            section = "spawn." + id;
+            continue;
+        }
         if (line.starts_with("[object ") && line.ends_with(']')) {
+            spawn.reset();
             const auto id = trim(line.substr(8, line.size() - 9));
             room.scenery.push_back({{}, {180, 180, 180, 255}, SceneObjectType::decoration,
                                     {}, id, {}, "idle"});
@@ -104,7 +123,16 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
             return fail("Chave repetida: " + key);
         }
         bool parsed = false;
-        if (object) {
+        if (spawn) {
+            RoomSpawn& target = room.spawns[*spawn];
+            if (key == "feet") {
+                parsed = parsePoint(value, target.feet);
+            } else if (key == "facing") {
+                const auto facing = parseFacing(value);
+                parsed = facing.has_value();
+                if (parsed) target.facing = *facing;
+            }
+        } else if (object) {
             if (key == "bounds") parsed = parseRect(value, object->bounds);
             else if (key == "collision") parsed = parseRect(value, object->collisionFootprint);
             else if (key == "color") parsed = parseColor(value, object->color);
@@ -146,6 +174,11 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         if (!parsed) return fail("Chave ou valor invalido: " + key);
     }
     if (input.bad()) return {{}, "Falha de leitura"};
+    for (const RoomSpawn& entry : room.spawns) {
+        if (!keys.contains("spawn." + entry.id + ":feet")) {
+            return {{}, "Spawn sem feet: " + entry.id};
+        }
+    }
     if (const auto error = room.validationError(); !error.empty()) return {{}, error};
     return {std::move(room), {}};
 }
@@ -176,6 +209,10 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
         out << (i == 0 ? "" : ", ") << room.floorGuideFractions[i];
     }
     out << '\n';
+    for (const RoomSpawn& entry : room.spawns) {
+        out << "\n[spawn " << entry.id << "]\nfeet = " << entry.feet.x << ", " << entry.feet.y
+            << "\nfacing = " << facingName(entry.facing) << '\n';
+    }
     for (const auto& object : room.scenery) {
         out << "\n[object " << object.id << "]\nbounds = "; writeRect(out, object.bounds);
         out << "color = "; writeColor(out, object.color);

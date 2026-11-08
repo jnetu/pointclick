@@ -816,6 +816,75 @@ void testDialogueWithChoices() {
 
 // Game reports outward through GameEvent: loads, lines, cutscene edges and room requests, in
 // the order they happened. Live edits stay silent and a room change drops stale requests.
+// change_room <room> <spawn>: the request carries the spawn, the load places the feet and the
+// facing there, and an unknown spawn refuses the whole load (nothing changes).
+void testRoomSpawns() {
+    Room hall = RoomPresets::firstRoom();
+    hall.id = "hall";
+    hall.spawns = {{"door_left", {120.0F, 520.0F}, Facing::right},
+                   {"door_right", {1150.0F, 450.0F}, Facing::left}};
+    hall.playerAnimations["idle_left"] = hall.playerAnimations.at("idle");
+    assert(hall.validationError().empty());
+    assert(hall.entryPoint("")->feet.x == hall.playerStart.x);
+    assert(hall.entryPoint("door_right")->facing == Facing::left);
+    assert(!hall.entryPoint("window"));
+
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {InteractionEffect::make("change_room", {"hall", "door_right"})},
+    }}});
+    std::vector<GameEvent> drained;
+    game.drainEvents(drained);
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && game.pendingEvents().empty(); ++i) game.tick(0.05F);
+    const auto* request = std::get_if<RoomChangeRequested>(&game.pendingEvents().front());
+    assert(request && request->roomId == "hall" && request->spawnId == "door_right");
+    game.drainEvents(drained);
+
+    std::string error;
+    const SDL_FPoint before = game.scene().player().feet();
+    assert(!game.applyRoom(hall, true, error, "window"));
+    assert(error == "Spawn desconhecido na sala hall: window");
+    assert(game.scene().room().id == "first" && game.pendingEvents().empty());
+    assert(near(game.scene().player().feet().x, before.x));
+
+    assert(game.applyRoom(hall, true, error, "door_right"));
+    assert(near(game.scene().player().feet().x, 1150.0F));
+    assert(near(game.scene().player().feet().y, 450.0F));
+    assert(game.scene().player().facing() == Facing::left);
+    const auto& entered = std::get<RoomEntered>(game.pendingEvents().back());
+    assert(entered.roomId == "hall" && entered.spawnId == "door_right");
+    // Standing still: idle_<facing> when the room has it, idle otherwise.
+    assert(playerClipName(game.scene().player(), hall.playerAnimations) == "idle_left");
+
+    // A live edit keeps feet and facing; another load without spawn uses playerStart.
+    Room edited = hall;
+    edited.playerFarSpeed += 5.0F;
+    assert(game.applyRoom(edited, false, error));
+    assert(game.scene().player().facing() == Facing::left);
+    assert(game.applyRoom(hall, true, error, "door_left"));
+    assert(game.scene().player().facing() == Facing::right);
+    assert(playerClipName(game.scene().player(), hall.playerAnimations) == "idle");
+    assert(game.applyRoom(hall, true, error));
+    assert(near(game.scene().player().feet().x, hall.playerStart.x));
+    assert(game.scene().player().facing() == Facing::down);
+
+    // A spawn on an obstacle falls back to the nearest walkable point, like playerStart.
+    Room blocked = hall;
+    blocked.spawns = {{"inside_box", {865.0F, 573.0F}, Facing::up}};
+    assert(game.applyRoom(blocked, true, error, "inside_box"));
+    assert(game.scene().navigation().canStandAt(game.scene().player().feet()));
+
+    // Invalid spawns never enter the simulation.
+    Room invalid = hall;
+    invalid.spawns.push_back({"door_left", {10.0F, 500.0F}, Facing::up});
+    assert(invalid.validationError() == "ID de spawn invalido ou repetido");
+    invalid.spawns = {{"far", {hall.width + 5.0F, 500.0F}, Facing::up}};
+    assert(invalid.validationError() == "Spawn fora da sala: far");
+}
+
 void testGameEventQueue() {
     Room room = RoomPresets::firstRoom();
     Game game(room);
@@ -972,7 +1041,8 @@ void testSaveRoundTrip(const std::filesystem::path& directory) {
     assert(SaveFiles::save(path, saved, error));
     assert(!std::filesystem::exists(directory / "save.slot.tmp"));
     const std::string firstWrite = readAll(path);
-    assert(firstWrite.find("version = 1\n") != std::string::npos);
+    assert(firstWrite.find("version = 2\n") != std::string::npos);
+    assert(firstWrite.find("facing = down\n") != std::string::npos);
     assert(firstWrite.find("object.first.red_box.visible = 0\n") != std::string::npos);
     assert(firstWrite.find("dialogue = gallery/mesa/gavetas\n") != std::string::npos);
     assert(firstWrite.find("cofre") == std::string::npos);
@@ -1064,6 +1134,42 @@ void testSaveRestoresPuzzleProgress(const std::filesystem::path& directory) {
     assert(!near(fallback.x, behindLock.x) || !near(fallback.y, behindLock.y));
 }
 
+// Version 2 adds the facing; version 1 files keep loading (facing down) and cannot carry it.
+void testSaveFacingAndOlderVersions(const std::filesystem::path& directory) {
+    SavedGame saved{"gallery", {300.0F, 500.0F}, {}};
+    saved.facing = Facing::left;
+    const std::string text = SaveFiles::serialize(saved);
+    assert(text.find("version = 2\nroom = gallery\nfeet = 300, 500\nfacing = left\n")
+           != std::string::npos);
+    const SaveLoadResult parsed = SaveFiles::parse(text);
+    assert(parsed.save && *parsed.save == saved);
+
+    const SaveLoadResult older = SaveFiles::parse("version = 1\nroom = first\nfeet = 10, 20\n"
+                                                  "item = chave\n");
+    assert(older.save && older.save->facing == Facing::down);
+    assert(older.save->session.items == std::vector<std::string>{"chave"});
+    assert(!SaveFiles::parse("version = 1\nroom = first\nfeet = 10, 20\nfacing = up\n").save);
+    assert(SaveFiles::parse("version = 2\nroom = first\nfeet = 10, 20\n").save); // optional
+    assert(SaveFiles::parse("version = 2\nroom = first\nfeet = 1, 2\nfacing = norte\n").error
+           == "Linha 4: Chave ou valor invalido: facing");
+
+    // The resumed player looks where it looked; saving it again gives the same bytes.
+    Game game(RoomPresets::firstRoom());
+    game.onClick({300.0F, 360.0F}); // walk left
+    for (int i = 0; i < 200 && game.scene().player().moving(); ++i) game.tick(0.05F);
+    assert(game.scene().player().facing() == Facing::left);
+    const auto path = directory / "facing.slot";
+    std::string error;
+    assert(SaveFiles::save(path, game.savedGame(), error));
+    const SaveLoadResult loaded = SaveFiles::load(path);
+    assert(loaded.save && loaded.save->facing == Facing::left);
+    Game resumed(RoomPresets::firstRoom());
+    assert(resumed.scene().player().facing() == Facing::down);
+    (void)resumed.placePlayerNear(loaded.save->feet, loaded.save->facing);
+    assert(resumed.scene().player().facing() == Facing::left);
+    assert(resumed.savedGame() == *loaded.save);
+}
+
 void testBadSaveFiles(const std::filesystem::path& directory) {
     const auto errorOf = [](const std::string_view text) {
         const SaveLoadResult result = SaveFiles::parse(text);
@@ -1074,7 +1180,7 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(SaveFiles::parse(header + "# ok\nflag.a = -2\n").save);
     assert(errorOf("") == "Save vazio ou sem version");
     assert(errorOf("# so comentario\n") == "Save vazio ou sem version");
-    assert(errorOf("version = 2\nroom = first\n") == "Linha 1: Versao de save desconhecida: 2");
+    assert(errorOf("version = 3\nroom = first\n") == "Linha 1: Versao de save desconhecida: 3");
     assert(errorOf("version = 0\n") == "Linha 1: Versao de save desconhecida: 0");
     assert(errorOf("room = first\nversion = 1\n") == "Linha 1: A primeira chave deve ser version");
     assert(errorOf(header + "camera = 1, 2\n") == "Linha 4: Chave desconhecida: camera");
@@ -1104,7 +1210,8 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(!session.restore(invalid, error) && error == "Item invalido: nao ok");
     assert(session.hasItem("chave") && !session.hasItem("ok"));
 
-    // Boot: missing = new game quietly; refused = new game, the file kept as .bad.
+    // Boot: missing = new game quietly; refused = new game, the file kept as .bad; a room that
+    // no longer loads keeps the progress in the start room.
     const auto rooms = directory / "save-rooms";
     std::filesystem::create_directories(rooms);
     assert(RoomFiles::save(rooms / "first.room", RoomPresets::firstRoom(), error));
@@ -1114,9 +1221,25 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     ResumeResult none = SaveFiles::resume(slot, library);
     assert(!none.save && none.error.empty());
 
+    std::ofstream(slot) << "version = 2\nroom = sumida\nfeet = 10, 20\nfacing = up\n"
+                           "flag.porta = 1\nitem = chave\nobject.sumida.cofre.visible = 0\n";
+    ResumeResult moved = SaveFiles::resume(slot, library);
+    assert(moved.save && moved.bundle && moved.error.empty());
+    assert(moved.warning.starts_with("Sala sumida: "));
+    assert(moved.bundle->room.id == "first" && moved.save->roomId == "first");
+    const Room start = RoomPresets::firstRoom();
+    assert(moved.save->feet.x == start.playerStart.x && moved.save->feet.y == start.playerStart.y);
+    assert(moved.save->facing == Facing::down);
+    assert(moved.save->session.items == std::vector<std::string>{"chave"});
+    assert(moved.save->session.flags.size() == 1 && moved.save->session.objects.size() == 1);
+    assert(std::filesystem::exists(slot) && !std::filesystem::exists(directory / "boot.slot.bad"));
+
+    // Refused only when the start room does not load either.
     std::ofstream(slot) << "version = 1\nroom = sumida\nfeet = 10, 20\n";
-    ResumeResult gone = SaveFiles::resume(slot, library);
-    assert(!gone.save && !gone.bundle && gone.error.starts_with("Sala sumida: "));
+    ResumeResult gone = SaveFiles::resume(slot, library, "inexistente.room");
+    assert(!gone.save && !gone.bundle && gone.warning.empty());
+    assert(gone.error.starts_with("Sala sumida: ") && gone.error.find("; inexistente.room: ")
+                                                      != std::string::npos);
     assert(!std::filesystem::exists(slot));
     assert(readAll(directory / "boot.slot.bad").find("room = sumida") != std::string::npos);
 
@@ -1228,6 +1351,7 @@ int main() {
     testScriptedSequenceAndCutscene();
     testDialogueWithChoices();
     testGameEventQueue();
+    testRoomSpawns();
     testNearestReachableInLargeRoom();
     testCameraTargetFor();
 
@@ -1237,6 +1361,7 @@ int main() {
     std::filesystem::create_directory(directory);
     testSaveRoundTrip(directory);
     testSaveRestoresPuzzleProgress(directory);
+    testSaveFacingAndOlderVersions(directory);
     testBadSaveFiles(directory);
     testAtomicSaveFailureKeepsPrevious(directory);
     testAutosavePolicy();

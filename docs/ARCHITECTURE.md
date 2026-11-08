@@ -133,7 +133,11 @@ companheiro opcional `<sala>.rules` via `InteractionFiles::loadOptionalForRoom`.
 A aplicação carrega `first.room` (e `first.rules`, se existir) da pasta indicada
 por `--rooms` na inicialização. Depois de cada tick, `Application::processGameEvents`
 esvazia a fila do `Game` e carrega a sala de um `RoomChangeRequested` (emitido quando
-uma sequência com `change_room <roomId>` termina).
+uma sequência com `change_room <roomId> [<spawn>]` termina), com os pés no `[spawn]` pedido
+(`Room::entryPoint`; vazio = `playerStart`). `Scene::apply` resolve o spawn antes de mexer em
+qualquer estado: spawn desconhecido recusa a carga inteira. Spawns de outras salas não são
+conferidos a cada troca (exigiria ler as vizinhas); `RoomLibrary::transitionsError` faz essa
+checagem cruzada como verificação de conteúdo (testes; um futuro manifesto no boot).
 
 A leitura de `.room` e `.rules` usa `SDL_IOFromFile` e `SDL_LoadFile_IO` do SDL3
 (versão de referência `POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`), com caminhos UTF-8 e o tamanho explícito dos dados. O stream permanece aberto
@@ -181,8 +185,8 @@ na fachada; crie um tipo de evento em `game/GameEvent.hpp` e emita no `Game`.
 
 | Evento | Quando |
 | --- | --- |
-| `RoomEntered{roomId}` | uma carga com spawn foi aplicada (`loadRoom`/`applyRoom(..., true, ...)`); edições ao vivo não emitem |
-| `RoomChangeRequested{roomId}` | uma sequência com `change_room` terminou; é descartado se outra sala entrar antes de a fila ser esvaziada |
+| `RoomEntered{roomId, spawnId}` | uma carga com spawn foi aplicada (`spawnId` vazio = `playerStart`) (`loadRoom`/`applyRoom(..., true, ...)`); edições ao vivo não emitem |
+| `RoomChangeRequested{roomId, spawnId}` | uma sequência com `change_room` terminou; é descartado se outra sala entrar antes de a fila ser esvaziada |
 | `LineSpoken{text}` | um `say` começou |
 | `CutsceneStarted` / `CutsceneEnded` | `inCutscene()` mudou |
 
@@ -300,16 +304,17 @@ O save guarda só o progresso, nunca definições nem simulação:
 - **Tipos de domínio** (sem I/O): `SessionState::snapshot()` devolve um `SessionSnapshot` de
   valor com listas ordenadas (flags por id, itens na ordem do inventário, overrides por
   `sala + objeto`, escolhas `once` por `sala/no/escolha`), e `restore()` o valida e troca todo o
-  progresso de uma vez (nada muda se falhar). `SavedGame` = `roomId` + pés + `SessionSnapshot`;
+  progresso de uma vez (nada muda se falhar). `SavedGame` = `roomId` + pés + direção (`Facing`) + `SessionSnapshot`;
   `Game::savedGame()` o monta.
 - **Formato** (`content/SaveFiles`), texto `chave = valor` como o `.room`: comentários `#`,
   `std::locale::classic()`, erro com número de linha, chaves desconhecidas, repetidas e IDs
   inválidos (`validIdentifier`) recusados.
 
   ```text
-  version = 1                        # primeira chave; a leitura aceita 1..atual, a gravação usa a atual
+  version = 2                        # primeira chave; a leitura aceita 1..atual, a gravação usa a atual
   room = gallery                     # <id>.room
   feet = 220, 460
+  facing = left                      # desde a versão 2, opcional (padrão down)
   flag.porta_aberta = 1              # inteiro != 0
   item = chave                       # repetível, em ordem
   object.first.red_box.visible = 0   # cada campo opcional
@@ -317,8 +322,13 @@ O save guarda só o progresso, nunca definições nem simulação:
   dialogue = gallery/mesa/gavetas    # repetível
   ```
 
-  A gravação é determinística (o mesmo progresso gera os mesmos bytes). Uma versão nova do
-  formato incrementa `SaveFiles::currentVersion` e mantém a leitura das anteriores.
+  A gravação é determinística (o mesmo progresso gera os mesmos bytes). **Toda chave nova
+  incrementa `SaveFiles::currentVersion`** e a leitura das versões anteriores continua (campo
+  novo no padrão); como o leitor recusa chaves desconhecidas, um build antigo recusa o arquivo
+  pela versão, com mensagem clara. Histórico: 1 = sala, pés, flags, itens, objetos, diálogo;
+  2 = + `facing`. O save guarda só dados com ID estável e coordenadas da sala, nunca índices,
+  o spawn de entrada ou estado de simulação: mudanças de geometria caem em `placePlayerNear`, e
+  overrides/flags de IDs que deixaram de existir são inofensivos (ficam sem efeito).
 - **Caminho**: `SDL_GetPrefPath(SaveFiles::organization, SaveFiles::application)` +
   `save.slot` (`SaveFiles::defaultSlot`, string liberada com `SDL_free`). Tudo recebe o
   caminho do arquivo, então os testes usam uma pasta temporária. Sem pasta gravável, o jogo
@@ -327,10 +337,13 @@ O save guarda só o progresso, nunca definições nem simulação:
 - **Carga** (`Application::resumeSavedGame`, no `initialize`): `SaveFiles::resume` lê o save e
   carrega a sala por `RoomLibrary::loadBundle`. O `SessionState` é restaurado **antes** de a
   sala ser aplicada (`Game(Room, SessionState)`), porque a navegação depende de visibilidade e
-  colisão; depois `Game::placePlayerNear` põe os pés onde estavam, ou no ponto caminhável mais
-  próximo, ou fica no `playerStart`. Save ausente = novo jogo em `first.room`. Corrompido, de
-  versão desconhecida ou com sala que não carrega = log uma vez, o arquivo vira
-  `save.slot.bad` (nunca apagado) e novo jogo.
+  colisão; depois `Game::placePlayerNear` põe os pés (e a direção) onde estavam, ou no ponto caminhável mais
+  próximo, ou fica no `playerStart`. Save ausente = novo jogo em `first.room`
+  (`RoomLibrary::startRoomFile`). Sala do save que não carrega mais (removida ou renomeada numa
+  atualização, arquivo quebrado) = o progresso é mantido e a partida retoma em `first.room`, no
+  `playerStart` (`ResumeResult::warning`, log uma vez); o arquivo fica e o próximo autosave o
+  regrava. Corrompido, de versão desconhecida, ou sala do save e `first.room` sem carregar =
+  log uma vez, o arquivo vira `save.slot.bad` (nunca apagado) e novo jogo.
 - **Quando grava**: `AutosavePolicy` guarda o último snapshot **estável**, capturado em
   `RoomEntered` e `CutsceneEnded` (consumidos em `Application::processGameEvents`) e no momento
   do autosave se não houver cutscene/diálogo. No meio de uma sequência vale o snapshot anterior

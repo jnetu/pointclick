@@ -69,6 +69,33 @@ RoomBundleResult RoomLibrary::loadBundle(const std::string_view filename) const 
             {}};
 }
 
+std::string RoomLibrary::transitionsError(const RoomBundle& bundle) const {
+    const auto check = [&](const std::vector<InteractionEffect>& effects) -> std::string {
+        for (const InteractionEffect& effect : effects) {
+            if (!effect.effect || effect.effect->keyword != "change_room" || effect.args.empty()) {
+                continue;
+            }
+            const std::string& roomId = effect.args[0];
+            const RoomLoadResult target = loadRoom(roomId + ".room");
+            if (!target.room) return "change_room " + roomId + ": " + target.error;
+            if (effect.args.size() > 1 && !target.room->findSpawn(effect.args[1])) {
+                return "change_room " + roomId + ": spawn desconhecido " + effect.args[1];
+            }
+        }
+        return {};
+    };
+    for (const InteractionRule& rule : bundle.interactions.rules) {
+        if (std::string error = check(rule.effects); !error.empty()) return error;
+    }
+    for (const DialogueNode& node : bundle.dialogues.nodes) {
+        if (std::string error = check(node.lines); !error.empty()) return error;
+        for (const DialogueChoice& choice : node.choices) {
+            if (std::string error = check(choice.effects); !error.empty()) return error;
+        }
+    }
+    return {};
+}
+
 bool RoomLibrary::saveRoom(const std::string_view filename, const Room& room,
                            std::string& error) const {
     // Saving under another name makes a copy that is that room: its id follows the file.

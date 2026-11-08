@@ -4,8 +4,18 @@
 #include <cmath>
 #include <utility>
 
-Player::Player(const SDL_FPoint start)
-        : previousFeet_(start), feet_(start), destination_(start) {}
+namespace {
+// Locomotion poses follow Facing's order, one step after idle.
+static_assert(static_cast<int>(PlayerPose::left) - 1 == static_cast<int>(Facing::left)
+              && static_cast<int>(PlayerPose::right) - 1 == static_cast<int>(Facing::right)
+              && static_cast<int>(PlayerPose::up) - 1 == static_cast<int>(Facing::up)
+              && static_cast<int>(PlayerPose::down) - 1 == static_cast<int>(Facing::down));
+
+Facing facingOf(const PlayerPose pose) { return static_cast<Facing>(static_cast<int>(pose) - 1); }
+} // namespace
+
+Player::Player(const SDL_FPoint start, const Facing facing)
+        : previousFeet_(start), feet_(start), destination_(start), facing_(facing) {}
 
 void Player::setPath(std::vector<SDL_FPoint> path) {
     if (path.empty()) {
@@ -46,6 +56,7 @@ void Player::tick(const float deltaSeconds, const float speed) {
         } else {
             nextPose = dy < 0 ? PlayerPose::up : PlayerPose::down;
         }
+        facing_ = facingOf(nextPose);
     }
     pose_ = nextPose;
     const bool changed = animation_.play(
@@ -76,10 +87,21 @@ bool Player::moving() const { return nextWaypoint_ < path_.size(); }
 
 PlayerPose Player::pose() const { return pose_; }
 
+Facing Player::facing() const { return facing_; }
+
 std::string_view Player::animationName() const { return animation_.name(); }
 
 float Player::animationTime() const { return animation_.elapsed(); }
 
 float Player::interpolatedAnimationTime(const float alpha) const {
     return animation_.interpolatedElapsed(alpha);
+}
+
+std::string_view playerClipName(const Player& player, const AnimationSet& animations) {
+    if (player.pose() == PlayerPose::idle) {
+        const std::string_view standing =
+                playerIdleAnimations[static_cast<std::size_t>(player.facing())];
+        if (findAnimation(animations, standing)) return standing;
+    }
+    return player.animationName();
 }

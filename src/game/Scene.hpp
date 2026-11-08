@@ -28,8 +28,10 @@ public:
     Scene& operator=(const Scene&) = delete;
 
     // Validates and commits atomically: nothing changes when it returns false. resetPlayer
-    // spawns at playerStart and snaps the camera; otherwise feet and object animations survive.
-    bool apply(Room room, bool resetPlayer, std::string& error);
+    // places the feet at the room's entry point (spawnId, or playerStart when empty; an
+    // unknown spawn is an error) and snaps the camera; otherwise feet, facing and object
+    // animations survive.
+    bool apply(Room room, bool resetPlayer, std::string& error, std::string_view spawnId = {});
     bool setInteractions(RoomInteractions interactions, std::string& error);
     bool setDialogues(RoomDialogues dialogues, std::string& error);
     // Rules and dialogue nodes belong to one room; called when another room is entered.
@@ -38,7 +40,8 @@ public:
     void refreshNavigation();
     bool teleportPlayer(SDL_FPoint position, std::string& error);
     // teleportPlayer that never fails: blocked = nearest walkable point; none = stay put.
-    SDL_FPoint placePlayerNear(SDL_FPoint position);
+    // facing: the saved one; nullopt keeps the current one.
+    SDL_FPoint placePlayerNear(SDL_FPoint position, std::optional<Facing> facing = std::nullopt);
     bool playObjectAnimation(std::string_view objectId, std::string_view animation,
                              bool restart, std::string& error);
 

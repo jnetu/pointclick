@@ -30,9 +30,12 @@ public:
     Game& operator=(const Game&) = delete;
 
     // Content. loadRoom throws on invalid data; applyRoom validates and commits atomically.
-    // Edits (resetPlayer = false) preserve feet and SessionState; loads use the spawn.
+    // Edits (resetPlayer = false) preserve feet and SessionState; loads place the player at
+    // the entry point: spawnId names a `[spawn]` of the room, empty = playerStart. An unknown
+    // spawn refuses the whole load.
     void loadRoom(Room room);
-    bool applyRoom(Room room, bool resetPlayer, std::string& error);
+    bool applyRoom(Room room, bool resetPlayer, std::string& error,
+                   std::string_view spawnId = {});
     void setInteractions(RoomInteractions interactions);
     bool setInteractions(RoomInteractions interactions, std::string& error);
     // The room's dialogue nodes (<room>.dlg). Validated against the room; replacing them ends a
@@ -45,7 +48,7 @@ public:
     bool teleportPlayer(SDL_FPoint position, std::string& error);
     // Restoring saved feet: there if walkable, else the nearest walkable point, else where the
     // player already stands (the spawn after a load). Returns where the feet ended up.
-    SDL_FPoint placePlayerNear(SDL_FPoint position);
+    SDL_FPoint placePlayerNear(SDL_FPoint position, std::optional<Facing> facing = std::nullopt);
     bool playObjectAnimation(std::string_view objectId, std::string_view animation,
                              bool restart, std::string& error);
     bool useItemOnObject(std::string_view itemId, std::string_view objectId);
@@ -92,7 +95,7 @@ private:
     Scene scene_{session_};
     ScriptRunner script_;
     DialoguePlayer dialogue_;
-    std::optional<std::string> scriptRoomTarget_;
+    std::optional<RoomChangeRequested> scriptRoomTarget_;
     bool navigationDirty_ = false;
     bool wasInCutscene_ = false;
     std::vector<GameEvent> events_;

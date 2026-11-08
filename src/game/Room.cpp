@@ -45,6 +45,18 @@ const SceneObject* Room::findObject(const std::string_view objectId) const {
     return found == scenery.end() ? nullptr : &(*found);
 }
 
+const RoomSpawn* Room::findSpawn(const std::string_view spawnId) const {
+    const auto found = std::find_if(spawns.begin(), spawns.end(),
+                                    [&](const RoomSpawn& spawn) { return spawn.id == spawnId; });
+    return found == spawns.end() ? nullptr : &(*found);
+}
+
+std::optional<RoomSpawn> Room::entryPoint(const std::string_view spawnId) const {
+    if (spawnId.empty()) return RoomSpawn{{}, playerStart, Facing::down};
+    if (const RoomSpawn* spawn = findSpawn(spawnId)) return *spawn;
+    return std::nullopt;
+}
+
 std::string Room::validationError() const {
     if (!validIdentifier(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
     for (const auto& parameter : roomParameters()) {
@@ -65,6 +77,16 @@ std::string Room::validationError() const {
     if (playerStart.x < 0.0F || playerStart.x >= width
         || playerStart.y < 0.0F || playerStart.y >= height) {
         return "Posicao inicial do player fora da sala";
+    }
+    std::set<std::string_view> spawnIds;
+    for (const RoomSpawn& spawn : spawns) {
+        if (!validIdentifier(spawn.id) || !spawnIds.insert(spawn.id).second) {
+            return "ID de spawn invalido ou repetido";
+        }
+        if (!std::isfinite(spawn.feet.x) || !std::isfinite(spawn.feet.y) || spawn.feet.x < 0.0F
+            || spawn.feet.x >= width || spawn.feet.y < 0.0F || spawn.feet.y >= height) {
+            return "Spawn fora da sala: " + spawn.id;
+        }
     }
     const float largestScale = std::max(farScale, nearScale);
     if (playerBaseSize.x * largestScale >= World::width

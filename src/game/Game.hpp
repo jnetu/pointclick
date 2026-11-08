@@ -47,7 +47,6 @@ public:
     bool startDialogue(std::string_view nodeId);
     // Picks one of dialogueOptions() while awaitingDialogueChoice(); the reply runs as a sequence.
     bool chooseDialogueOption(std::size_t index);
-    void onTextInput(std::string_view text);
     void onPointerMove(SDL_FPoint position, bool insideViewport = true);
     void onClick(SDL_FPoint position);
     void tick(float deltaSeconds);

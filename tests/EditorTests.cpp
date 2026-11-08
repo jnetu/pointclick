@@ -1083,6 +1083,41 @@ wait 0.5
 
 // The choice menu is a ViewportUiConsumer: modal only while a choice is expected, driven by
 // click/touch on a row, or up/down + confirm (keyboard, D-pad) and gamepad South.
+// Free text reaches only the tools and gameplay UIs; the world drops it. Typing during a cutscene
+// (with or without the tools layer, including the letters before "DEBUG") never replaces the line.
+void testTypedTextNeverBecomesSpeech() {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        // A say that is not the last step holds the queue: this is the cutscene being protected.
+        .effects = {InteractionEffect::make("say", {"Linha"}),
+                    InteractionEffect::make("set_flag", {"line_done"})},
+    }}});
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
+    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+
+    TranslatedInput typed;
+    typed.textInput = "x";
+    const InputRouter storeRouter; // no tools layer, as in a store build
+    const InputRouteResult storeResult = storeRouter.routeTranslated(typed, game);
+    assert(!storeResult.consumedByDebug && !storeResult.consumedByUi);
+    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+
+    DebugEditor editor;
+    InputRouter toolsRouter;
+    toolsRouter.setToolConsumer(&editor);
+    typed.textInput = "DEBU"; // not yet the activation word: the editor lets it through
+    assert(!toolsRouter.routeTranslated(typed, game).consumedByDebug);
+    assert(!editor.active());
+    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+
+    // The line still ends after its reading time (2 s for "Linha"), not a 10 s echo.
+    for (int i = 0; i < 50 && game.inCutscene(); ++i) game.tick(0.05F);
+    assert(!game.inCutscene() && game.session().hasFlag("line_done"));
+}
+
 void testDialogueMenuInput() {
     Game game(RoomPresets::firstRoom());
     DialogueChoice a{.id = "a", .text = "Primeira", .conditions = {},
@@ -1328,6 +1363,7 @@ int main() {
     testActionCatalogRoundtrip(directory);
     testDialogueFiles(directory);
     testDialogueMenuInput();
+    testTypedTextNeverBecomesSpeech();
     testRoomLibraryAndActors(directory);
     std::filesystem::remove_all(directory);
 }

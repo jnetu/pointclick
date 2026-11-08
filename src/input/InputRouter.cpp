@@ -49,18 +49,13 @@ InputRouteResult InputRouter::routeTranslated(const TranslatedInput& translated,
         if (tools_ && tools_->onTextInput(*translated.textInput, game)) {
             result.consumedByDebug = true;
         } else {
-            // Layer 3: Gameplay UI text input.
-            bool uiConsumedText = false;
+            // Layer 3: Gameplay UI text input. The world takes no free text: unconsumed text is
+            // dropped, so typing never replaces a line or stalls a cutscene.
             for (ViewportUiConsumer* consumer : uiConsumers_) {
                 if (consumer != nullptr && consumer->onTextInput(*translated.textInput)) {
-                    uiConsumedText = true;
                     result.consumedByUi = true;
                     break;
                 }
-            }
-            // Layer 4: World text input.
-            if (!uiConsumedText) {
-                game.onTextInput(*translated.textInput);
             }
         }
     }

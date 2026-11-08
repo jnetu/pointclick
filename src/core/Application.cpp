@@ -116,11 +116,14 @@ bool Application::initialize() {
         return false;
     }
 
-    // Avoid opening the on-screen virtual keyboard immediately on mobile/console boot.
+    // Only the tools take free text. Avoid opening the on-screen virtual keyboard on
+    // mobile/console boot; store builds never start text input.
+#if POINTCLICK_TOOLS
     if (!SDL_HasScreenKeyboardSupport() && !SDL_StartTextInput(window_)) {
         SDL_Log("Could not start text input: %s", SDL_GetError());
         return false;
     }
+#endif
 
     running_ = true;
     return true;

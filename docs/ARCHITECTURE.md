@@ -111,7 +111,10 @@ teleportar o player, a câmera faz *snap* imediato ao alvo; em edições ao vivo
 preserva a continuidade respeitando os novos limites. O render usa posições interpoladas
 tanto para o `Player` quanto para a `Camera`.
 
-Texto → `InputRouter` → `DebugEditor::onTextInput` → ativação por DEBUG. Em
+Texto → `InputRouter` → `DebugEditor::onTextInput` → ativação por DEBUG →
+`ViewportUiConsumer::onTextInput`. O mundo não recebe texto livre: o que ninguém
+consome é descartado, então digitar nunca vira fala nem atrasa uma cutscene. Builds
+sem ferramentas não iniciam entrada de texto. Em
 plataformas com teclado virtual na tela (`SDL_HasScreenKeyboardSupport`), o texto
 só é ativado sob demanda quando o painel do editor está visível sem uso de gamepad,
 evitando abrir o teclado virtual no boot mobile/console. Enquanto ativo, o editor

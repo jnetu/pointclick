@@ -33,7 +33,6 @@ void DebugEditor::activate(Game& game) {
     activation_.clear();
     command_.clear();
     status_ = "Editor ativo. Alteracoes so persistem com save.";
-    game.onTextInput("");
 }
 
 bool DebugEditor::consumesViewportPoint(const SDL_FPoint viewportPoint) const {

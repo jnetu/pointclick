@@ -446,7 +446,6 @@ void testItemPickupAndHiddenCollision() {
     // Hidden solid object no longer blocks navigation, and clicking its old bounds walks onto the floor.
     assert(game.scene().navigation().canStandAt(crateCenter));
 
-    game.onTextInput("");
     game.onClick(crateCenter);
     assert(!game.scene().pendingInteraction().has_value());
     for (int i = 0; i < 40; ++i) {

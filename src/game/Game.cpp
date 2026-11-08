@@ -241,10 +241,6 @@ void Game::onClick(const SDL_FPoint position) {
     scene_.walkToFloor(position);
 }
 
-void Game::onTextInput(const std::string_view text) {
-    scene_.speech().show(text);
-}
-
 void Game::tick(const float deltaSeconds) {
     const std::optional<InteractionTrigger> arrived = scene_.tick(deltaSeconds);
     if (script_.busy() || dialogue_.active()) {

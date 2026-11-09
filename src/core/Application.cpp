@@ -16,7 +16,10 @@ namespace {
 // 60 Hz keeps click latency low and gives clips up to 60 fps a frame per tick; the renderer
 // still interpolates positions, camera and animation time between ticks.
 constexpr double kTicksPerSecond = 60.0;
+// Without VSync, and while the window is not showing, this limiter paces the loop.
 constexpr double kFramesPerSecond = 60.0;
+// With VSync the display paces the frames; this only bounds a driver that ignores VSync.
+constexpr double kVsyncSafetyFramesPerSecond = 240.0;
 constexpr double kTickSeconds = 1.0 / kTicksPerSecond;
 constexpr double kMaximumFrameTime = 0.25;
 }
@@ -115,11 +118,13 @@ void Application::processGameEvents() {
     gameplay_->game.drainEvents(gameEvents_);
     const RoomChangeRequested* nextRoom = nullptr;
     bool stablePoint = false;
+    bool enteredRoom = false;
     for (const GameEvent& event : gameEvents_) {
         if (const auto* change = std::get_if<RoomChangeRequested>(&event)) {
             nextRoom = change; // several in one drain: the last request wins
-        } else if (std::holds_alternative<RoomEntered>(event)
-                   || std::holds_alternative<CutsceneEnded>(event)) {
+        } else if (std::holds_alternative<RoomEntered>(event)) {
+            enteredRoom = true;
+        } else if (std::holds_alternative<CutsceneEnded>(event)) {
             stablePoint = true;
         }
         // LineSpoken and CutsceneStarted have no shell consumer yet (audio, fades, subtitles).
@@ -132,7 +137,9 @@ void Application::processGameEvents() {
                 nextRoom->spawnId.c_str());
     }
     if (loadingRoom && loadRoomWithRules(nextRoom->roomId + ".room", nextRoom->spawnId)) return;
-    if (stablePoint) autosave_.capture(gameplay_->game);
+    // Entering a room also writes the file, so a crash costs at most the current room.
+    if (enteredRoom) writeAutosave(autosave_.checkpoint(gameplay_->game));
+    else if (stablePoint) autosave_.capture(gameplay_->game);
 }
 
 void Application::onEnterBackground() {
@@ -176,7 +183,9 @@ bool Application::lifecycleWatch(void* userdata, SDL_Event* event) {
 }
 
 bool Application::initialize() {
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)) {
+    // Audio is initialized by its own module when there is one: a machine without an audio
+    // driver must still run the game.
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("Could not initialize SDL: %s", SDL_GetError());
         return false;
     }
@@ -235,9 +244,12 @@ bool Application::initialize() {
 void Application::mainLoop() {
     using Clock = std::chrono::steady_clock;
 
-    const auto renderStep = std::chrono::duration_cast<Clock::duration>(
-            std::chrono::duration<double>(1.0 / kFramesPerSecond)
-    );
+    const auto stepFor = [](const double framesPerSecond) {
+        return std::chrono::duration_cast<Clock::duration>(
+                std::chrono::duration<double>(1.0 / framesPerSecond));
+    };
+    const auto limiterStep = stepFor(kFramesPerSecond);
+    const auto vsyncStep = stepFor(kVsyncSafetyFramesPerSecond);
 
     auto previousTime = Clock::now();
     auto nextRenderTime = previousTime;
@@ -280,8 +292,17 @@ void Application::mainLoop() {
         inputRouter_.update(static_cast<float>(frameSeconds), inputSystem_, game,
                             renderInterpolation_);
 
+        // Minimized or fully covered: keep simulating, draw nothing (presenting would not wait
+        // for the display there, so the limiter paces the loop).
+        const bool showing = (SDL_GetWindowFlags(window_)
+                              & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_OCCLUDED | SDL_WINDOW_HIDDEN))
+                             == 0;
+        const auto renderStep = showing && renderer_.vsyncActive() ? vsyncStep : limiterStep;
         if (currentTime >= nextRenderTime) {
-            renderer_.render(game, renderInterpolation_, &inputSystem_, &gameplay_->dialogueMenu);
+            if (showing) {
+                renderer_.render(game, renderInterpolation_, &inputSystem_,
+                                 &gameplay_->dialogueMenu);
+            }
 
             nextRenderTime += renderStep;
             if (nextRenderTime < currentTime) {

@@ -7,8 +7,9 @@
 class Game;
 
 // Decides when the shell writes the autosave and what goes in it; no I/O here.
-// Keeps only stable snapshots (never inside a cutscene or dialogue) and answers once per trip to
-// the background (SDL sends WILL and DID); unchanged state is never rewritten.
+// Keeps only stable snapshots (never inside a cutscene or dialogue), writes when a room is entered
+// and once per trip to the background (SDL sends WILL and DID); unchanged state is never
+// rewritten.
 class AutosavePolicy {
 public:
     // Stable points (RoomEntered, CutsceneEnded, a lifecycle edge outside a cutscene).
@@ -17,6 +18,8 @@ public:
     // Lifecycle edges: the snapshot to write now, or nullptr (none yet, already written, repeated
     // signal). Call markWritten() after a successful write.
     [[nodiscard]] const SavedGame* enterBackground(const Game& game);
+    // A stable point worth the disk (a room was entered): captures it and answers like the edges.
+    [[nodiscard]] const SavedGame* checkpoint(const Game& game);
     void enterForeground();
     [[nodiscard]] const SavedGame* quit(const Game& game);
     void markWritten();

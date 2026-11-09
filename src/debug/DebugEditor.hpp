@@ -11,6 +11,14 @@
 
 class Game;
 
+// What the tools draw over the game, switched with `show <view> <0|1>`. None of it exists in a
+// build without tools, and with the editor closed only the hint is drawn.
+struct DebugViews {
+    bool route = true;       // route and destination cross, while the editor is active
+    bool diagnostics = true; // technical readout, while the editor is active
+    bool hint = true;        // how to open the editor, while it is closed
+};
+
 // Input, viewport hit-testing, and editing only. Drawing lives in debug/DebugOverlay.cpp.
 // Optional tools layer: built only with POINTCLICK_ENABLE_TOOLS and registered on InputRouter.
 class DebugEditor final : public ToolInputConsumer {
@@ -28,6 +36,7 @@ public:
     [[nodiscard]] static constexpr SDL_FRect panelRect() { return kPanelRect; }
     [[nodiscard]] bool active() const { return active_; }
     [[nodiscard]] bool panelVisible() const { return active_ && panelVisible_; }
+    [[nodiscard]] const DebugViews& views() const { return views_; }
     [[nodiscard]] std::size_t selected() const { return selected_; }
     [[nodiscard]] const std::string& command() const { return command_; }
     [[nodiscard]] const std::string& status() const { return status_; }
@@ -46,6 +55,7 @@ private:
 
     bool active_ = false;
     bool panelVisible_ = true;
+    DebugViews views_;
     std::size_t selected_ = 0;
     std::string activation_;
     std::string command_;

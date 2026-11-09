@@ -12,7 +12,7 @@ Leia também `docs/ARCHITECTURE.md` antes de mudanças estruturais e `docs/GAME_
 
 ## Dívidas conhecidas (não replique; corrija quando tocar na área)
 
-- Rota, cruz de destino e diagnóstico desenhados em produção (devem ir para flags de debug).
+- Nenhuma registrada no momento. A lista de pendências priorizadas fica em `docs/ROADMAP.md`.
 
 ## Build e testes
 

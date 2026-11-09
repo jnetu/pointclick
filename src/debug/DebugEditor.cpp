@@ -18,6 +18,17 @@ bool validFilename(const std::string_view name) {
     return name.size() > extension.size() && name.ends_with(extension)
            && validIdentifier(name.substr(0, name.size() - extension.size()));
 }
+
+// `show <name> <0|1>`: a new debug view is one line here plus its drawing in DebugOverlay.
+struct ViewSwitch {
+    std::string_view name;
+    bool DebugViews::* enabled;
+};
+constexpr ViewSwitch kViewSwitches[]{
+    {"route", &DebugViews::route},
+    {"diagnostics", &DebugViews::diagnostics},
+    {"hint", &DebugViews::hint},
+};
 }
 
 
@@ -200,8 +211,23 @@ void DebugEditor::submit(Game& game) {
         }
         if (parsed && finished(input)) commit(game, std::move(room));
         else status_ = "Use move/size ID X Y, base ID X Y W H, solid ID 0/1";
+    } else if (verb == "show") {
+        std::string view;
+        int enabled = -1;
+        bool* target = nullptr;
+        if (input >> view >> enabled && finished(input) && (enabled == 0 || enabled == 1)) {
+            for (const ViewSwitch& entry : kViewSwitches) {
+                if (entry.name == view) target = &(views_.*entry.enabled);
+            }
+        }
+        if (target) {
+            *target = enabled == 1;
+            status_ = view + (enabled == 1 ? ": visivel" : ": oculto");
+        } else {
+            status_ = "Use: show route|diagnostics|hint 0/1";
+        }
     } else if (verb == "help") {
-        status_ = "set, teleport, move, size, base, solid, save, load, undo, reset";
+        status_ = "set, teleport, move, size, base, solid, show, save, load, undo, reset";
     } else {
         status_ = "Comando desconhecido. Digite help.";
     }

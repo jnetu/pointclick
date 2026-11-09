@@ -16,6 +16,8 @@ class RenderOverlay;
 class Renderer {
 public:
     bool initialize(SDL_Window* window);
+    // True when presenting waits for the display; otherwise the caller must pace the frames.
+    [[nodiscard]] bool vsyncActive() const noexcept { return vsync_; }
     void setSpriteRoot(std::filesystem::path root);
     void invalidateTextures();
     [[nodiscard]] bool windowToViewport(float x, float y, SDL_FPoint& result) const;
@@ -34,6 +36,7 @@ public:
 private:
     SDL_Renderer* renderer_ = nullptr;
     SDL_Window* window_ = nullptr;
+    bool vsync_ = false;
     SpriteLibrary sprites_;
     std::string lastRoomId_;
     std::vector<const RenderOverlay*> overlays_;

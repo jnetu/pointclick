@@ -1,6 +1,5 @@
 #include "graphics/Renderer.hpp"
 #include "graphics/SceneRenderer.hpp"
-#include "graphics/DiagnosticsOverlay.hpp"
 #include "graphics/RenderOverlay.hpp"
 #include "graphics/DialogueMenuRenderer.hpp"
 #include "game/World.hpp"
@@ -19,6 +18,9 @@ bool Renderer::initialize(SDL_Window* window) {
         SDL_Log("Could not set logical presentation: %s", SDL_GetError());
         return false;
     }
+    // The display paces the frames; without VSync the application's limiter does.
+    vsync_ = SDL_SetRenderVSync(renderer_, 1);
+    if (!vsync_) SDL_Log("VSync unavailable, using the frame limiter: %s", SDL_GetError());
     sprites_.initialize(renderer_);
     return true;
 }
@@ -93,7 +95,6 @@ void Renderer::render(const Game& game, const float interpolation,
         sprites_.beginRoom();
     }
     SceneRenderer::draw(renderer_, sprites_, game.scene(), interpolation);
-    DiagnosticsOverlay::draw(renderer_, window_, game.scene(), interpolation);
     if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, game, *dialogueMenu);
     for (const RenderOverlay* overlay : overlays_) overlay->draw(renderer_, game, interpolation);
     if (input && input->activeDevice() == InputDevice::gamepad) {
@@ -116,5 +117,6 @@ void Renderer::shutdown() {
         SDL_DestroyRenderer(renderer_);
         renderer_ = nullptr;
     }
+    vsync_ = false;
     window_ = nullptr;
 }

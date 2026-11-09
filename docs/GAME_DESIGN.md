@@ -42,7 +42,12 @@ para abrir o editor. Maiúsculas e minúsculas funcionam.
 Com o painel oculto, texto e setas não alteram parâmetros; setas e Enter voltam a
 valer para o jogo (por exemplo, o menu de escolhas de um diálogo). Os nomes dos objetos
 e suas bases de colisão continuam visíveis. Fora do modo DEBUG, os comandos e
-as setas não editam a sala. O painel técnico de posições continua disponível.
+as setas não editam a sala.
+
+A rota do personagem, a cruz no destino e o painel técnico de posições (canto superior
+esquerdo) são desenhos de diagnóstico: só aparecem com o modo DEBUG ativo, e cada um pode
+ser desligado com `show`. Com o editor fechado a tela mostra só o jogo e a dica
+"DEBUG / F1 / Select" no canto. A versão do jogo sem ferramentas não desenha nada disso.
 
 As mudanças válidas são aplicadas imediatamente. Elas param a rota antiga e
 reconstroem a navegação. Se o jogador ficar dentro de um obstáculo após a edição,
@@ -65,6 +70,9 @@ mensagem e preservam o estado anterior.
 | `save minha_sala.room` | Grava a configuração atual na pasta de salas |
 | `load minha_sala.room` | Carrega a sala e usa sua posição inicial |
 | `load minha_sala.room porta_esquerda` | Carrega a sala entrando pelo `[spawn porta_esquerda]` (teste de portas) |
+| `show route 0` | Oculta a rota e a cruz do destino; `1` mostra de novo |
+| `show diagnostics 0` | Oculta o painel técnico de posições |
+| `show hint 0` | Oculta a dica "DEBUG / F1 / Select" exibida com o editor fechado (para capturas de tela limpas) |
 | `undo` | Desfaz a última edição/carregamento; uma chamada seguinte alterna os dois estados |
 | `reset` | Restaura a sala que estava ativa quando DEBUG foi aberto |
 

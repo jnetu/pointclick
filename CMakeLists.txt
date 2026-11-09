@@ -71,7 +71,6 @@ add_library(pointclick_graphics STATIC
         src/graphics/RoomBackdropRenderer.cpp
         src/graphics/SceneRenderer.cpp
         src/graphics/SpriteLibrary.cpp
-        src/graphics/DiagnosticsOverlay.cpp
         src/graphics/DialogueMenuRenderer.cpp)
 target_link_libraries(pointclick_graphics PUBLIC pointclick_ui)
 
@@ -81,7 +80,8 @@ if(POINTCLICK_ENABLE_TOOLS)
     # Optional editor: another input consumer and another render overlay.
     add_library(pointclick_tools STATIC
             src/debug/DebugEditor.cpp
-            src/debug/DebugOverlay.cpp)
+            src/debug/DebugOverlay.cpp
+            src/debug/DiagnosticsOverlay.cpp)
     target_link_libraries(pointclick_tools PUBLIC pointclick_content pointclick_graphics)
     target_compile_definitions(pointclick_tools PUBLIC POINTCLICK_TOOLS=1)
     list(APPEND POINTCLICK_LAYER_TARGETS pointclick_tools)

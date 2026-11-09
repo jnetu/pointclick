@@ -12,6 +12,10 @@ const SavedGame* AutosavePolicy::enterBackground(const Game& game) {
     return pending(game);
 }
 
+const SavedGame* AutosavePolicy::checkpoint(const Game& game) {
+    return pending(game);
+}
+
 void AutosavePolicy::enterForeground() {
     background_ = false;
 }

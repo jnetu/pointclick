@@ -18,6 +18,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Aparência da sala | `src/graphics/RoomBackdropRenderer.cpp` | `src/game/Room.hpp` |
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
 | Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` (opcional, `POINTCLICK_ENABLE_TOOLS`) | `src/debug/DebugOverlay.cpp`, `tests/EditorTests.cpp` |
+| Desenho de diagnóstico (rota, painel técnico, nova visão de debug) | `DebugViews` + `kViewSwitches` em `src/debug/DebugEditor.*` (comando `show <visão> <0\|1>`) | desenho em `src/debug/DebugOverlay.cpp` / `src/debug/DiagnosticsOverlay.*`; `tests/EditorTests.cpp`; nunca em `graphics/` (`testGameFrameHasNoDebugDrawing` em `tests/SpriteTests.cpp`) |
 | Carregar/salvar salas, layout dos assets | `src/content/RoomLibrary.*` | `core/Application.cpp` e `DebugEditor` usam a mesma biblioteca |
 | Dependência entre camadas, targets CMake | `CMakeLists.txt` (um target por pasta) | `cmake/CheckLayerIncludes.cmake`, `docs/ARCHITECTURE.md` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
@@ -74,7 +75,9 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   `inCutscene`). `graphics/` lê essa geometria para desenhar.
 - `debug/` altera a definição da sala para teste e define sua própria geometria de
   captura na viewport (`DebugEditor::panelRect`), preservando `SessionState`.
-  Não é o sistema de gameplay.
+  Não é o sistema de gameplay. Todo desenho de diagnóstico (rota, destino, painel técnico,
+  guias) mora aqui, atrás do editor e de `DebugViews`: `graphics/` desenha só o jogo, e uma
+  build sem ferramentas não tem nenhum desses desenhos.
 - IDs de objetos, itens, flags e nomes de animação são estáveis, com letras,
   números, `_` e `-`. Use esses nomes nas regras, sem depender da posição no vetor da sala.
 

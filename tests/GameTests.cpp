@@ -1389,6 +1389,21 @@ void testAutosavePolicy() {
     assert(atQuit && atQuit->session == game.session().snapshot());
     autosave.markWritten();
     assert(!autosave.quit(game)); // SDL_EVENT_QUIT then TERMINATING
+
+    // Entering a room is a checkpoint: written when it differs from the file, so a crash costs
+    // at most the current room; never the half-done state of a cutscene.
+    assert(!autosave.checkpoint(game)); // the file already has this
+    game.session().setFlag("outra_sala");
+    const SavedGame* entered = autosave.checkpoint(game);
+    assert(entered && entered->session == game.session().snapshot());
+    assert(autosave.checkpoint(game)); // the write failed: still pending
+    autosave.markWritten();
+    assert(!autosave.checkpoint(game));
+    game.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 300 && !game.inCutscene(); ++i) game.tick(0.05F);
+    assert(game.inCutscene());
+    game.session().setFlag("no_meio");
+    assert(!autosave.checkpoint(game));
 }
 
 int main() {

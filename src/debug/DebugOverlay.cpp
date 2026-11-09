@@ -1,15 +1,52 @@
 #include "debug/DebugOverlay.hpp"
+#include "debug/DiagnosticsOverlay.hpp"
 #include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
 #include "game/Game.hpp"
+#include "game/World.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
+
+namespace {
+// The route still to walk and a cross on its destination.
+void drawRoute(SDL_Renderer* renderer, const Player& player, const SDL_FPoint cameraOffset,
+               const float interpolation) {
+    if (!player.moving()) return;
+    SDL_FPoint segmentStart = player.interpolatedFeet(interpolation);
+    SDL_SetRenderDrawColor(renderer, 237, 224, 157, 255);
+    for (const SDL_FPoint waypoint : player.remainingPath()) {
+        SDL_RenderLine(renderer,
+                       segmentStart.x - cameraOffset.x, segmentStart.y - cameraOffset.y,
+                       waypoint.x - cameraOffset.x, waypoint.y - cameraOffset.y);
+        segmentStart = waypoint;
+    }
+    const float destX = player.destination().x - cameraOffset.x;
+    const float destY = player.destination().y - cameraOffset.y;
+    SDL_SetRenderDrawColor(renderer, 246, 206, 124, 255);
+    SDL_RenderLine(renderer, destX - 7.0F, destY, destX + 7.0F, destY);
+    SDL_RenderLine(renderer, destX, destY - 7.0F, destX, destY + 7.0F);
+}
+} // namespace
 
 void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
                         const float interpolation) const {
     const DebugEditor& editor = editor_;
-    if (!editor.active()) return;
+    if (!editor.active()) {
+        if (editor.views().hint) {
+            SDL_SetRenderDrawColor(renderer, 160, 175, 190, 255);
+            SDL_RenderDebugText(renderer, World::width - 272.0F - 12.0F,
+                                World::height - 18.0F - 12.0F,
+                                "DEBUG / F1 / Select: editar sala");
+        }
+        return;
+    }
     const SDL_FPoint cameraOffset = game.scene().camera().interpolatedPosition(interpolation);
+    if (editor.views().route) {
+        drawRoute(renderer, game.scene().player(), cameraOffset, interpolation);
+    }
+    if (editor.views().diagnostics) {
+        DiagnosticsOverlay::draw(renderer, game.scene(), interpolation);
+    }
     SDL_SetRenderDrawColor(renderer, 255, 231, 116, 255);
     for (const auto& object : game.scene().room().scenery) {
         if (game.scene().isObjectSolid(object)) {
@@ -75,6 +112,7 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
     SDL_RenderDebugText(renderer, x, y + 468, "move red_box 850 460       | size red_box 110 125");
     SDL_RenderDebugText(renderer, x, y + 486, "base red_box 14 92 82 33   | solid red_box 1");
     SDL_RenderDebugText(renderer, x, y + 504, "save teste.room | load teste.room | undo | reset");
+    SDL_RenderDebugText(renderer, x, y + 522, "show route 0 | show diagnostics 0 | show hint 0");
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
     const auto visibleCommand = editor.command().size() > 60
                                 ? editor.command().substr(editor.command().size() - 60) : editor.command();

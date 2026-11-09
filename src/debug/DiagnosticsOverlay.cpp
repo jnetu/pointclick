@@ -1,22 +1,9 @@
-#include "graphics/DiagnosticsOverlay.hpp"
+#include "debug/DiagnosticsOverlay.hpp"
 #include "game/Scene.hpp"
 #include "game/World.hpp"
 #include <SDL3/SDL.h>
 
-namespace {
-enum class Anchor { topLeft, bottomRight };
-
-SDL_FPoint anchored(const Anchor anchor, const float width, const float height,
-                    const float margin) {
-    if (anchor == Anchor::topLeft) {
-        return {margin, margin};
-    }
-    return {World::width - width - margin, World::height - height - margin};
-}
-
-}
-
-void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const Scene& scene,
+void DiagnosticsOverlay::draw(SDL_Renderer* renderer, const Scene& scene,
                               const float interpolation) {
     const Room& room = scene.room();
     const auto feet = scene.player().interpolatedFeet(interpolation);
@@ -27,11 +14,14 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
     int outputWidth = 0;
     int outputHeight = 0;
     SDL_FRect viewport{};
-    SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+    // A renderer drawing to a surface (tests, captures) has no window.
+    if (SDL_Window* window = SDL_GetRenderWindow(renderer)) {
+        SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+    }
     SDL_GetRenderOutputSize(renderer, &outputWidth, &outputHeight);
     SDL_GetRenderLogicalPresentationRect(renderer, &viewport);
 
-    const SDL_FPoint panel = anchored(Anchor::topLeft, 444.0F, 224.0F, 12.0F);
+    const SDL_FPoint panel{12.0F, 12.0F};
     const SDL_FRect panelRect{panel.x, panel.y, 444.0F, 224.0F};
     SDL_SetRenderDrawColor(renderer, 9, 12, 19, 230);
     SDL_RenderFillRect(renderer, &panelRect);
@@ -82,10 +72,5 @@ void DiagnosticsOverlay::draw(SDL_Renderer* renderer, SDL_Window* window, const 
                               clip ? clip->frameAt(scene.player().animationTime()) + 1 : 0,
                               clip ? clip->frames : 0);
     SDL_RenderDebugTextFormat(renderer, panel.x + 10.0F, panel.y + 188.0F,
-                              "sprite: %s", clip ? clip->file.substr(0, 42).c_str() : "missing clip");
-
-    const SDL_FPoint hint = anchored(Anchor::bottomRight, 272.0F, 18.0F, 12.0F);
-    SDL_SetRenderDrawColor(renderer, 160, 175, 190, 255);
-    SDL_RenderDebugText(renderer, hint.x, hint.y, "DEBUG / F1 / Select: editar sala");
-
+                              "sprite: %.42s", clip ? clip->file.c_str() : "missing clip");
 }

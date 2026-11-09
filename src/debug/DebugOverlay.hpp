@@ -4,7 +4,8 @@
 
 class DebugEditor;
 
-// Draws the editor panel, collision bases and hotspots while the editor is active.
+// Everything the tools draw: with the editor active, the panel, collision bases, object names
+// and the DebugViews (route, diagnostics); with it closed, only the hint.
 class DebugOverlay final : public RenderOverlay {
 public:
     explicit DebugOverlay(const DebugEditor& editor) : editor_(editor) {}

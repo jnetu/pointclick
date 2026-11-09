@@ -39,7 +39,8 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas; destino inalcançável = um flood-fill + um A* |
 | `game/StringMap` | Mapa por `std::string` com hash transparente (consulta por `string_view` sem alocar) |
 | `debug/DebugEditor` | Ferramenta opcional (`POINTCLICK_ENABLE_TOOLS`): `ToolInputConsumer` que reconhece DEBUG/F1/Select, faz o hit-test do painel, processa comandos e gerencia edição/undo |
-| `debug/DebugOverlay` | `RenderOverlay` da ferramenta: guias de objetos no mundo e painel consultando `DebugEditor::panelRect()` |
+| `debug/DebugOverlay` | `RenderOverlay` da ferramenta: com o editor ativo, guias de objetos, rota e cruz de destino, painel técnico e painel do editor (`DebugEditor::panelRect()`); fechado, só a dica de como abrir. Cada visão liga/desliga por `DebugViews` (`show <visão> <0\|1>`) |
+| `debug/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa, desenhados pelo `DebugOverlay` |
 | `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
 | `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `ToolInputConsumer` opcional → `ViewportUiConsumer` (UIs de gameplay) → `Game` |
 | `ui/DialogueMenu` | Menu de escolhas: layout na viewport, hit-test, destaque por ponteiro/setas e `Game::chooseDialogueOption` |
@@ -49,7 +50,6 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena (filtrando objetos ocultos em `SessionState`) |
 | `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas por arquivo (mantido nas edições; descarta o que ficou duas trocas de sala sem uso), corte e quadriculado de substituição |
 | `graphics/RenderOverlay` | Ponto de extensão para camadas desenhadas por cima (a ferramenta de debug se registra aqui) |
-| `graphics/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa |
 | `graphics/Renderer` | Ciclo de desenho, apresentação lógica `1280×720` com letterbox, cursor virtual do controle e conversão janela/toque/viewport |
 | `core/Application` | Janela, ciclo de vida mobile/console, retomada do save ou `first.room`, autosave, carregamento `.room` + `.rules` + `.dlg`, transições de sala e loop em passo fixo |
 
@@ -294,6 +294,11 @@ usou (ir e voltar entre duas salas não recarrega nada); `clear()` fica para res
 dispositivo de render. Os clips são validados quando a sala é aplicada, então o desenho só
 confere, em O(1), se o corte cabe no PNG carregado.
 
+O ritmo dos frames vem do VSync (`SDL_SetRenderVSync`, ligado em `Renderer::initialize`); o
+limitador por `sleep_until` de `Application::mainLoop` só marca o passo quando o VSync não está
+disponível ou a janela não aparece (minimizada, coberta ou oculta: a simulação continua, nada é
+desenhado), e limita a 240 fps um driver que ignore o VSync.
+
 O jogo simula a 60 Hz e o render interpola posição, câmera e tempo de animação
 (`AnimationPlayback::interpolatedElapsed`) entre os dois últimos ticks.
 
@@ -341,15 +346,17 @@ O save guarda só o progresso, nunca definições nem simulação:
   próximo, ou fica no `playerStart`. Save ausente = novo jogo em `first.room`
   (`RoomLibrary::startRoomFile`). Sala do save que não carrega mais (removida ou renomeada numa
   atualização, arquivo quebrado) = o progresso é mantido e a partida retoma em `first.room`, no
-  `playerStart` (`ResumeResult::warning`, log uma vez); o arquivo fica e o próximo autosave o
+  `playerStart` (`ResumeResult::warning`, log uma vez); o arquivo fica e o autosave da entrada na sala o
   regrava. Corrompido, de versão desconhecida, ou sala do save e `first.room` sem carregar =
   log uma vez, o arquivo vira `save.slot.bad` (nunca apagado) e novo jogo.
 - **Quando grava**: `AutosavePolicy` guarda o último snapshot **estável**, capturado em
   `RoomEntered` e `CutsceneEnded` (consumidos em `Application::processGameEvents`) e no momento
   do autosave se não houver cutscene/diálogo. No meio de uma sequência vale o snapshot anterior
-  a ela, para um puzzle nunca recarregar pela metade. Grava uma vez por ida ao background
-  (`WILL_` e `DID_ENTER_BACKGROUND` chegam como o mesmo sinal) e ao sair (`SDL_EVENT_QUIT`,
-  `TERMINATING`), e pula a escrita se o arquivo já tem esse snapshot. O SDL pede que esses
+  a ela, para um puzzle nunca recarregar pela metade. Grava ao entrar numa sala
+  (`RoomEntered` → `AutosavePolicy::checkpoint`, para um crash custar no máximo a sala atual),
+  uma vez por ida ao background (`WILL_` e `DID_ENTER_BACKGROUND` chegam como o mesmo sinal) e
+  ao sair (`SDL_EVENT_QUIT`, `TERMINATING`), e pula a escrita se o snapshot é o último que este
+  processo gravou. O SDL pede que esses
   eventos de ciclo de vida sejam tratados num `SDL_AddEventWatch` (o sistema pode congelar o app
   logo depois); `Application::lifecycleWatch` faz isso na thread principal, e a cópia do evento
   que chega pelo `InputRouter` cai na mesma política sem gravar de novo.

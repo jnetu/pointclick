@@ -3,6 +3,7 @@
 #include "support/RoomPresets.hpp"
 #include "game/Game.hpp"
 #include "graphics/EntityRenderer.hpp"
+#include "graphics/Renderer.hpp"
 #include "graphics/SpriteLibrary.hpp"
 
 #include <SDL3/SDL.h>
@@ -327,6 +328,46 @@ void testPlayerArtwork() {
 }
 }
 
+// graphics/ alone (a build without tools) draws the game and nothing else: no route, destination
+// cross, technical readout or editor hint. Those live in debug/, behind the editor.
+void testGameFrameHasNoDebugDrawing() {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    assert(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Game frame test", 1280, 720, SDL_WINDOW_HIDDEN);
+    assert(window);
+    Renderer renderer;
+    assert(renderer.initialize(window));
+    renderer.setSpriteRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/sprites");
+    Game game(RoomPresets::firstRoom());
+    game.onClick({900.0F, 600.0F});
+    game.tick(0.05F);
+    assert(game.scene().player().moving());
+    renderer.render(game, 1.0F);
+    SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(frame && frame->w == 1280 && frame->h == 720);
+    const SDL_Color debugColors[]{
+        {237, 224, 157, 255}, // route
+        {246, 206, 124, 255}, // destination cross
+        {9, 12, 19, 255},     // readout panel
+        {198, 215, 231, 255}, // readout text
+        {160, 175, 190, 255}, // editor hint
+    };
+    for (int y = 0; y < frame->h; ++y) {
+        for (int x = 0; x < frame->w; ++x) {
+            const SDL_Color color = pixel(frame, x, y);
+            for (const SDL_Color debug : debugColors) {
+                assert(color.r != debug.r || color.g != debug.g || color.b != debug.b);
+            }
+        }
+    }
+    expectColor(pixel(frame, 640, 100), 171, 62, 67); // the wall: the scene itself was drawn
+    SDL_DestroySurface(frame);
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 int main() {
     const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto directory = std::filesystem::temp_directory_path()
@@ -336,5 +377,6 @@ int main() {
     testPngRendering(directory);
     testEntityAnimationSelection(directory);
     testPlayerArtwork();
+    testGameFrameHasNoDebugDrawing();
     std::filesystem::remove_all(directory);
 }

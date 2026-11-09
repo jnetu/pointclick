@@ -67,7 +67,7 @@ Desktop está bem encaminhado: leitura por `SDL_IOStream`, caminhos UTF-8, escri
   iOS/Web sem adaptação), nem *safe area*, nem orientação travada.
 - `writeTextAtomic` usa `std::ofstream` + `std::filesystem::rename`; consoles pedem a API de
   armazenamento da plataforma (`SDL_Storage`) e nem todos têm `std::filesystem` completo.
-- `SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)`: o áudio ainda não é usado e, num ambiente sem
+- ✅ (C9) `SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)`: o áudio ainda não é usado e, num ambiente sem
   driver de áudio (CI, contêiner Linux), a falha desse subsistema impede o jogo inteiro de abrir.
 
 ### 2.3 Eficiência
@@ -85,13 +85,13 @@ Medido em Release neste Mac (números para comparar no futuro, não como requisi
 
 A simulação não é gargalo. Os riscos estão na apresentação e em casos extremos:
 
-- **Sem VSync.** `Renderer::initialize` nunca chama `SDL_SetRenderVSync`; o ritmo depende só do
+- ✅ (D2) **Sem VSync.** `Renderer::initialize` nunca chama `SDL_SetRenderVSync`; o ritmo depende só do
   `sleep_until` ([Application.cpp:291](../src/core/Application.cpp)).
 - **PNG carregado no primeiro desenho**, de forma síncrona (`SpriteLibrary::imageFor`): engasgo
   no primeiro frame de cada sala quando houver arte de verdade.
 - **Suavização da rota é O(n²)** com `clearLine` sobre caixas grandes
   ([Navigation.cpp:202](../src/game/Navigation.cpp)); é o que explica os 400 ms.
-- **Overlay de diagnóstico** roda todo frame em produção (consultas ao SDL, 12 textos
+- ✅ (D1) **Overlay de diagnóstico** roda todo frame em produção (consultas ao SDL, 12 textos
   formatados e um `substr`).
 - Sem *culling*: tudo é enviado ao SDL mesmo fora da câmera (irrelevante hoje).
 
@@ -103,6 +103,10 @@ A simulação não é gargalo. Os riscos estão na apresentação e em casos ext
 
 ✅ = corrigido em 09/11/2026, com teste de regressão que falha sem a correção (C1 e C5 em
 `tests/GameTests.cpp`; C3 em `GameTests.cpp` e `EditorTests.cpp`; C6 em `EditorTests.cpp`).
+Segundo lote, no mesmo dia: C9, C10 (`AutosavePolicy::checkpoint`, testado em `GameTests.cpp`),
+D1 (testes em `EditorTests.cpp` e `SpriteTests.cpp`) e D2. C9, D2 e a gravação em si do C10
+ficam em `Application`, sem teste automático: foram conferidos rodando o executável headless.
+O VSync numa janela com GPU real ainda não foi conferido.
 
 | # | Problema | Evidência | Onde / correção | Esforço |
 | --- | --- | --- | --- | --- |
@@ -114,14 +118,14 @@ A simulação não é gargalo. Os riscos estão na apresentação e em casos ext
 | C6 ✅ | **Editor ativo com painel oculto engole setas/Enter:** o menu de diálogo não responde a teclado/gamepad enquanto se testa com TAB. | Sonda: após Baixo+Enter ainda `awaitingDialogueChoice()`. | [DebugEditor.cpp:115](../src/debug/DebugEditor.cpp): devolver `false` para ações que o painel oculto não usa. | 15 min |
 | C7 | **`load` do editor não recarrega PNGs**, ao contrário do que diz `GAME_DESIGN.md:190`; PNG ausente fica em cache como nulo até duas trocas de sala. | Leitura: só `invalidateGraphics` chama `SpriteLibrary::clear`. | Interface pequena `ToolHost { reloadArt(); }` dada ao `DebugEditor` pelo `Application`; `load` e um comando `reload` a chamam. | 1–2 h |
 | C8 | **Android: arte do player não carrega** (*por leitura*, ver 2.2). | — | `RoomLibrary::open`: tentar abrir pelo SDL e tratar falha de abertura como ausência, sem `std::filesystem::exists`. | 30 min |
-| C9 | **Sem driver de áudio (CI, contêiner Linux) o jogo não abre** (*por leitura*); o áudio nem é usado ainda. | [Application.cpp:179](../src/core/Application.cpp). | Tirar `SDL_INIT_AUDIO` até existir `audio/`; depois, iniciar o subsistema à parte e seguir sem som se falhar. | 10 min |
-| C10 | **Progresso perdido em crash:** o autosave só é gravado ao ir para background ou sair. | Leitura de `processGameEvents`. | Gravar também em `RoomEntered` (a política já pula escrita sem mudança). | 30 min |
+| C9 ✅ | **Sem driver de áudio (CI, contêiner Linux) o jogo não abre** (*por leitura*); o áudio nem é usado ainda. | [Application.cpp:179](../src/core/Application.cpp). | Tirar `SDL_INIT_AUDIO` até existir `audio/`; depois, iniciar o subsistema à parte e seguir sem som se falhar. | 10 min |
+| C10 ✅ | **Progresso perdido em crash:** o autosave só é gravado ao ir para background ou sair. | Leitura de `processGameEvents`. | Gravar também em `RoomEntered` (a política já pula escrita sem mudança). | 30 min |
 | C11 | **Clique num objeto já ao alcance faz o player "ajeitar"** até o centro da célula antes de interagir. | Sonda: a 10 px do ponto, anda de (889,629) para (880,624). | `Scene::approach`: se já está ao alcance e a rota é menor que uma célula, resolver na hora. | 1 h |
 | C12 | **Uso de item sem regra não dá resposta:** o player anda até o objeto e nada acontece. | Sonda: `useItemOnObject` devolve `true`, sem fala nem evento. | Ver F4 (regras curinga). | — |
 
 ### 3.2 Dívidas e higiene
 
-- **D1 — Desenho de debug em produção** (dívida do `CLAUDE.md`): linha da rota e cruz do destino
+- ✅ **D1 — Desenho de debug em produção** (dívida do `CLAUDE.md`): linha da rota e cruz do destino
   ([SceneRenderer.cpp:20,55](../src/graphics/SceneRenderer.cpp)), `DiagnosticsOverlay` sempre
   ([Renderer.cpp:96](../src/graphics/Renderer.cpp)) e a dica "DEBUG / F1" **mesmo em build sem
   ferramentas**. Correção modular: `DiagnosticsOverlay`, rota e destino viram `RenderOverlay` em
@@ -129,7 +133,7 @@ A simulação não é gargalo. Os riscos estão na apresentação e em casos ext
   por padrão. `SceneRenderer` fica só com a cena; builds de loja perdem tudo sem `#if`. Toca
   `graphics/SceneRenderer.cpp`, `graphics/Renderer.cpp`, `debug/`, `CMakeLists.txt`,
   `tests/EditorTests.cpp`. *½ dia.*
-- **D2 — VSync:** `SDL_SetRenderVSync(renderer_, 1)` na criação; manter o `sleep_until` como
+- ✅ **D2 — VSync:** `SDL_SetRenderVSync(renderer_, 1)` na criação; manter o `sleep_until` como
   reserva quando o VSync falhar. Pausar o render com a janela minimizada/oculta. *1 h.*
 - **D3 — `Game::session()` não-const é público:** mexer na sessão por fora deixa a navegação
   velha (sonda: `isObjectSolid == 0` e a célula continua bloqueada). Hoje só os testes usam.

@@ -226,9 +226,10 @@ void testRoomFiles(const std::filesystem::path& directory) {
     assert(RoomFiles::load(path).room->playerNearSpeed == validSpeed);
 }
 
-bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target) {
-    for (int y = 0; y < surface->h; y += 8) {
-        for (int x = 0; x < surface->w; x += 8) {
+// step 1 finds one-pixel lines and text; the default samples large areas quickly.
+bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target, const int step = 8) {
+    for (int y = 0; y < surface->h; y += step) {
+        for (int x = 0; x < surface->w; x += step) {
             SDL_Color color{};
             assert(SDL_ReadSurfacePixel(surface, x, y, &color.r, &color.g, &color.b, &color.a));
             if (color.r == target.r && color.g == target.g && color.b == target.b) {
@@ -251,7 +252,47 @@ void testDebugRendering() {
     DebugEditor editor;
     const DebugOverlay overlay(editor);
     renderer.addOverlay(&overlay);
+
+    // Debug drawing belongs to the tools: with the editor closed the frame has only the hint;
+    // active, it shows the route and the readout, each switched with `show <view> <0|1>`.
+    const SDL_Color routeColor{237, 224, 157, 255};
+    const SDL_Color crossColor{246, 206, 124, 255};
+    const SDL_Color readoutColor{9, 12, 19, 255};
+    const SDL_Color hintColor{160, 175, 190, 255};
+    const auto frameHas = [&](const SDL_Color color) {
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        assert(frame);
+        const bool found = surfaceContainsColor(frame, color, 1);
+        SDL_DestroySurface(frame);
+        return found;
+    };
+    game.onClick({300.0F, 600.0F}); // to the left, clear of the editor panel
+    game.tick(0.05F);
+    assert(game.scene().player().moving());
+    assert(!frameHas(routeColor) && !frameHas(crossColor) && !frameHas(readoutColor));
+    assert(frameHas(hintColor));
     editor.onTextInput("DEBUG", game);
+    assert(frameHas(routeColor) && frameHas(crossColor) && frameHas(readoutColor));
+    assert(!frameHas(hintColor));
+    command(editor, game, "show route 0");
+    assert(!editor.views().route && editor.status() == "route: oculto");
+    assert(!frameHas(routeColor) && !frameHas(crossColor) && frameHas(readoutColor));
+    command(editor, game, "show diagnostics 0");
+    assert(!frameHas(readoutColor));
+    command(editor, game, "show grade 1");
+    assert(editor.status() == "Use: show route|diagnostics|hint 0/1");
+    command(editor, game, "show route 2");
+    assert(editor.status() == "Use: show route|diagnostics|hint 0/1" && !editor.views().route);
+    command(editor, game, "show hint 0");
+    assert(editor.onToolAction(ToolAction::close, game) && !editor.active());
+    assert(!frameHas(hintColor) && !frameHas(routeColor) && !frameHas(readoutColor));
+
+    editor.onTextInput("DEBUG", game);
+    command(editor, game, "show route 1");
+    command(editor, game, "show diagnostics 1");
+    command(editor, game, "show hint 1");
+    assert(editor.views().route && editor.views().diagnostics && editor.views().hint);
     renderer.render(game, 1.0F);
     SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(pixels);

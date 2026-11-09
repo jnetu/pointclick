@@ -693,6 +693,56 @@ void testScriptedSequenceAndCutscene() {
     game.loadRoom(gallery);
     assert(!game.inCutscene());
     assert(!requestedRoom(game).has_value());
+
+    // A still image (fps 0, no loop) has nothing left to play: wait_animation never holds the
+    // cutscene on it.
+    Room still = RoomPresets::firstRoom();
+    still.scenery[1].animations["idle"] = SpriteClip{.file = "red_idle.png"};
+    still.scenery[1].animations["opened"] = SpriteClip{.file = "red_opened.png", .fps = 0.0F,
+                                                       .loop = false};
+    Game stillGame(still);
+    stillGame.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {
+            InteractionEffect::make("play_animation", {"red_box", "opened"}),
+            InteractionEffect::make("wait_animation", {"red_box"}),
+            InteractionEffect::make("set_flag", {"still_done"}),
+        },
+    }}});
+    stillGame.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !stillGame.session().hasFlag("still_done"); ++i) {
+        stillGame.tick(0.05F);
+    }
+    assert(stillGame.session().hasFlag("still_done"));
+    assert(!stillGame.inCutscene());
+    assert(stillGame.scene().objectAnimation("red_box")->name() == "opened");
+
+    // A line still on screen (a trailing say is not waited for) stays in the room it was said in.
+    Game talker(RoomPresets::firstRoom());
+    talker.setInteractions(RoomInteractions{{{
+        .trigger = InteractionTrigger::interact("blue_box"),
+        .conditions = {},
+        .effects = {
+            InteractionEffect::make("change_room", {"gallery"}),
+            InteractionEffect::make("say", {"Tchau"}),
+        },
+    }}});
+    talker.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !requestedRoom(talker); ++i) talker.tick(0.05F);
+    assert(requestedRoom(talker) && *requestedRoom(talker) == "gallery");
+    assert(talker.scene().floatingText().isVisible());
+    talker.loadRoom(gallery);
+    assert(!talker.scene().floatingText().isVisible());
+    // A live edit of the same room (resetPlayer = false) keeps the line being read.
+    Game editing(RoomPresets::firstRoom());
+    editing.setInteractions(RoomPresets::firstRoomInteractions());
+    editing.onClick({430.0F, 410.0F});
+    for (int i = 0; i < 200 && !editing.scene().floatingText().isVisible(); ++i) editing.tick(0.05F);
+    assert(editing.scene().floatingText().isVisible());
+    std::string editError;
+    assert(editing.applyRoom(RoomPresets::firstRoom(), false, editError));
+    assert(editing.scene().floatingText().isVisible());
 }
 
 RoomDialogues guardDialogues() {
@@ -1165,6 +1215,13 @@ void testSaveFacingAndOlderVersions(const std::filesystem::path& directory) {
     (void)resumed.placePlayerNear(loaded.save->feet, loaded.save->facing);
     assert(resumed.scene().player().facing() == Facing::left);
     assert(resumed.savedGame() == *loaded.save);
+
+    // A save edited by hand in a Windows editor (UTF-8 BOM, CRLF) still loads.
+    const auto edited = directory / "bom.slot";
+    std::ofstream(edited, std::ios::binary)
+            << "\xEF\xBB\xBF" << "version = 2\r\nroom = gallery\r\nfeet = 300, 500\r\n";
+    const SaveLoadResult fromEditor = SaveFiles::load(edited);
+    assert(fromEditor.save && fromEditor.save->roomId == "gallery");
 }
 
 void testBadSaveFiles(const std::filesystem::path& directory) {

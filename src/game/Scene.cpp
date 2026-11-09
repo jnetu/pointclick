@@ -78,6 +78,7 @@ bool Scene::apply(Room room, const bool resetPlayer, std::string& error,
     camera_.configure(room_.width, room_.height);
     if (resetPlayer) {
         camera_.snapTo(player_.feet());
+        speech_.hide(); // a line still on screen belongs to where the player came from
     }
     objectAnimations_ = std::move(animations);
     pendingInteraction_.reset();

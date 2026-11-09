@@ -57,7 +57,10 @@ TextFormat::TextLoad readStream(SDL_IOStream* file) {
     if (!data || (status != SDL_IO_STATUS_READY && status != SDL_IO_STATUS_EOF)) {
         return {std::nullopt, "Falha de leitura"};
     }
-    return {std::string(static_cast<const char*>(data.get()), dataSize), {}};
+    std::string text(static_cast<const char*>(data.get()), dataSize);
+    // Windows editors (Notepad) prepend a UTF-8 BOM; no format takes it as content.
+    if (text.starts_with("\xEF\xBB\xBF")) text.erase(0, 3);
+    return {std::move(text), {}};
 }
 } // namespace
 

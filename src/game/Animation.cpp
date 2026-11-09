@@ -34,6 +34,7 @@ float AnimationPlayback::interpolatedElapsed(const float alpha) const {
 }
 
 bool AnimationPlayback::finished(const SpriteClip& clip) const {
-    return !clip.loop && clip.fps > 0.0F
-           && elapsed_ * clip.fps >= static_cast<float>(clip.frames);
+    if (clip.loop) return false;
+    // fps 0 holds the first frame: nothing is left to play, so a script never waits on it.
+    return clip.fps <= 0.0F || elapsed_ * clip.fps >= static_cast<float>(clip.frames);
 }

@@ -1203,6 +1203,28 @@ void testDialogueMenuInput() {
     assert(router.routeTranslated(hover, game).consumedByUi);
     assert(menu.highlighted() == 2 && !game.scene().pointerInside());
 
+    // The editor active with its panel hidden (TAB, to test the room) leaves arrows and Enter to
+    // the menu; the same keys with the panel showing stay with the editor.
+    const auto key = [&](const ToolAction tool, const UiNavAction nav) {
+        TranslatedInput input;
+        input.toolAction = tool;
+        input.navAction = nav;
+        return router.routeTranslated(input, game);
+    };
+    assert(editor.onToolAction(ToolAction::toggleEditor, game));
+    assert(editor.panelVisible());
+    assert(key(ToolAction::previous, UiNavAction::up).consumedByDebug);
+    assert(menu.highlighted() == 2);
+    assert(editor.onToolAction(ToolAction::togglePanel, game));
+    assert(editor.active() && !editor.panelVisible());
+    const InputRouteResult hiddenUp = key(ToolAction::previous, UiNavAction::up);
+    assert(hiddenUp.consumedByUi && !hiddenUp.consumedByDebug);
+    assert(menu.highlighted() == 1);
+    assert(key(ToolAction::submit, UiNavAction::confirm).consumedByUi);
+    assert(!game.dialogueActive());
+    assert(editor.onToolAction(ToolAction::close, game) && !editor.active());
+    assert(game.startDialogue("menu"));
+
     // Draws without a window of its own (software renderer) while open.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
@@ -1362,6 +1384,21 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     assert(scratch.saveRoom("copia.room", declared, error));
     const auto copy = scratch.loadBundle("copia.room");
     assert(copy.bundle && copy.bundle->room.id == "copia");
+
+    // Files saved by Windows editors start with a UTF-8 BOM and use CRLF: every format reads
+    // them through the same TextFormat reader.
+    const std::string bom = "\xEF\xBB\xBF";
+    std::ofstream(directory / "bom.room", std::ios::binary) << bom << withoutId;
+    std::ofstream(directory / "bom.rules", std::ios::binary)
+            << bom << "[interact blue_box]\r\nsay \"oi\"\r\nstart_dialogue caixa\r\n";
+    std::ofstream(directory / "bom.dlg", std::ios::binary) << bom << "[node caixa]\r\nsay \"ola\"\r\n";
+    std::ofstream(directory / "bom.actor", std::ios::binary) << bom << "idle.file = a.png\r\n";
+    const auto withBom = scratch.loadBundle("bom.room");
+    assert(withBom.bundle && withBom.error.empty());
+    assert(withBom.bundle->room.id == "bom");
+    assert(withBom.bundle->interactions.rules.size() == 1);
+    assert(withBom.bundle->dialogues.findNode("caixa"));
+    assert(ActorFiles::load(directory / "bom.actor").animations);
 
     assert(ActorFiles::parse("").error == "Ator sem animacoes");
     assert(ActorFiles::parse("idle.file = a.png\nidle.file = b.png").error

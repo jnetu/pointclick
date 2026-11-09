@@ -33,7 +33,8 @@ struct TextLoad {
     std::optional<std::string> text;
     std::string error;
 };
-// SDL_IOFromFile + SDL_LoadFile_IO (UTF-8 path; APK assets on Android).
+// SDL_IOFromFile + SDL_LoadFile_IO (UTF-8 path; APK assets on Android). A leading UTF-8 BOM is
+// dropped, so every format reads files saved by Windows editors.
 [[nodiscard]] TextLoad readFile(const std::filesystem::path& path);
 // A companion that may be absent: missing = empty text, no error.
 [[nodiscard]] TextLoad readOptionalFile(const std::filesystem::path& path);

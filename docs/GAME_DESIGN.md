@@ -39,7 +39,8 @@ para abrir o editor. Maiúsculas e minúsculas funcionam.
 - **Tab:** ocultar/mostrar o painel para testar a sala inteira com o mouse.
 - **Esc:** sair do modo debug; os valores editados continuam na sessão.
 
-Com o painel oculto, texto e setas não alteram parâmetros. Os nomes dos objetos
+Com o painel oculto, texto e setas não alteram parâmetros; setas e Enter voltam a
+valer para o jogo (por exemplo, o menu de escolhas de um diálogo). Os nomes dos objetos
 e suas bases de colisão continuam visíveis. Fora do modo DEBUG, os comandos e
 as setas não editam a sala. O painel técnico de posições continua disponível.
 
@@ -110,7 +111,9 @@ possível salvar a sala atual com outro nome e continuar editando essa cópia;
 o `save` grava o `id` do novo nome.
 A pasta do editor aparece na parte inferior do painel.
 
-O formato aceita comentários iniciados por `#`. Chaves não reconhecidas,
+O formato aceita comentários iniciados por `#`. Arquivos salvos em editores do Windows
+(com BOM UTF-8 no início e quebras de linha CRLF) são lidos normalmente, em todos os
+formatos (`.room`, `.rules`, `.dlg`, `.actor`). Chaves não reconhecidas,
 valores inválidos e IDs repetidos são rejeitados. Os valores numéricos omitidos
 usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.actor`
 (veja abaixo). Nenhum dado de arte vem do C++. Os objetos devem ser declarados no arquivo.
@@ -216,7 +219,8 @@ O jogo guarda o tempo de animação de cada objeto separadamente. Uma regra
 declarativa pode usar `play_animation porta open` (ou em C++ chamar
 `Game::playObjectAnimation("porta", "open", true, error)`) para iniciar ou
 reiniciar a ação. O clip com `loop = 0` permanece no último quadro;
-`AnimationPlayback::finished(clip)` informa quando terminou. `bounds` continua
+`AnimationPlayback::finished(clip)` informa quando terminou (um clip com `fps = 0` e
+`loop = 0` é uma imagem parada e conta como terminado desde o início). `bounds` continua
 definindo a posição, o hit-test de clique e o tamanho visual padrão; `collision`
 continua definindo a área sólida. O sprite não altera a navegação.
 
@@ -316,7 +320,7 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
 | **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |
 | **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
-| **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` não esperam) |
+| **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` e imagens paradas, com `fps = 0`, não esperam) |
 | **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
 | **Efeito** | `wait <segundos>` | Espera um tempo (ex.: `wait 1.5`, sempre com ponto) |
 | **Efeito** | `start_dialogue <no>` | Abre um nó do `<sala>.dlg` e espera a conversa terminar |

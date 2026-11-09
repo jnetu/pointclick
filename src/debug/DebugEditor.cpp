@@ -112,7 +112,9 @@ bool DebugEditor::onToolAction(const ToolAction key, Game& game) {
         return true;
     }
     if (!active_) return false;
-    if (!panelVisible_ && key != ToolAction::togglePanel && key != ToolAction::close) return true;
+    // Panel hidden to test the room: only TAB and ESC are the editor's. Arrows and Enter go on
+    // to the gameplay UI (dialogue menu).
+    if (!panelVisible_ && key != ToolAction::togglePanel && key != ToolAction::close) return false;
     const auto parameters = roomParameters();
     switch (key) {
     case ToolAction::toggleEditor: break;

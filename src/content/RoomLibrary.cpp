@@ -5,19 +5,13 @@
 #include "content/InteractionFiles.hpp"
 #include "content/TextFormat.hpp"
 
-#include <system_error>
 #include <utility>
 
 bool RoomLibrary::open(std::filesystem::path roomsDirectory, std::string& error) {
     roomsDirectory_ = std::move(roomsDirectory);
     playerArt_.clear();
-    const auto actorPath = playerActorPath();
-    std::error_code ec;
-    if (!std::filesystem::exists(actorPath, ec)) {
-        error.clear();
-        return true;
-    }
-    ActorLoadResult actor = ActorFiles::load(actorPath);
+    // Missing = an empty set: the rooms then declare their own player clips.
+    ActorLoadResult actor = ActorFiles::loadOptional(playerActorPath());
     if (!actor.animations) {
         error = std::move(actor.error);
         return false;

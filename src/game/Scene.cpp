@@ -8,6 +8,9 @@
 
 namespace {
 constexpr float kNoWalkDistance = 0.01F;
+// Already within reach of the target, a walk shorter than one navigation cell would only shuffle
+// the feet to the centre of their cell before interacting.
+constexpr float kSettleDistance = static_cast<float>(Navigation::cellSize);
 
 float distance(const SDL_FPoint a, const SDL_FPoint b) {
     return std::hypot(a.x - b.x, a.y - b.y);
@@ -181,7 +184,9 @@ Scene::Approach Scene::approach(const InteractionTrigger& trigger) {
                                                        : std::vector<SDL_FPoint>{});
         return Approach::failed;
     }
-    if (walkDistance <= kNoWalkDistance) {
+    if (walkDistance <= kNoWalkDistance
+        || (walkDistance < kSettleDistance
+            && isWithinInteractionReach(room_, target, session_, player_.feet()))) {
         pendingInteraction_.reset();
         player_.setPath({});
         return Approach::arrived;

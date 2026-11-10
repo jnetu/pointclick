@@ -6,8 +6,10 @@
 #include "game/Interaction.hpp"
 #include "game/Room.hpp"
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string_view>
+#include <utility>
 
 class Game;
 
@@ -28,6 +30,9 @@ public:
     // save/load go through the same library the game uses (shared player art, layout).
     // The library must outlive the editor.
     void setLibrary(const RoomLibrary& library) { library_ = &library; }
+    // Called by `load` and `reload` so PNGs changed on disk are read again. The application
+    // wires it to the renderer's texture cache; unset, those commands only skip the reload.
+    void setArtReloader(std::function<void()> reloadArt) { reloadArt_ = std::move(reloadArt); }
     // Returns true when the editor consumed the text/key/click.
     bool onTextInput(std::string_view text, Game& game) override;
     bool onToolAction(ToolAction action, Game& game) override;
@@ -61,6 +66,7 @@ private:
     std::string command_;
     std::string status_;
     const RoomLibrary* library_ = nullptr;
+    std::function<void()> reloadArt_;
     std::optional<Room> baseline_;
     std::optional<RoomInteractions> baselineInteractions_;
     std::optional<RoomDialogues> baselineDialogues_;

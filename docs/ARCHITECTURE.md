@@ -149,9 +149,16 @@ O empacotamento deve preservar `assets/rooms` dentro do espaço de assets do APK
 para indicar outra raiz. `SDL_GetBasePath` devolve um ponteiro mantido pelo SDL,
 que o chamador não deve liberar.
 
-A gravação continua usando `std::ofstream` e o sistema de arquivos local.
-Essa migração de leitura não define um diretório gravável para saves em mobile
-nem implementa suporte mobile completo.
+A gravação passa por `TextFormat::writeTextAtomic` (`std::ofstream` num `.tmp` e
+`std::filesystem::rename`), sempre no sistema de arquivos local, com dois destinos: as salas
+gravadas pelo editor vão para a pasta de `--rooms` (ferramenta de desenvolvimento, desktop) e o
+save vai para `SDL_GetPrefPath`, a pasta gravável do usuário em toda plataforma (ver "Save/load
+de partida"). Ainda não há projeto de empacotamento para Android/iOS nem teste em aparelho, e
+consoles e Web vão pedir a troca dessa escrita pela API de armazenamento da plataforma
+(`docs/ROADMAP.md`, L2 e L3). O `player.actor` e os companheiros opcionais (`.rules`, `.dlg`)
+são encontrados abrindo o arquivo pelo SDL: `std::filesystem::exists` não enxerga assets dentro
+do APK e só é consultado, depois de uma abertura que falhou, para separar "ilegível" de
+"ausente".
 
 ## Adicionar um parâmetro numérico
 
@@ -290,7 +297,7 @@ ou do objeto. A definição guarda o caminho relativo e o corte da imagem, sem c
 desenha o quadriculado de substituição quando o PNG ou corte falha. O cache é por
 arquivo: edições no editor e mudanças de `SessionState` não o apagam. Ao entrar em outra
 sala, `SpriteLibrary::beginRoom` descarta só as texturas que nenhuma das duas últimas salas
-usou (ir e voltar entre duas salas não recarrega nada); `clear()` fica para reset do
+usou (ir e voltar entre duas salas não recarrega nada); `clear()` fica para os comandos `load` e `reload` do editor (PNG trocado em disco) e para reset do
 dispositivo de render. Os clips são validados quando a sala é aplicada, então o desenho só
 confere, em O(1), se o corte cabe no PNG carregado.
 

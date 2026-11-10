@@ -72,6 +72,7 @@ mensagem e preservam o estado anterior.
 | `load minha_sala.room porta_esquerda` | Carrega a sala entrando pelo `[spawn porta_esquerda]` (teste de portas) |
 | `show route 0` | Oculta a rota e a cruz do destino; `1` mostra de novo |
 | `show diagnostics 0` | Oculta o painel técnico de posições |
+| `reload` | Relê os PNGs do disco (arte trocada com o jogo aberto); não altera a sala nem o progresso |
 | `show hint 0` | Oculta a dica "DEBUG / F1 / Select" exibida com o editor fechado (para capturas de tela limpas) |
 | `undo` | Desfaz a última edição/carregamento; uma chamada seguinte alterna os dois estados |
 | `reset` | Restaura a sala que estava ativa quando DEBUG foi aberto |
@@ -199,7 +200,9 @@ Para manter a proporção original de cada quadro, ajuste `.display_width` e
 `.display_height` na mesma proporção. A primeira sala usa largura visual
 53,33 com altura 80, preservando a proporção 32:48 de cada quadro. Após editar
 o `.room` ou colocar um PNG na pasta, use
-`load first.room` no modo DEBUG para recarregar sem recompilar.
+`load first.room` no modo DEBUG para recarregar sem recompilar: ele relê a sala e os
+PNGs. Se só a arte mudou, `reload` relê os PNGs sem mexer na sala, na posição do
+personagem nem no progresso.
 
 Objetos também aceitam clips nomeados. Dentro de `[object mesa]`, use
 `animation.idle.file = cenario/mesa.png` para uma imagem simples e acrescente
@@ -322,7 +325,7 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Condição** | `flag_set <flag>` / `flag_not_set <flag>` | Testa se uma flag de progresso está ativa ou não |
 | **Condição** | `has_item <itemId>` / `lacks_item <itemId>` | Testa se o jogador possui (ou não) o item no inventário |
 | **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
-| **Efeito** | `say "<texto>"` | Exibe a fala/observação (suporta `\"` e `\n`) e espera o tempo de leitura ou um clique |
+| **Efeito** | `say "<texto>"` | Exibe a fala/observação e espera o tempo de leitura ou um clique. Aceita `\"`; `\n` é lido e gravado, mas a fonte de depuração atual não quebra linha nem mostra acentos, e falas com mais de 39 caracteres saem cortadas na borda (`docs/ROADMAP.md`, C2 e M1) |
 | **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |

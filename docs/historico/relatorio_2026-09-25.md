@@ -1,3 +1,7 @@
+> **Documento histórico.** Descreve o projeto como era em setembro de 2026; boa parte do que
+> aponta já mudou. O estado atual está em `docs/ARCHITECTURE.md` e as pendências em
+> `docs/ROADMAP.md`.
+
 # Relatório de Arquitetura, Modularidade e Portabilidade
 
 **Projeto:** Point & Click Adventure Engine  

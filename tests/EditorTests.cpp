@@ -53,6 +53,8 @@ void testEditing(const std::filesystem::path& directory) {
     DebugEditor editor;
     const RoomLibrary library = openLibrary(directory);
     editor.setLibrary(library);
+    int artReloads = 0;
+    editor.setArtReloader([&artReloads] { ++artReloads; });
     assert(!editor.onToolAction(ToolAction::increase, game));
     assert(!editor.onTextInput("DE", game));
     assert(!editor.active());
@@ -78,9 +80,18 @@ void testEditing(const std::filesystem::path& directory) {
     command(editor, game, "set player.near_speed 500");
     command(editor, game, "undo");
     assert(game.scene().room().playerNearSpeed == 400);
+    assert(artReloads == 0); // edits, save and undo keep the texture cache
     command(editor, game, "load authored.room");
     assert(game.scene().room().playerFarSpeed == 120);
     assert(!game.scene().player().moving());
+    // `load` also asks for the PNGs again (art edited on disk); `reload` does only that.
+    assert(artReloads == 1);
+    const SDL_FPoint feetBeforeReload = game.scene().player().feet();
+    command(editor, game, "reload");
+    assert(artReloads == 2 && editor.status() == "Sprites recarregados do disco");
+    assert(game.scene().player().feet().x == feetBeforeReload.x);
+    command(editor, game, "load nao_existe.room");
+    assert(artReloads == 2); // a refused load reloads nothing
     command(editor, game, "save ../escape.room");
     assert(editor.status().find("sem pastas") != std::string::npos);
 
@@ -938,6 +949,8 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     command(editor, editorGame, "load broken_rules.room");
     assert(editor.status() == "Linha 2: Texto entre aspas nao fechado");
     assert(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back.
+    command(editor, editorGame, "reload"); // no reloader wired (as in these tests): reported
+    assert(editor.status() == "Recarga de sprites indisponivel");
 
     // 5. Clear line-by-line error messages for invalid rule syntax and invalid room references.
     const struct {
@@ -1448,6 +1461,24 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
            == "Animacao idle: Contagem de quadros invalida");
     assert(ActorFiles::parse("idle.colour = 1").error
            == "Linha 1: Chave ou valor invalido: idle.colour");
+
+    // The shared actor is optional and is found by opening it (assets inside an APK are not on
+    // the filesystem): absent = no art and no error; present but empty or broken = an error.
+    const auto pack = directory / "pack";
+    std::filesystem::create_directories(pack / "rooms");
+    std::filesystem::create_directories(pack / "actors");
+    const ActorLoadResult absent = ActorFiles::loadOptional(pack / "actors/player.actor");
+    assert(absent.animations && absent.animations->empty() && absent.error.empty());
+    RoomLibrary packed;
+    assert(packed.open(pack / "rooms", error) && packed.playerArt().empty());
+    std::ofstream(pack / "actors/player.actor", std::ios::binary) << "";
+    assert(!packed.open(pack / "rooms", error));
+    assert(error == "player.actor: Ator sem animacoes");
+    std::ofstream(pack / "actors/player.actor", std::ios::binary) << "idle.fps = rapido\n";
+    assert(!packed.open(pack / "rooms", error));
+    assert(error == "player.actor: Linha 1: Chave ou valor invalido: idle.fps");
+    std::ofstream(pack / "actors/player.actor", std::ios::binary) << "idle.file = a.png\n";
+    assert(packed.open(pack / "rooms", error) && packed.playerArt().size() == 1);
 }
 
 // [spawn <id>] in .room (feet + facing) round-trips; change_room takes an optional spawn; the

@@ -17,4 +17,7 @@ struct ActorLoadResult {
 namespace ActorFiles {
 [[nodiscard]] ActorLoadResult parse(std::string_view content);
 [[nodiscard]] ActorLoadResult load(const std::filesystem::path& path);
+// A missing file is no actor: an empty set and no error (a present one never parses to empty).
+// Presence is decided by opening it through SDL, so it also finds assets packed in an APK.
+[[nodiscard]] ActorLoadResult loadOptional(const std::filesystem::path& path);
 } // namespace ActorFiles

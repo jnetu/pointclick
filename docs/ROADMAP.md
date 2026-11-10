@@ -59,7 +59,7 @@ Desktop está bem encaminhado: leitura por `SDL_IOStream`, caminhos UTF-8, escri
 `SDL_GetPrefPath`, toque sem mouse sintético, gamepad com hotplug, ciclo de vida tratado em
 *event watch*, teclado virtual sob demanda. Riscos concretos antes de um primeiro build mobile:
 
-- `RoomLibrary::open` usa `std::filesystem::exists` para o `player.actor`
+- ✅ (C8, sem teste em Android) `RoomLibrary::open` usa `std::filesystem::exists` para o `player.actor`
   ([RoomLibrary.cpp:16](../src/content/RoomLibrary.cpp)); assets dentro do APK não aparecem no
   sistema de arquivos, então no Android a arte compartilhada não seria carregada e toda sala
   falharia em "Animacao obrigatoria do player" (*por leitura*).
@@ -107,6 +107,10 @@ Segundo lote, no mesmo dia: C9, C10 (`AutosavePolicy::checkpoint`, testado em `G
 D1 (testes em `EditorTests.cpp` e `SpriteTests.cpp`) e D2. C9, D2 e a gravação em si do C10
 ficam em `Application`, sem teste automático: foram conferidos rodando o executável headless.
 O VSync numa janela com GPU real ainda não foi conferido.
+Terceiro lote, em 10/11/2026: C7 (callback `setArtReloader`, comando `reload`; testes em
+`EditorTests.cpp` e `SpriteTests.cpp`), C8 (`ActorFiles::loadOptional`; o comportamento no
+desktop está testado, o caso Android em si continua sem aparelho para conferir), C11 (teste em
+`GameTests.cpp`) e D4 (`relatorio.md` e a auditoria foram para `docs/historico/`).
 
 | # | Problema | Evidência | Onde / correção | Esforço |
 | --- | --- | --- | --- | --- |
@@ -116,11 +120,11 @@ O VSync numa janela com GPU real ainda não foi conferido.
 | C4 | **Estado visual de objeto não persiste:** `play_animation porta open` volta ao clip inicial ao sair e voltar da sala e ao carregar o save, enquanto flag e colisão continuam "aberta". | Sonda: `anim=idle`, `flag=1`, `solid=0`; o save não contém a animação. | Campo `animation` em `ObjectStateOverride` + efeito persistente (`set_animation <obj> <clip>`, ou `play_animation` de clip sem loop passa a persistir); `ObjectAnimations::rebuild` parte do clip salvo já no último quadro. Toca `SessionState`, `SaveFiles` (versão 3), `ActionCatalog`, `Scene::apply`, docs, testes. | 1–2 dias |
 | C5 ✅ | **Fala atravessa a troca de sala:** `change_room b` seguido de `say` (último passo, não esperado) deixa o texto na sala nova. | Sonda: fala visível após `applyRoom`. | `speech_.hide()` em `Scene::apply` quando `resetPlayer` + teste. | 15 min |
 | C6 ✅ | **Editor ativo com painel oculto engole setas/Enter:** o menu de diálogo não responde a teclado/gamepad enquanto se testa com TAB. | Sonda: após Baixo+Enter ainda `awaitingDialogueChoice()`. | [DebugEditor.cpp:115](../src/debug/DebugEditor.cpp): devolver `false` para ações que o painel oculto não usa. | 15 min |
-| C7 | **`load` do editor não recarrega PNGs**, ao contrário do que diz `GAME_DESIGN.md:190`; PNG ausente fica em cache como nulo até duas trocas de sala. | Leitura: só `invalidateGraphics` chama `SpriteLibrary::clear`. | Interface pequena `ToolHost { reloadArt(); }` dada ao `DebugEditor` pelo `Application`; `load` e um comando `reload` a chamam. | 1–2 h |
-| C8 | **Android: arte do player não carrega** (*por leitura*, ver 2.2). | — | `RoomLibrary::open`: tentar abrir pelo SDL e tratar falha de abertura como ausência, sem `std::filesystem::exists`. | 30 min |
+| C7 ✅ | **`load` do editor não recarrega PNGs**, ao contrário do que diz `GAME_DESIGN.md:190`; PNG ausente fica em cache como nulo até duas trocas de sala. | Leitura: só `invalidateGraphics` chama `SpriteLibrary::clear`. | Interface pequena `ToolHost { reloadArt(); }` dada ao `DebugEditor` pelo `Application`; `load` e um comando `reload` a chamam. | 1–2 h |
+| C8 ✅ | **Android: arte do player não carrega** (*por leitura*, ver 2.2). | — | `RoomLibrary::open`: tentar abrir pelo SDL e tratar falha de abertura como ausência, sem `std::filesystem::exists`. | 30 min |
 | C9 ✅ | **Sem driver de áudio (CI, contêiner Linux) o jogo não abre** (*por leitura*); o áudio nem é usado ainda. | [Application.cpp:179](../src/core/Application.cpp). | Tirar `SDL_INIT_AUDIO` até existir `audio/`; depois, iniciar o subsistema à parte e seguir sem som se falhar. | 10 min |
 | C10 ✅ | **Progresso perdido em crash:** o autosave só é gravado ao ir para background ou sair. | Leitura de `processGameEvents`. | Gravar também em `RoomEntered` (a política já pula escrita sem mudança). | 30 min |
-| C11 | **Clique num objeto já ao alcance faz o player "ajeitar"** até o centro da célula antes de interagir. | Sonda: a 10 px do ponto, anda de (889,629) para (880,624). | `Scene::approach`: se já está ao alcance e a rota é menor que uma célula, resolver na hora. | 1 h |
+| C11 ✅ | **Clique num objeto já ao alcance faz o player "ajeitar"** até o centro da célula antes de interagir. | Sonda: a 10 px do ponto, anda de (889,629) para (880,624). | `Scene::approach`: se já está ao alcance e a rota é menor que uma célula, resolver na hora. | 1 h |
 | C12 | **Uso de item sem regra não dá resposta:** o player anda até o objeto e nada acontece. | Sonda: `useItemOnObject` devolve `true`, sem fala nem evento. | Ver F4 (regras curinga). | — |
 
 ### 3.2 Dívidas e higiene
@@ -139,7 +143,7 @@ O VSync numa janela com GPU real ainda não foi conferido.
   velha (sonda: `isObjectSolid == 0` e a célula continua bloqueada). Hoje só os testes usam.
   Expor só a versão `const` e criar comandos no `Game` que marcam a navegação suja (os comandos
   de F2 precisam disso). *2–3 h com o ajuste dos testes.*
-- **D4 — Documentação defasada:** `ARCHITECTURE.md:152-154` diz que não há pasta gravável para
+- ✅ **D4 — Documentação defasada:** `ARCHITECTURE.md:152-154` diz que não há pasta gravável para
   saves; `GAME_DESIGN.md` promete `\n` em `say` e recarga de PNG com `load`; `relatorio.md`
   (20 ticks, `pointclick_core`) e `AUDITORIA_TECNICA_2026-09-28.md` descrevem um projeto que não
   existe mais (arquivar em `docs/historico/` ou remover); `assets/sprites/README.md` tem um

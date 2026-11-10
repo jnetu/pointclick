@@ -1,3 +1,7 @@
+> **Documento histórico.** Descreve o projeto como era em setembro de 2026; boa parte do que
+> aponta já mudou. O estado atual está em `docs/ARCHITECTURE.md` e as pendências em
+> `docs/ROADMAP.md`.
+
 # Auditoria técnica preliminar — Point & Click
 
 **Data:** 28/09/2026 · **Escopo:** código, build, documentação, salas, sprites e testes existentes.

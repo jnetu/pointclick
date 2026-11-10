@@ -412,6 +412,29 @@ void testWalkToInteractAndDepthPicking() {
     assert(near(game.scene().player().feet().y, room.walkableTopY));
     assert(game.session().hasFlag("saw_painting"));
     assert(game.scene().floatingText().text() == "Um retrato na parede.");
+
+    // 7. A few pixels off that point but within reach: the interaction fires where the player
+    // stands, with no shuffle to the centre of the navigation cell first.
+    const SDL_FPoint arrived = game.scene().player().feet();
+    std::string nudgeError;
+    assert(game.teleportPlayer({arrived.x + 9.0F, arrived.y + 5.0F}, nudgeError));
+    const SDL_FPoint nudged = game.scene().player().feet();
+    assert(!near(nudged.x, arrived.x));
+    game.session().clearFlag("saw_painting");
+    game.onClick({465.0F, 175.0F});
+    assert(!game.scene().player().moving());
+    assert(!game.scene().pendingInteraction().has_value());
+    assert(game.session().hasFlag("saw_painting"));
+    assert(near(game.scene().player().feet().x, nudged.x));
+    assert(near(game.scene().player().feet().y, nudged.y));
+
+    // 8. Farther than one navigation cell, the player still walks up to the object first.
+    assert(game.teleportPlayer({arrived.x + 60.0F, arrived.y + 40.0F}, nudgeError));
+    game.session().clearFlag("saw_painting");
+    game.onClick({465.0F, 175.0F});
+    assert(game.scene().player().moving());
+    assert(game.scene().pendingInteraction().has_value());
+    assert(!game.session().hasFlag("saw_painting"));
 }
 
 void testItemPickupAndHiddenCollision() {

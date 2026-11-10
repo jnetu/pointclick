@@ -32,11 +32,14 @@ void writeStatement(std::ostream& out, std::string_view keyword, const ArgSignat
 struct TextLoad {
     std::optional<std::string> text;
     std::string error;
+    bool missing = false; // readOptionalFile only: there is no such file (text is empty)
 };
 // SDL_IOFromFile + SDL_LoadFile_IO (UTF-8 path; APK assets on Android). A leading UTF-8 BOM is
 // dropped, so every format reads files saved by Windows editors.
 [[nodiscard]] TextLoad readFile(const std::filesystem::path& path);
-// A companion that may be absent: missing = empty text, no error.
+// A companion that may be absent: missing = empty text, no error. The file is found by opening
+// it through SDL (assets inside an APK are not on the filesystem); the filesystem is asked only
+// to tell an unreadable file from an absent one.
 [[nodiscard]] TextLoad readOptionalFile(const std::filesystem::path& path);
 // Writes <path>.tmp and renames it over path, so a failed write keeps the previous file.
 // what names the file kind in the error ("regras", "dialogos").

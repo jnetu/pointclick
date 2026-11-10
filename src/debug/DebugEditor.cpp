@@ -183,6 +183,7 @@ void DebugEditor::submit(Game& game) {
         } else if (commit(game, std::move(loaded.bundle->room), true,
                           std::move(loaded.bundle->interactions),
                           std::move(loaded.bundle->dialogues), spawn)) {
+            if (reloadArt_) reloadArt_(); // the room's PNGs may have changed on disk too
             status_ = "Sala carregada: " + name + (spawn.empty() ? "" : " em " + spawn);
         }
     } else if (verb == "undo" && finished(input)) {
@@ -211,6 +212,14 @@ void DebugEditor::submit(Game& game) {
         }
         if (parsed && finished(input)) commit(game, std::move(room));
         else status_ = "Use move/size ID X Y, base ID X Y W H, solid ID 0/1";
+    } else if (verb == "reload" && finished(input)) {
+        // Art only: the room, the feet and the progress stay as they are.
+        if (reloadArt_) {
+            reloadArt_();
+            status_ = "Sprites recarregados do disco";
+        } else {
+            status_ = "Recarga de sprites indisponivel";
+        }
     } else if (verb == "show") {
         std::string view;
         int enabled = -1;
@@ -227,7 +236,7 @@ void DebugEditor::submit(Game& game) {
             status_ = "Use: show route|diagnostics|hint 0/1";
         }
     } else if (verb == "help") {
-        status_ = "set, teleport, move, size, base, solid, show, save, load, undo, reset";
+        status_ = "set, teleport, move, size, base, solid, show, save, load, reload, undo, reset";
     } else {
         status_ = "Comando desconhecido. Digite help.";
     }

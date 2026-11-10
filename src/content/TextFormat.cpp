@@ -187,7 +187,7 @@ TextFormat::TextLoad TextFormat::readOptionalFile(const std::filesystem::path& p
         if (std::filesystem::exists(path, ec)) {
             return {std::nullopt, "Nao foi possivel abrir " + pathToUtf8(path.filename())};
         }
-        return {std::string(), {}};
+        return {std::string(), {}, true};
     }
     return readStream(file.get());
 }

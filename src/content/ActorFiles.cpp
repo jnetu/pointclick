@@ -37,12 +37,25 @@ ActorLoadResult ActorFiles::parse(const std::string_view content) {
     return {std::move(animations), {}};
 }
 
-ActorLoadResult ActorFiles::load(const std::filesystem::path& path) {
-    TextFormat::TextLoad text = TextFormat::readFile(path);
-    if (!text.text) return {std::nullopt, std::move(text.error)};
-    ActorLoadResult result = parse(*text.text);
+namespace {
+ActorLoadResult parseFile(const std::filesystem::path& path, const std::string_view text) {
+    ActorLoadResult result = ActorFiles::parse(text);
     if (!result.animations) {
         result.error = TextFormat::pathToUtf8(path.filename()) + ": " + result.error;
     }
     return result;
+}
+} // namespace
+
+ActorLoadResult ActorFiles::load(const std::filesystem::path& path) {
+    TextFormat::TextLoad text = TextFormat::readFile(path);
+    if (!text.text) return {std::nullopt, std::move(text.error)};
+    return parseFile(path, *text.text);
+}
+
+ActorLoadResult ActorFiles::loadOptional(const std::filesystem::path& path) {
+    TextFormat::TextLoad text = TextFormat::readOptionalFile(path);
+    if (!text.text) return {std::nullopt, std::move(text.error)};
+    if (text.missing) return {AnimationSet{}, {}};
+    return parseFile(path, *text.text);
 }

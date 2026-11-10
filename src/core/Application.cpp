@@ -29,6 +29,7 @@ Application::Application(std::filesystem::path roomDirectory)
         : roomDirectory_(std::move(roomDirectory)) {
 #if POINTCLICK_TOOLS
     debugEditor_.setLibrary(library_);
+    debugEditor_.setArtReloader([this] { renderer_.invalidateTextures(); });
     inputRouter_.setToolConsumer(&debugEditor_);
     renderer_.addOverlay(&debugOverlay_);
 #endif

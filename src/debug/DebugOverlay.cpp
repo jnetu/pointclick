@@ -111,7 +111,7 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
     SDL_RenderDebugText(renderer, x, y + 450, "set player.far_speed 140   | teleport 640 500");
     SDL_RenderDebugText(renderer, x, y + 468, "move red_box 850 460       | size red_box 110 125");
     SDL_RenderDebugText(renderer, x, y + 486, "base red_box 14 92 82 33   | solid red_box 1");
-    SDL_RenderDebugText(renderer, x, y + 504, "save teste.room | load teste.room | undo | reset");
+    SDL_RenderDebugText(renderer, x, y + 504, "save teste.room | load teste.room | reload | undo | reset");
     SDL_RenderDebugText(renderer, x, y + 522, "show route 0 | show diagnostics 0 | show hint 0");
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
     const auto visibleCommand = editor.command().size() > 60

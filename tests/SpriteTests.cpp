@@ -242,6 +242,31 @@ void testPngRendering(const std::filesystem::path& directory) {
     sprites.beginRoom();
     assert(sprites.cachedImageCount() == 1); // future.png unused for two room changes
 
+    // A PNG changed on disk keeps its cached texture until the cache is cleared, which is what
+    // the editor's `load` and `reload` (and a render device reset) ask for.
+    const auto repaintedFile = directory / "repainted.png";
+    const auto paint = [&](const Uint8 red, const Uint8 green, const Uint8 blue) {
+        SDL_Surface* image = SDL_CreateSurface(8, 8, SDL_PIXELFORMAT_RGBA32);
+        assert(image);
+        assert(SDL_FillSurfaceRect(image, nullptr, SDL_MapSurfaceRGBA(image, red, green, blue, 255)));
+        assert(SDL_SavePNG(image, repaintedFile.string().c_str()));
+        SDL_DestroySurface(image);
+    };
+    const SpriteClip repainted{.file = "repainted.png"};
+    const auto drawn = [&] {
+        SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+        SDL_RenderClear(renderer);
+        assert(sprites.draw(repainted, {0, 0, 40, 40}, 0));
+        SDL_RenderPresent(renderer);
+        return pixel(output, 20, 20);
+    };
+    paint(250, 20, 20);
+    expectColor(drawn(), 250, 20, 20);
+    paint(12, 200, 180);
+    expectColor(drawn(), 250, 20, 20); // still the cached texture
+    sprites.clear();
+    expectColor(drawn(), 12, 200, 180);
+
     sprites.clear();
     SDL_DestroyRenderer(renderer);
     SDL_DestroySurface(output);

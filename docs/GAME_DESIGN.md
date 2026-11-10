@@ -78,7 +78,12 @@ mensagem e preservam o estado anterior.
 | `reset` | Restaura a sala que estava ativa quando DEBUG foi aberto |
 
 `save` substitui o arquivo informado e salva os parâmetros/objetos, não o
-progresso do personagem. Para definir onde ele nasce, edite `player.start_x`
+progresso do personagem. O arquivo é **regravado por inteiro** a partir da sala em
+memória: comentários (`#`), linhas em branco e a ordem das chaves escritos à mão **são
+descartados**. Guarde anotações de design fora do `.room` (ou salve com outro nome) se
+for usar o `save`. Os números saem no texto mais curto que relê o mesmo valor (`300`,
+`0.1`, `53.333332`), sempre com ponto decimal. Os arquivos `.rules` e `.dlg` não são
+tocados pelo `save`. Para definir onde ele nasce, edite `player.start_x`
 e `player.start_y`. Use ponto como separador decimal. Os nomes de arquivos
 aceitam letras, números, `_` e `-`, com a extensão `.room`.
 

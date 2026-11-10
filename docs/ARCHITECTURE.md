@@ -13,7 +13,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `content/RoomFiles` | Leitura e gravação das salas; erros com número de linha |
 | `content/InteractionFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.rules` |
 | `content/DialogueFiles` | Parser, validação por linha e gravação atômica dos arquivos companheiros `.dlg` |
-| `content/TextFormat` | Tokenizer comum (comentários, aspas, instruções do catálogo), leitura SDL e gravação atômica |
+| `content/TextFormat` | Tokenizer comum (comentários, aspas, instruções do catálogo), leitura SDL, gravação atômica e o texto dos números (`number`: o decimal mais curto que relê o mesmo `float`, sem depender de locale) |
 | `content/SpriteFields` | Leitura e gravação dos campos de um clip, independente da sala |
 | `tests/support/RoomPresets` | Sala, sprites e regras de exemplo em C++ **só para testes** (target `pointclick_test_support`; nem o jogo nem o leitor de salas os linkam) |
 | `content/ActorFiles` | Leitura de `assets/actors/<id>.actor`: clips de um ator compartilhados por todas as salas |
@@ -71,8 +71,14 @@ loja, o executável não contém `DebugEditor` e os testes do editor não são c
 ferramenta se registra como `ToolInputConsumer` no `InputRouter` e como `RenderOverlay` no
 `Renderer`. `pointclick_tests` linka só `content` + `game`, provando que o jogo roda sem
 renderização. O teste `pointclick_layer_includes` (`cmake/CheckLayerIncludes.cmake`) falha
-se uma pasta incluir uma camada proibida ou se `game/` incluir SDL além de `SDL_rect.h` e
-`SDL_pixels.h`.
+se uma pasta incluir uma camada proibida, se `game/` incluir SDL além de `SDL_rect.h` e
+`SDL_pixels.h`, ou se uma definição autorada de `game/` (`Room`, `SceneObject`, `SpriteClip`,
+`RoomParameters`, `PlayerClips`, `Facing`) incluir simulação ou sessão (`Player`, `Scene`,
+`Game`, `Navigation`, `Camera`, `ScriptRunner`, `SessionState`). Os nomes dos clips do player
+ficam em `game/PlayerClips.hpp` justamente para `Room` validar a sala sem conhecer `Player`.
+
+Todos os targets compilam com `POINTCLICK_WARNINGS` (`-Wall -Wextra -Wpedantic -Wconversion
+-Wshadow`; `/W4` no MSVC).
 
 ## Fluxos principais
 
@@ -179,7 +185,8 @@ da ligação entre elas:
 
 - **`SessionState`**: progresso da partida, que sobrevive a trocas de sala e edições.
 - **`Scene`**: a sala em jogo. Lê a sessão (visibilidade, colisão, inventário) por
-  referência constante e nunca a altera; quem altera são os scripts.
+  referência constante e nunca a altera; quem altera são os scripts e, por fora deles,
+  `Game::changeSession`.
 - **`ScriptRunner` + `DialoguePlayer`**: executam sequências e conversas sobre as duas,
   pelo adaptador `Game::Host` (`ScriptHost`).
 
@@ -214,6 +221,11 @@ O projeto separa estritamente três categorias de estado:
    `isObjectSolid`). O `roomId` é o nome do arquivo `<id>.room`: `RoomLibrary` recusa
    um arquivo cujo `id` difere do nome e grava o `id` do nome ao salvar. Persiste intacto através de trocas de sala (`loadRoom`) e de
    edições em tempo real no `DebugEditor` (`applyRoom(room, false, error)`).
+   `Game::session()` é só leitura. Fora de um script, quem muda o progresso (ferramenta, UI,
+   teste) chama `Game::changeSession([](SessionState& s) { ... })`: o `Game` aplica a função,
+   compara quais objetos da sala bloqueiam o chão antes e depois e, se algo mudou, reconstrói
+   a navegação (tirando o player de dentro de um obstáculo novo). A rota já em curso ainda
+   não é replanejada.
 
 Em `Interaction` / `InteractionFiles`, cada `InteractionRule` possui:
 - **Gatilho (`InteractionTrigger`)**: `interact <objectId>` (clique direto) ou
@@ -382,7 +394,7 @@ do objeto bloqueia o caminho por padrão.
 
 Para uma futura UI visual de inventário, siga o modelo de `ui/DialogueMenu`: um
 `ViewportUiConsumer` registrado em `InputRouter` operando na viewport fixa `1280×720`,
-com o layout no próprio módulo e o desenho em `graphics/`. A UI de inventário pode ler `game.session().items()` e disparar
+com o layout no próprio módulo e o desenho em `graphics/`. A UI de inventário pode ler `game.session().items()` (só leitura; mudanças por `Game::changeSession`) e disparar
 `game.useItemAt(itemId, worldPoint)` ou `game.useItemOnObject(itemId, objectId)`
 sem acoplar `graphics/` às regras de negócio. Efeitos visuais de transição de sala
 (*fade*) podem observar a troca em `Application` / `Renderer` usando estado

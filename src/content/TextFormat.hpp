@@ -25,6 +25,10 @@ namespace TextFormat {
 // Splits "verb rest"; verb is empty for a blank statement.
 void splitVerb(std::string_view statement, std::string& verb, std::string_view& rest);
 
+// The shortest plain decimal that reads back as the same float ("300", "0.1", "53.333332"),
+// independent of any locale. Every float written to a content or save file goes through here.
+[[nodiscard]] std::string number(float value);
+
 [[nodiscard]] std::string escapeQuotedText(std::string_view text);
 void writeStatement(std::ostream& out, std::string_view keyword, const ArgSignature& signature,
                     ActionArgs args);

@@ -29,10 +29,7 @@ public:
     }
 
     bool walkToObject(const std::string_view objectId) override {
-        if (game_.navigationDirty_) {
-            game_.navigationDirty_ = false;
-            game_.scene_.refreshNavigation();
-        }
+        game_.refreshNavigationIfDirty();
         return game_.scene_.walkToObject(objectId);
     }
     bool walking() const override { return game_.scene_.player().moving(); }
@@ -163,14 +160,33 @@ bool Game::resolveInteraction(const InteractionTrigger& trigger) {
 void Game::settleScript() {
     Host host(*this);
     dialogue_.settle(script_, host);
-    if (navigationDirty_) {
-        navigationDirty_ = false;
-        scene_.refreshNavigation();
-    }
+    refreshNavigationIfDirty();
     if (!script_.busy() && !dialogue_.active() && scriptRoomTarget_) {
         emit(std::move(*scriptRoomTarget_));
         scriptRoomTarget_.reset();
     }
+    publishCutsceneChange();
+}
+
+void Game::refreshNavigationIfDirty() {
+    if (!navigationDirty_) return;
+    navigationDirty_ = false;
+    scene_.refreshNavigation();
+}
+
+void Game::changeSession(const std::function<void(SessionState&)>& change) {
+    // Navigation derives one thing from the session: which objects of this room block the
+    // floor. Comparing that before and after covers every way `change` can touch it.
+    const std::vector<SceneObject>& scenery = scene_.room().scenery;
+    solidBeforeChange_.clear();
+    for (const SceneObject& object : scenery) {
+        solidBeforeChange_.push_back(scene_.isObjectSolid(object) ? 1 : 0);
+    }
+    change(session_);
+    for (std::size_t i = 0; i < scenery.size() && !navigationDirty_; ++i) {
+        navigationDirty_ = scene_.isObjectSolid(scenery[i]) != (solidBeforeChange_[i] != 0);
+    }
+    refreshNavigationIfDirty();
     publishCutsceneChange();
 }
 

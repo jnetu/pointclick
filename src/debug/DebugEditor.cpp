@@ -53,7 +53,8 @@ bool DebugEditor::consumesViewportPoint(const SDL_FPoint viewportPoint) const {
 bool DebugEditor::onTextInput(const std::string_view text, Game& game) {
     if (active_ && !panelVisible_) return true;
     bool consumed = active_;
-    for (const unsigned char character : text) {
+    for (const char raw : text) {
+        const auto character = static_cast<unsigned char>(raw);
         if (active_) {
             if (character >= 32 && character <= 126 && command_.size() < 120) command_ += static_cast<char>(character);
         } else {

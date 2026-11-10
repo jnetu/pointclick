@@ -7,14 +7,13 @@
 
 #include <algorithm>
 #include <cmath>
-#include <iomanip>
-#include <limits>
 #include <locale>
 #include <optional>
 #include <set>
 #include <sstream>
 
 namespace {
+using TextFormat::number;
 using TextFormat::pathToUtf8;
 using TextFormat::trim;
 
@@ -68,7 +67,8 @@ void writeColor(std::ostream& out, const SDL_Color color) {
 }
 
 void writeRect(std::ostream& out, const SDL_FRect rect) {
-    out << rect.x << ", " << rect.y << ", " << rect.w << ", " << rect.h << '\n';
+    out << number(rect.x) << ", " << number(rect.y) << ", " << number(rect.w) << ", "
+        << number(rect.h) << '\n';
 }
 }
 
@@ -189,10 +189,9 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
     if (!error.empty()) return false;
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << std::setprecision(std::numeric_limits<float>::max_digits10);
     out << "# PointClick: coordenadas logicas; cores RGBA; retangulos x,y,w,h\n[room]\nid = " << room.id << '\n';
     for (const auto& parameter : roomParameters()) {
-        out << parameter.key << " = " << parameter.read(room) << '\n';
+        out << parameter.key << " = " << number(parameter.read(room)) << '\n';
     }
     for (const auto& color : colors) { out << color.key << " = "; writeColor(out, room.*(color.member)); }
     for (const auto& [name, clip] : room.playerAnimations) {
@@ -206,12 +205,12 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
     }
     out << "floor.lines = ";
     for (std::size_t i = 0; i < room.floorGuideFractions.size(); ++i) {
-        out << (i == 0 ? "" : ", ") << room.floorGuideFractions[i];
+        out << (i == 0 ? "" : ", ") << number(room.floorGuideFractions[i]);
     }
     out << '\n';
     for (const RoomSpawn& entry : room.spawns) {
-        out << "\n[spawn " << entry.id << "]\nfeet = " << entry.feet.x << ", " << entry.feet.y
-            << "\nfacing = " << facingName(entry.facing) << '\n';
+        out << "\n[spawn " << entry.id << "]\nfeet = " << number(entry.feet.x) << ", "
+            << number(entry.feet.y) << "\nfacing = " << facingName(entry.facing) << '\n';
     }
     for (const auto& object : room.scenery) {
         out << "\n[object " << object.id << "]\nbounds = "; writeRect(out, object.bounds);

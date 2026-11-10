@@ -2,6 +2,7 @@
 #include "content/RoomFiles.hpp"
 #include "content/RoomLibrary.hpp"
 #include "content/SaveFiles.hpp"
+#include "content/TextFormat.hpp"
 #include "game/Autosave.hpp"
 #include "game/Camera.hpp"
 #include "game/Game.hpp"
@@ -9,10 +10,14 @@
 
 #include <algorithm>
 #include <cassert>
+#include <charconv>
 #include <chrono>
+#include <clocale>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
+#include <locale>
 #include <vector>
 #include <variant>
 #include <string>
@@ -396,7 +401,7 @@ void testWalkToInteractAndDepthPicking() {
     assert(game.scene().floatingText().text() == "Uma estatua antiga.");
 
     // 5. Clicking back_statue while ALREADY standing at its interaction point fires immediately.
-    game.session().clearFlag("inspected_statue");
+    game.changeSession([](SessionState& session) { session.clearFlag("inspected_statue"); });
     game.onClick({740.0F, 470.0F});
     assert(!game.scene().player().moving());
     assert(!game.scene().pendingInteraction().has_value());
@@ -420,7 +425,7 @@ void testWalkToInteractAndDepthPicking() {
     assert(game.teleportPlayer({arrived.x + 9.0F, arrived.y + 5.0F}, nudgeError));
     const SDL_FPoint nudged = game.scene().player().feet();
     assert(!near(nudged.x, arrived.x));
-    game.session().clearFlag("saw_painting");
+    game.changeSession([](SessionState& session) { session.clearFlag("saw_painting"); });
     game.onClick({465.0F, 175.0F});
     assert(!game.scene().player().moving());
     assert(!game.scene().pendingInteraction().has_value());
@@ -430,7 +435,7 @@ void testWalkToInteractAndDepthPicking() {
 
     // 8. Farther than one navigation cell, the player still walks up to the object first.
     assert(game.teleportPlayer({arrived.x + 60.0F, arrived.y + 40.0F}, nudgeError));
-    game.session().clearFlag("saw_painting");
+    game.changeSession([](SessionState& session) { session.clearFlag("saw_painting"); });
     game.onClick({465.0F, 175.0F});
     assert(game.scene().player().moving());
     assert(game.scene().pendingInteraction().has_value());
@@ -486,6 +491,69 @@ void testItemPickupAndHiddenCollision() {
     assert(near(game.scene().player().feet().x, crateCenter.x));
     assert(near(game.scene().player().feet().y, crateCenter.y));
     assert(!game.scene().floatingText().isVisible());
+}
+
+// Progress changed from outside a script goes through Game::changeSession, which rebuilds
+// navigation when an object of the room starts or stops blocking the floor.
+void testSessionCommandKeepsNavigation() {
+    Room room = RoomPresets::firstRoom();
+    room.playerStart = {250.0F, 520.0F};
+    room.scenery = {
+        {{580.0F, 470.0F, 90.0F, 90.0F}, {210, 175, 65, 255}, SceneObjectType::solid,
+         {10.0F, 60.0F, 70.0F, 30.0F}, "supply_crate", {}, "idle"},
+    };
+    const SDL_FPoint crateCenter{625.0F, 545.0F};
+    const SDL_FRect footprint = room.scenery[0].worldCollisionFootprint();
+
+    Game game(room);
+    const std::string roomId = game.scene().room().id;
+    const SceneObject& crate = game.scene().room().scenery[0];
+    std::string error;
+    assert(!game.scene().navigation().canStandAt(crateCenter));
+    assert(!game.teleportPlayer(crateCenter, error));
+
+    // A change that leaves collision alone keeps navigation and the walk in progress.
+    game.onClick({400.0F, 600.0F});
+    assert(game.scene().player().moving());
+    game.changeSession([](SessionState& session) {
+        session.setFlag("lever_pulled");
+        session.addItem("crowbar");
+    });
+    assert(game.session().hasFlag("lever_pulled") && game.session().hasItem("crowbar"));
+    assert(game.scene().player().moving());
+    assert(!game.scene().navigation().canStandAt(crateCenter));
+
+    // Collision turned off: the cells are free at once, not only isObjectSolid.
+    game.changeSession([&](SessionState& session) {
+        session.setObjectSolid(roomId, "supply_crate", false);
+    });
+    assert(!game.scene().isObjectSolid(crate));
+    assert(game.scene().navigation().canStandAt(crateCenter));
+    assert(game.teleportPlayer(crateCenter, error));
+
+    // Solid again under the player's feet: the cells block and the player is moved out.
+    game.changeSession([&](SessionState& session) {
+        session.setObjectSolid(roomId, "supply_crate", true);
+    });
+    assert(!game.scene().navigation().canStandAt(crateCenter));
+    const SDL_FPoint pushed = game.scene().player().feet();
+    assert(!SDL_PointInRectFloat(&pushed, &footprint));
+    assert(game.scene().navigation().canStandAt(pushed));
+
+    // Hiding frees the floor too; wiping the progress brings the authored collision back.
+    game.changeSession([&](SessionState& session) {
+        session.setObjectVisible(roomId, "supply_crate", false);
+    });
+    assert(game.scene().navigation().canStandAt(crateCenter));
+    game.changeSession([](SessionState& session) { session.reset(); });
+    assert(game.scene().isObjectSolid(crate));
+    assert(!game.scene().navigation().canStandAt(crateCenter));
+
+    // An object of another room with the same id is not this room's collision.
+    game.changeSession([](SessionState& session) {
+        session.setObjectSolid("another_room", "supply_crate", false);
+    });
+    assert(!game.scene().navigation().canStandAt(crateCenter));
 }
 
 void testConditionalNpcPuzzleAndRoomPersistence() {
@@ -843,7 +911,7 @@ void testDialogueWithChoices() {
     (void)consumeRequestedRoom(game);
 
     // With the key the conditional option shows; "ask" stays hidden (once, kept in session).
-    game.session().addItem("brass_key");
+    game.changeSession([](SessionState& session) { session.addItem("brass_key"); });
     assert(game.startDialogue("guard"));
     assert(game.awaitingDialogueChoice());
     assert(game.dialogueOptions().size() == 2);
@@ -1247,6 +1315,53 @@ void testSaveFacingAndOlderVersions(const std::filesystem::path& directory) {
     assert(fromEditor.save && fromEditor.save->roomId == "gallery");
 }
 
+// Floats are written as the shortest plain decimal that reads back the same, not with
+// max_digits10 noise ("53.3333321"), and never follow the process locale.
+void testShortestNumbersInSave() {
+    assert(TextFormat::number(300.0F) == "300");
+    assert(TextFormat::number(0.1F) == "0.1");
+    assert(TextFormat::number(-0.25F) == "-0.25");
+    assert(TextFormat::number(1150.5F) == "1150.5");
+    assert(TextFormat::number(53.333333F) == "53.333332");
+    assert(TextFormat::number(100000.0F) == "100000"); // no exponent
+    assert(TextFormat::number(0.0F) == "0");
+
+    const float samples[]{53.333333F, 0.1F, 1.0F / 3.0F, 16777217.0F, 1234.5678F, 0.000123F,
+                          -719.99994F, std::numeric_limits<float>::max(),
+                          std::numeric_limits<float>::min(),
+                          -std::numeric_limits<float>::denorm_min()};
+    for (const float sample : samples) {
+        const std::string text = TextFormat::number(sample);
+        assert(text.find('e') == std::string::npos && text.size() < 64);
+        float back = 0.0F;
+        const auto result = std::from_chars(text.data(), text.data() + text.size(), back);
+        assert(result.ec == std::errc{} && result.ptr == text.data() + text.size());
+        assert(back == sample);
+    }
+
+    SavedGame saved{"gallery", {53.333333F, 0.1F}, {}};
+    const std::string text = SaveFiles::serialize(saved);
+    assert(text.find("feet = 53.333332, 0.1\n") != std::string::npos);
+    const SaveLoadResult parsed = SaveFiles::parse(text);
+    assert(parsed.save && *parsed.save == saved);
+
+    // A decimal-comma locale changes nothing in the file.
+    const std::locale previous;
+    const std::string previousC = std::setlocale(LC_ALL, nullptr);
+    for (const char* name : {"pt_BR.UTF-8", "de_DE.UTF-8"}) {
+        try {
+            std::locale::global(std::locale(name));
+        } catch (const std::runtime_error&) {
+            continue; // not installed here
+        }
+        assert(SaveFiles::serialize(saved) == text);
+        const SaveLoadResult localized = SaveFiles::parse(text);
+        assert(localized.save && *localized.save == saved);
+    }
+    std::locale::global(previous);
+    std::setlocale(LC_ALL, previousC.c_str());
+}
+
 void testBadSaveFiles(const std::filesystem::path& directory) {
     const auto errorOf = [](const std::string_view text) {
         const SaveLoadResult result = SaveFiles::parse(text);
@@ -1384,7 +1499,7 @@ void testAutosavePolicy() {
 
     // A failed write is retried on the next trip, still once per trip.
     autosave.enterForeground();
-    game.session().setFlag("progresso");
+    game.changeSession([](SessionState& session) { session.setFlag("progresso"); });
     assert(autosave.enterBackground(game));
     assert(!autosave.enterBackground(game)); // DID after WILL, the write failed
     autosave.enterForeground();
@@ -1396,7 +1511,7 @@ void testAutosavePolicy() {
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 300 && !game.inCutscene(); ++i) game.tick(0.05F);
     assert(game.inCutscene());
-    game.session().setFlag("meio_da_cena");
+    game.changeSession([](SessionState& session) { session.setFlag("meio_da_cena"); });
     autosave.capture(game);
     assert(!autosave.enterBackground(game)); // nothing stable that is not on disk yet
     const auto& stable = autosave.stable()->session.flags;
@@ -1416,7 +1531,7 @@ void testAutosavePolicy() {
     // Entering a room is a checkpoint: written when it differs from the file, so a crash costs
     // at most the current room; never the half-done state of a cutscene.
     assert(!autosave.checkpoint(game)); // the file already has this
-    game.session().setFlag("outra_sala");
+    game.changeSession([](SessionState& session) { session.setFlag("outra_sala"); });
     const SavedGame* entered = autosave.checkpoint(game);
     assert(entered && entered->session == game.session().snapshot());
     assert(autosave.checkpoint(game)); // the write failed: still pending
@@ -1425,7 +1540,7 @@ void testAutosavePolicy() {
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 300 && !game.inCutscene(); ++i) game.tick(0.05F);
     assert(game.inCutscene());
-    game.session().setFlag("no_meio");
+    game.changeSession([](SessionState& session) { session.setFlag("no_meio"); });
     assert(!autosave.checkpoint(game));
 }
 
@@ -1439,6 +1554,7 @@ int main() {
     testPanoramicRoomCameraAndNavigation();
     testWalkToInteractAndDepthPicking();
     testItemPickupAndHiddenCollision();
+    testSessionCommandKeepsNavigation();
     testConditionalNpcPuzzleAndRoomPersistence();
     testScriptedSequenceAndCutscene();
     testDialogueWithChoices();
@@ -1454,6 +1570,7 @@ int main() {
     testSaveRoundTrip(directory);
     testSaveRestoresPuzzleProgress(directory);
     testSaveFacingAndOlderVersions(directory);
+    testShortestNumbersInSave();
     testBadSaveFiles(directory);
     testAtomicSaveFailureKeepsPrevious(directory);
     testAutosavePolicy();

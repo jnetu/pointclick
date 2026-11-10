@@ -10,8 +10,6 @@
 #include <algorithm>
 #include <charconv>
 #include <cmath>
-#include <iomanip>
-#include <limits>
 #include <locale>
 #include <map>
 #include <set>
@@ -180,11 +178,11 @@ SaveLoadResult SaveFiles::parse(const std::string_view text) {
 std::string SaveFiles::serialize(const SavedGame& save) {
     std::ostringstream out;
     out.imbue(std::locale::classic());
-    out << std::setprecision(std::numeric_limits<float>::max_digits10);
     out << "# PointClick: progresso da partida (gerado pelo jogo)\n"
         << "version = " << currentVersion << '\n'
         << "room = " << save.roomId << '\n'
-        << "feet = " << save.feet.x << ", " << save.feet.y << '\n'
+        << "feet = " << TextFormat::number(save.feet.x) << ", "
+        << TextFormat::number(save.feet.y) << '\n'
         << "facing = " << facingName(save.facing) << '\n';
     // Sorted like snapshot(), whatever order the caller built the lists in.
     SessionSnapshot session = save.session;

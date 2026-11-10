@@ -85,13 +85,14 @@ SpriteLibrary::Image& SpriteLibrary::imageFor(const std::string& file) {
 void SpriteLibrary::drawMissing(const SDL_FRect target) const {
     if (!renderer_ || target.w <= 0 || target.h <= 0) return;
     constexpr float tile = 12.0F;
-    for (int row = 0; row * tile < target.h; ++row) {
-        for (int column = 0; column * tile < target.w; ++column) {
+    int row = 0;
+    for (float y = 0.0F; y < target.h; y += tile, ++row) {
+        int column = 0;
+        for (float x = 0.0F; x < target.w; x += tile, ++column) {
             if ((row + column) % 2 == 0) SDL_SetRenderDrawColor(renderer_, 145, 0, 190, 255);
             else SDL_SetRenderDrawColor(renderer_, 10, 7, 17, 255);
-            const SDL_FRect part{target.x + column * tile, target.y + row * tile,
-                                 std::min(tile, target.w - column * tile),
-                                 std::min(tile, target.h - row * tile)};
+            const SDL_FRect part{target.x + x, target.y + y,
+                                 std::min(tile, target.w - x), std::min(tile, target.h - y)};
             SDL_RenderFillRect(renderer_, &part);
         }
     }

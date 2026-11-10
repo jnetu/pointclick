@@ -62,7 +62,7 @@ void Navigation::addObstacle(const SDL_FRect bounds, const float paddingX,
 
 bool Navigation::walkable(const int column, const int row) const {
     return column >= 0 && column < columns_ && row >= 0 && row < rows_
-           && (row + 1) * cellSize > walkableTopY_
+           && static_cast<float>((row + 1) * cellSize) > walkableTopY_
            && blocked_[static_cast<std::size_t>(row * columns_ + column)] == 0U;
 }
 

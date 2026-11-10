@@ -184,7 +184,7 @@ void testPngRendering(const std::filesystem::path& directory) {
     for (int frame = 0; frame < 4; ++frame) {
         SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
         SDL_RenderClear(renderer);
-        assert(sprites.draw(clip, {0, 0, 40, 40}, frame * 0.5F));
+        assert(sprites.draw(clip, {0, 0, 40, 40}, static_cast<float>(frame) * 0.5F));
         SDL_RenderPresent(renderer);
         const auto color = colors[frame];
         expectColor(pixel(output, 20, 20), color.r, color.g, color.b);
@@ -343,7 +343,7 @@ void testPlayerArtwork() {
     sprites.setRoot(assets / "sprites");
     for (const auto* clip : animations) {
         for (int frame = 0; frame < clip->frames; ++frame) {
-            assert(sprites.draw(*clip, {0, 0, 64, 96}, frame / clip->fps));
+            assert(sprites.draw(*clip, {0, 0, 64, 96}, static_cast<float>(frame) / clip->fps));
         }
     }
     sprites.clear();

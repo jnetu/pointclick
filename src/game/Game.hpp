@@ -10,6 +10,7 @@
 #include "game/SessionState.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <span>
 #include <string>
@@ -51,13 +52,17 @@ public:
     bool startDialogue(std::string_view nodeId);
     // Picks one of dialogueOptions() while awaitingDialogueChoice(); the reply runs as a sequence.
     bool chooseDialogueOption(std::size_t index);
+    // The way to change progress from outside a script (tools, UI, tests): runs `change`, then
+    // rebuilds navigation if an object of this room started or stopped blocking the floor, and
+    // publishes a cutscene edge.
+    void changeSession(const std::function<void(SessionState&)>& change);
     void onPointerMove(SDL_FPoint position, bool insideViewport = true);
     void onClick(SDL_FPoint position);
     void tick(float deltaSeconds);
 
     // State, read-only for graphics, UI and tools.
     [[nodiscard]] const Scene& scene() const { return scene_; }
-    [[nodiscard]] SessionState& session() { return session_; }
+    // Read-only on purpose: writes go through changeSession, which keeps navigation in step.
     [[nodiscard]] const SessionState& session() const { return session_; }
     // A scripted sequence or a conversation holds the scene: world clicks only skip the line.
     [[nodiscard]] bool inCutscene() const;
@@ -79,6 +84,7 @@ private:
     bool resolveInteraction(const InteractionTrigger& trigger);
     // Applies what scripts deferred (navigation, room change) and publishes cutscene edges.
     void settleScript();
+    void refreshNavigationIfDirty();
     void publishCutsceneChange();
     void emit(GameEvent event);
 
@@ -88,6 +94,7 @@ private:
     DialoguePlayer dialogue_;
     std::optional<RoomChangeRequested> scriptRoomTarget_;
     bool navigationDirty_ = false;
+    std::vector<char> solidBeforeChange_; // changeSession scratch, one entry per room object
     bool wasInCutscene_ = false;
     std::vector<GameEvent> events_;
 };

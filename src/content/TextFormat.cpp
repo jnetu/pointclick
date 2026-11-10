@@ -4,6 +4,7 @@
 #include <SDL3/SDL_stdinc.h>
 
 #include <algorithm>
+#include <charconv>
 #include <fstream>
 #include <memory>
 #include <system_error>
@@ -146,6 +147,15 @@ void TextFormat::splitVerb(const std::string_view statement, std::string& verb,
     const auto verbEnd = std::find_if(statement.begin(), statement.end(), isSpace);
     verb.assign(statement.begin(), verbEnd);
     rest = statement.substr(verb.size());
+}
+
+std::string TextFormat::number(const float value) {
+    // Fixed notation keeps large values readable ("100000", never "1e+05"); the longest float
+    // in it, a tiny negative one, takes about 50 characters.
+    char buffer[64];
+    const std::to_chars_result result =
+            std::to_chars(buffer, buffer + sizeof(buffer), value, std::chars_format::fixed);
+    return result.ec == std::errc{} ? std::string(buffer, result.ptr) : std::string("0");
 }
 
 std::string TextFormat::escapeQuotedText(const std::string_view text) {

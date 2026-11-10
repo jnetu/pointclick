@@ -1,5 +1,6 @@
 #include "content/SpriteFields.hpp"
 
+#include "content/TextFormat.hpp"
 #include "game/Identifier.hpp"
 
 #include <cmath>
@@ -61,13 +62,13 @@ void SpriteFields::write(std::ostream& out, const std::string_view prefix,
     out << prefix << "margin_y = " << clip.marginY << '\n';
     out << prefix << "spacing_x = " << clip.spacingX << '\n';
     out << prefix << "spacing_y = " << clip.spacingY << '\n';
-    out << prefix << "fps = " << clip.fps << '\n';
+    out << prefix << "fps = " << TextFormat::number(clip.fps) << '\n';
     out << prefix << "loop = " << (clip.loop ? 1 : 0) << '\n';
     out << prefix << "pixelated = " << (clip.pixelated ? 1 : 0) << '\n';
-    out << prefix << "display_width = " << clip.displayWidth << '\n';
-    out << prefix << "display_height = " << clip.displayHeight << '\n';
-    out << prefix << "offset_x = " << clip.offsetX << '\n';
-    out << prefix << "offset_y = " << clip.offsetY << '\n';
+    out << prefix << "display_width = " << TextFormat::number(clip.displayWidth) << '\n';
+    out << prefix << "display_height = " << TextFormat::number(clip.displayHeight) << '\n';
+    out << prefix << "offset_x = " << TextFormat::number(clip.offsetX) << '\n';
+    out << prefix << "offset_y = " << TextFormat::number(clip.offsetY) << '\n';
 }
 
 bool SpriteFields::parseNamed(AnimationSet& animations, const std::string_view key,

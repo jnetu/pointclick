@@ -25,6 +25,17 @@
 #include <stdexcept>
 
 namespace {
+// SDL's sentinel ids are C-cast macros: read them once so the file builds under -Wold-style-cast.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+constexpr SDL_MouseID kTouchMouseId = SDL_TOUCH_MOUSEID;
+constexpr SDL_TouchID kMouseTouchId = SDL_MOUSE_TOUCHID;
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 // The shipped assets declare player art once, in assets/actors/player.actor.
 const AnimationSet* sharedPlayerArt() {
     static const AnimationSet art = [] {
@@ -351,17 +362,19 @@ void testDebugRendering() {
         assert(SDL_GetRenderLogicalPresentationRect(SDL_GetRenderer(window), &presentation));
         SDL_FPoint vpCenter{};
         SDL_FPoint worldCenter{};
-        assert(renderer.windowToViewport(res.w * 0.5F, res.h * 0.5F, vpCenter));
-        assert(renderer.windowToWorld(res.w * 0.5F, res.h * 0.5F, worldCenter,
+        const float centerX = static_cast<float>(res.w) * 0.5F;
+        const float centerY = static_cast<float>(res.h) * 0.5F;
+        assert(renderer.windowToViewport(centerX, centerY, vpCenter));
+        assert(renderer.windowToWorld(centerX, centerY, worldCenter,
                                       game.scene().camera().position()));
         assert(std::abs(vpCenter.x - 640.0F) < 0.5F && std::abs(vpCenter.y - 360.0F) < 0.5F);
         assert(std::abs(worldCenter.x - 640.0F) < 0.5F && std::abs(worldCenter.y - 360.0F) < 0.5F);
 
         SDL_FPoint leftEdge{};
         SDL_FPoint rightEdge{};
-        assert(renderer.windowToWorld(presentation.x + 0.5F, res.h * 0.5F, leftEdge,
+        assert(renderer.windowToWorld(presentation.x + 0.5F, centerY, leftEdge,
                                       game.scene().camera().position()));
-        assert(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, res.h * 0.5F,
+        assert(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, centerY,
                                       rightEdge, game.scene().camera().position()));
         assert(leftEdge.x >= 0.0F && rightEdge.x <= 1280.0F);
         assert(std::abs((rightEdge.x - leftEdge.x) - 1280.0F) < 2.0F);
@@ -508,6 +521,22 @@ void testMultiplatformInputAndRouting() {
 
     assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
+    // The mouse leaving the window: its last motion was still inside, so only this event tells.
+    SDL_Event mouseMotion{};
+    mouseMotion.type = SDL_EVENT_MOUSE_MOTION;
+    mouseMotion.motion.x = 2240.0F; // viewport (900, 500)
+    mouseMotion.motion.y = 1000.0F;
+    (void)router.handleEvent(mouseMotion, input, game, mapper);
+    assert(game.scene().pointerInside());
+    SDL_Event mouseLeave{};
+    mouseLeave.type = SDL_EVENT_WINDOW_MOUSE_LEAVE;
+    (void)router.handleEvent(mouseLeave, input, game, mapper);
+    assert(!game.scene().pointerInside());
+    assert(std::abs(input.cursorViewport().x - 900.0F) < 0.5F); // the cursor stays where it left
+    assert(!game.scene().player().moving());
+    (void)router.handleEvent(mouseMotion, input, game, mapper);
+    assert(game.scene().pointerInside());
+
     // 2. Touch translation + letterbox/pillarbox rejection + SDL_TOUCH_MOUSEID filtering.
     // Touch inside left Ultrawide pillarbox bar (normalized x = 0.02 -> window x = 68.8 < 440).
     SDL_Event pillarboxTouch{};
@@ -541,7 +570,7 @@ void testMultiplatformInputAndRouting() {
     // Synthetic mouse motion & click emitted by touch must be ignored (no double-click / retarget).
     SDL_Event syntheticMouseClick{};
     syntheticMouseClick.type = SDL_EVENT_MOUSE_BUTTON_DOWN;
-    syntheticMouseClick.button.which = SDL_TOUCH_MOUSEID;
+    syntheticMouseClick.button.which = kTouchMouseId;
     syntheticMouseClick.button.button = SDL_BUTTON_LEFT;
     syntheticMouseClick.button.down = true;
     syntheticMouseClick.button.x = 440.0F + 200.0F * 2.0F;
@@ -552,7 +581,7 @@ void testMultiplatformInputAndRouting() {
 
     SDL_Event syntheticMouseTouch{};
     syntheticMouseTouch.type = SDL_EVENT_FINGER_DOWN;
-    syntheticMouseTouch.tfinger.touchID = SDL_MOUSE_TOUCHID;
+    syntheticMouseTouch.tfinger.touchID = kMouseTouchId;
     syntheticMouseTouch.tfinger.fingerID = 3;
     syntheticMouseTouch.tfinger.x = 0.3F;
     syntheticMouseTouch.tfinger.y = 0.8F;
@@ -622,6 +651,11 @@ void testMultiplatformInputAndRouting() {
     assert(game.scene().player().moving());
     assert(std::abs(game.scene().player().destination().x - 1750.0F) < 0.5F); // 840 + 910
     assert(std::abs(game.scene().player().destination().y - 460.0F) < 0.5F);
+
+    // The gamepad's virtual cursor is not the mouse: the OS pointer leaving changes nothing.
+    assert(game.scene().pointerInside());
+    (void)router.handleEvent(mouseLeave, input, game, mapper);
+    assert(game.scene().pointerInside());
 
     // Virtual cursor clamps cleanly at viewport boundaries [0..1279] x [0..719].
     router.update(10.0F, input, game);
@@ -835,7 +869,9 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     assert(!surfaceContainsColor(hiddenFrame, pickupColor));
     SDL_DestroySurface(hiddenFrame);
 
-    game.session().setObjectVisible(game.scene().room().id, "magenta_gem", true);
+    game.changeSession([&](SessionState& session) {
+        session.setObjectVisible(game.scene().room().id, "magenta_gem", true);
+    });
     renderer.render(game, 1.0F, nullptr);
     SDL_Surface* shownFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(shownFrame);
@@ -1510,6 +1546,34 @@ void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
     assert(saved.find("[spawn door_left]\nfeet = 120, 520\nfacing = right\n") != std::string::npos);
     const RoomLoadResult copy = RoomFiles::load(rooms / "copy.room", sharedPlayerArt());
     assert(copy.room && copy.room->spawns == hall.room->spawns);
+
+    // Saved numbers are the shortest text that reads back the same: no "53.3333321" noise.
+    Room fractions = *hall.room;
+    fractions.spawns[1].feet = {1150.1F, 450.25F};
+    fractions.scenery.push_back({{100.1F, 400.0F, 53.333333F, 60.0F}, {1, 2, 3, 255},
+                                 SceneObjectType::decoration, {}, "crate",
+                                 {{"idle", SpriteClip{.file = "crate.png", .fps = 7.5F,
+                                                      .displayWidth = 53.333333F,
+                                                      .offsetY = -0.1F}}},
+                                 "idle"});
+    assert(RoomFiles::save(rooms / "fractions.room", fractions, error, sharedPlayerArt()));
+    std::ifstream fractionsFile(rooms / "fractions.room");
+    const std::string fractionsText((std::istreambuf_iterator<char>(fractionsFile)), {});
+    assert(fractionsText.find("[spawn door_right]\nfeet = 1150.1, 450.25\n") != std::string::npos);
+    assert(fractionsText.find("bounds = 100.1, 400, 53.333332, 60\n") != std::string::npos);
+    assert(fractionsText.find("animation.idle.fps = 7.5\n") != std::string::npos);
+    assert(fractionsText.find("animation.idle.display_width = 53.333332\n") != std::string::npos);
+    assert(fractionsText.find("animation.idle.offset_y = -0.1\n") != std::string::npos);
+    assert(fractionsText.find("room.width = 1280\n") != std::string::npos);
+    const RoomLoadResult reread = RoomFiles::load(rooms / "fractions.room", sharedPlayerArt());
+    assert(reread.room && reread.room->spawns == fractions.spawns);
+    const SceneObject& crate = reread.room->scenery.back();
+    assert(SDL_RectsEqualEpsilon(&crate.bounds, &fractions.scenery.back().bounds, 0.0F));
+    assert(crate.animations == fractions.scenery.back().animations);
+    // Saving what was read gives the same bytes.
+    assert(RoomFiles::save(rooms / "fractions2.room", *reread.room, error, sharedPlayerArt()));
+    std::ifstream fractionsAgain(rooms / "fractions2.room");
+    assert(std::string((std::istreambuf_iterator<char>(fractionsAgain)), {}) == fractionsText);
 
     const auto errorOf = [&](const std::string& text) {
         write("bad.room", text);

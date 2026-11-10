@@ -11,6 +11,18 @@
 #include <cmath>
 
 namespace {
+// SDL's sentinel ids are C-cast macros: read them once here so the rest of the file builds clean
+// under -Wold-style-cast.
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wold-style-cast"
+#endif
+constexpr SDL_MouseID kTouchMouseId = SDL_TOUCH_MOUSEID; // mouse event synthesized from a touch
+constexpr SDL_TouchID kMouseTouchId = SDL_MOUSE_TOUCHID; // touch event synthesized from the mouse
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
+
 bool identityWindowToViewport(const void*, const float windowX, const float windowY,
                               SDL_FPoint& viewportOut) {
     viewportOut = {windowX, windowY};
@@ -32,7 +44,7 @@ float normalizeAxisValue(const Sint16 raw) noexcept {
 }
 
 bool isIgnoredTouchEvent(const SDL_TouchFingerEvent& tfinger) {
-    if (tfinger.touchID == SDL_MOUSE_TOUCHID) {
+    if (tfinger.touchID == kMouseTouchId) {
         return true;
     }
     if (tfinger.touchID != 0) {
@@ -222,6 +234,16 @@ TranslatedInput InputSystem::translateEvent(const SDL_Event& event,
         resetTransientState();
         break;
 
+    case SDL_EVENT_WINDOW_MOUSE_LEAVE:
+        // The last motion event was still inside the window: report the pointer as gone, at the
+        // spot it left from. A touch or gamepad cursor does not follow the OS mouse.
+        if (activeDevice_ == InputDevice::mouseKeyboard) {
+            out.pointerMoved = true;
+            out.viewportPoint = cursorViewport_;
+            out.insideViewport = false;
+        }
+        break;
+
     case SDL_EVENT_TEXT_INPUT:
         activeDevice_ = InputDevice::mouseKeyboard;
         out.textInput.emplace(event.text.text != nullptr ? event.text.text : "");
@@ -270,7 +292,7 @@ TranslatedInput InputSystem::translateEvent(const SDL_Event& event,
         break;
 
     case SDL_EVENT_MOUSE_MOTION:
-        if (event.motion.which == SDL_TOUCH_MOUSEID) break;
+        if (event.motion.which == kTouchMouseId) break;
         if (mapper.mapWindow(event.motion.x, event.motion.y, out.viewportPoint)) {
             activeDevice_ = InputDevice::mouseKeyboard;
             out.pointerMoved = true;
@@ -280,7 +302,7 @@ TranslatedInput InputSystem::translateEvent(const SDL_Event& event,
         break;
 
     case SDL_EVENT_MOUSE_BUTTON_DOWN:
-        if (event.button.which == SDL_TOUCH_MOUSEID) break;
+        if (event.button.which == kTouchMouseId) break;
         if (mapper.mapWindow(event.button.x, event.button.y, out.viewportPoint)) {
             activeDevice_ = InputDevice::mouseKeyboard;
             out.pointerMoved = true;

@@ -1,6 +1,7 @@
 # Fails when a layer includes a layer it must not depend on (run as a CTest test):
 #   cmake -DSOURCE_DIR=<repo> -P cmake/CheckLayerIncludes.cmake
 # game/ may include only game/ and the SDL value types (SDL_rect.h, SDL_pixels.h).
+# Inside game/, the authored definitions may not include simulation or session headers.
 set(allowed_game "game")
 set(allowed_content "content;game")
 set(allowed_input "input;game")
@@ -22,6 +23,21 @@ foreach(layer game content input ui graphics debug)
             elseif(layer STREQUAL "game" AND line MATCHES "<SDL3/"
                    AND NOT line MATCHES "<SDL3/SDL_(rect|pixels)\\.h>")
                 list(APPEND failures "${source}: ${line} (game/ uses only SDL value types)")
+            endif()
+        endforeach()
+    endforeach()
+endforeach()
+
+# Authored definitions stay independent of the classes that simulate or keep progress.
+set(definition_files Room SceneObject SpriteClip RoomParameters PlayerClips Facing)
+set(runtime_headers Player Scene Game Navigation Camera ScriptRunner SessionState)
+foreach(name IN LISTS definition_files)
+    file(GLOB sources "${SOURCE_DIR}/src/game/${name}.hpp" "${SOURCE_DIR}/src/game/${name}.cpp")
+    foreach(source IN LISTS sources)
+        file(STRINGS "${source}" includes REGEX "^[ \t]*#[ \t]*include")
+        foreach(line IN LISTS includes)
+            if(line MATCHES "\"game/([A-Za-z]+)\\.hpp\"" AND CMAKE_MATCH_1 IN_LIST runtime_headers)
+                list(APPEND failures "${source}: ${line} (definition includes runtime state)")
             endif()
         endforeach()
     endforeach()

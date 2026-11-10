@@ -2,9 +2,9 @@
 
 #include "game/Animation.hpp"
 #include "game/Facing.hpp"
+#include "game/PlayerClips.hpp"
 #include <SDL3/SDL_rect.h>
 
-#include <array>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -12,17 +12,9 @@
 
 enum class PlayerPose { idle, left, right, up, down };
 
-// The names the current movement rules require in every room's animation set.
-inline constexpr std::array<std::string_view, 5> playerLocomotionAnimations{
-    "idle", "left", "right", "up", "down"
-};
+// One locomotion clip name per pose (game/PlayerClips.hpp).
 static_assert(static_cast<std::size_t>(PlayerPose::down) + 1
               == playerLocomotionAnimations.size());
-
-// Optional standing clips per facing, in Facing order; "idle" stands in for a missing one.
-inline constexpr std::array<std::string_view, 4> playerIdleAnimations{
-    "idle_left", "idle_right", "idle_up", "idle_down"
-};
 
 class Player {
 public:

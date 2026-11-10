@@ -50,7 +50,7 @@ mexer em tantos arquivos"):
 | Comando novo do editor | cadeia de `if` em `DebugEditor::submit` + texto de ajuda fixo em `DebugOverlay.cpp` | `CommandCatalog` (nome, uso, função); `help` e a ajuda do painel saem dele |
 | UI de gameplay nova (inventário, menu) | `Renderer::render(..., const DialogueMenu*)` ganha um parâmetro por UI, mais `Application` | registro de desenhistas de UI no `Renderer` (como `RenderOverlay`), ordenados por camada |
 | Campo novo no save | `SessionState`, `SessionSnapshot` (+ `validationError`, `snapshot`, `restore`), `SaveFiles::parse` e `serialize` | tabela de campos do save (chave → ler/gravar) ou, no mínimo, um teste que falha quando um campo do snapshot não é serializado |
-| Ator além do player | `Room` carrega `playerAnimations`, `playerBaseSize`, velocidades e `playerStart`; `Room.cpp` inclui `Player.hpp` | definição `Actor` própria (seção 4, M7) |
+| Ator além do player | `Room` carrega `playerAnimations`, `playerBaseSize`, velocidades e `playerStart` | definição `Actor` própria (seção 4, M7) |
 | Jogo que precisa de uma ação própria | editar `ActionCatalog.cpp` da engine (vetor estático) | catálogos registráveis (seção 5, L1) |
 
 ### 2.2 Multiplataforma
@@ -111,6 +111,11 @@ Terceiro lote, em 10/11/2026: C7 (callback `setArtReloader`, comando `reload`; t
 `EditorTests.cpp` e `SpriteTests.cpp`), C8 (`ActorFiles::loadOptional`; o comportamento no
 desktop está testado, o caso Android em si continua sem aparelho para conferir), C11 (teste em
 `GameTests.cpp`) e D4 (`relatorio.md` e a auditoria foram para `docs/historico/`).
+Quarto lote (higiene), também em 10/11/2026: D3 (`Game::changeSession`, teste em `GameTests.cpp`),
+D5 (eram 19 avisos com as flags estritas, não 11; zerados no clang e `-Wconversion -Wshadow`
+ligados em todos os targets; GCC e MSVC não foram conferidos), D6 (`game/PlayerClips.hpp`, com
+regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, testes em
+`GameTests.cpp` e `EditorTests.cpp`) e D8 (teste em `EditorTests.cpp`).
 
 | # | Problema | Evidência | Onde / correção | Esforço |
 | --- | --- | --- | --- | --- |
@@ -139,22 +144,24 @@ desktop está testado, o caso Android em si continua sem aparelho para conferir)
   `tests/EditorTests.cpp`. *½ dia.*
 - ✅ **D2 — VSync:** `SDL_SetRenderVSync(renderer_, 1)` na criação; manter o `sleep_until` como
   reserva quando o VSync falhar. Pausar o render com a janela minimizada/oculta. *1 h.*
-- **D3 — `Game::session()` não-const é público:** mexer na sessão por fora deixa a navegação
+- ✅ **D3 — `Game::session()` não-const é público:** mexer na sessão por fora deixa a navegação
   velha (sonda: `isObjectSolid == 0` e a célula continua bloqueada). Hoje só os testes usam.
   Expor só a versão `const` e criar comandos no `Game` que marcam a navegação suja (os comandos
-  de F2 precisam disso). *2–3 h com o ajuste dos testes.*
+  de F2 precisam disso). *2–3 h com o ajuste dos testes.* Feito com um comando só,
+  `Game::changeSession(função)`, que compara quais objetos da sala bloqueiam o chão antes e
+  depois da mudança. A rota já em curso ainda não é revalidada (M5).
 - ✅ **D4 — Documentação defasada:** `ARCHITECTURE.md:152-154` diz que não há pasta gravável para
   saves; `GAME_DESIGN.md` promete `\n` em `say` e recarga de PNG com `load`; `relatorio.md`
   (20 ticks, `pointclick_core`) e `AUDITORIA_TECNICA_2026-09-28.md` descrevem um projeto que não
   existe mais (arquivar em `docs/historico/` ou remover); `assets/sprites/README.md` tem um
   caminho absoluto `/Users/joao/...` e formatação quebrada. *1 h.*
-- **D5 — Avisos estritos:** corrigir os 11 e ligar `-Wconversion -Wshadow` nos targets. *1 h.*
-- **D6 — `Room.cpp` inclui `Player.hpp`** só pelos nomes dos clips de locomoção: mover as
+- ✅ **D5 — Avisos estritos:** corrigir os 11 e ligar `-Wconversion -Wshadow` nos targets. *1 h.*
+- ✅ **D6 — `Room.cpp` inclui `Player.hpp`** só pelos nomes dos clips de locomoção: mover as
   constantes para um header de definição. *15 min.*
-- **D7 — Gravação de sala ruidosa:** `setprecision(max_digits10)` grava `53.3333321`; usar o
+- ✅ **D7 — Gravação de sala ruidosa:** `setprecision(max_digits10)` grava `53.3333321`; usar o
   formato mais curto que faz *round-trip* (`std::to_chars`) em `RoomFiles` e `SaveFiles`. O
   `save` do editor também descarta os comentários do designer (documentar). *1–2 h.*
-- **D8 — Ponteiro fora da janela:** tratar `SDL_EVENT_WINDOW_MOUSE_LEAVE` para `pointerInside`
+- ✅ **D8 — Ponteiro fora da janela:** tratar `SDL_EVENT_WINDOW_MOUSE_LEAVE` para `pointerInside`
   não ficar preso (vai importar no hover). *30 min.*
 
 ### 3.3 Features pequenas de alto valor

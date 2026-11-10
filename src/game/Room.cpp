@@ -1,7 +1,7 @@
 #include "game/Room.hpp"
 
+#include "game/PlayerClips.hpp"
 #include "game/World.hpp"
-#include "game/Player.hpp"
 #include "game/RoomParameters.hpp"
 
 #include <algorithm>
@@ -23,9 +23,9 @@ float Room::speedAt(const float feetY) const {
 
 SDL_FRect Room::playerBounds(const SDL_FPoint feet) const {
     const float scale = scaleAt(feet.y);
-    const float width = playerBaseSize.x * scale;
-    const float height = playerBaseSize.y * scale;
-    return {feet.x - width * 0.5F, feet.y - height, width, height};
+    const float scaledWidth = playerBaseSize.x * scale;
+    const float scaledHeight = playerBaseSize.y * scale;
+    return {feet.x - scaledWidth * 0.5F, feet.y - scaledHeight, scaledWidth, scaledHeight};
 }
 
 bool Room::containsFloor(const SDL_FPoint point) const {

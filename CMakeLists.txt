@@ -13,6 +13,16 @@ endif()
 
 include(cmake/Dependencies.cmake)
 
+# One warning set for every target. /W4 already reports shadowing (C4456-C4459) and narrowing
+# conversions (C4244, C4267), the MSVC counterparts of -Wshadow and -Wconversion.
+if(MSVC)
+    set(POINTCLICK_WARNINGS /W4 /permissive-)
+    set(POINTCLICK_KEEP_ASSERTS /UNDEBUG)
+else()
+    set(POINTCLICK_WARNINGS -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    set(POINTCLICK_KEEP_ASSERTS -UNDEBUG)
+endif()
+
 option(POINTCLICK_ENABLE_TOOLS "In-game DEBUG editor and its overlay (OFF for store builds)" ON)
 
 # One static library per layer, so the linker rejects a forbidden dependency:
@@ -95,11 +105,7 @@ else()
 endif()
 
 foreach(target ${POINTCLICK_LAYER_TARGETS} pointclick)
-    if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /permissive-)
-    else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
+    target_compile_options(${target} PRIVATE ${POINTCLICK_WARNINGS})
 endforeach()
 
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
@@ -109,11 +115,7 @@ if(BUILD_TESTING)
     add_library(pointclick_test_support STATIC tests/support/RoomPresets.cpp)
     target_include_directories(pointclick_test_support PUBLIC tests)
     target_link_libraries(pointclick_test_support PUBLIC pointclick_game)
-    if(MSVC)
-        target_compile_options(pointclick_test_support PRIVATE /W4 /permissive-)
-    else()
-        target_compile_options(pointclick_test_support PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
+    target_compile_options(pointclick_test_support PRIVATE ${POINTCLICK_WARNINGS})
     # GameTests links the domain and content only: gameplay runs without any renderer.
     add_executable(pointclick_tests tests/GameTests.cpp)
     target_link_libraries(pointclick_tests PRIVATE pointclick_content pointclick_test_support)
@@ -132,11 +134,8 @@ if(BUILD_TESTING)
     endif()
     # The regression checks must also run in Release builds.
     foreach(test_target IN LISTS POINTCLICK_TEST_TARGETS)
-        if(MSVC)
-            target_compile_options(${test_target} PRIVATE /W4 /permissive- /UNDEBUG)
-        else()
-            target_compile_options(${test_target} PRIVATE -Wall -Wextra -Wpedantic -UNDEBUG)
-        endif()
+        target_compile_options(${test_target} PRIVATE ${POINTCLICK_WARNINGS}
+                ${POINTCLICK_KEEP_ASSERTS})
         add_test(NAME ${test_target} COMMAND ${test_target})
     endforeach()
     add_test(NAME pointclick_layer_includes

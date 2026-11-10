@@ -11,7 +11,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Novo clip de player | `assets/actors/player.actor` (ou `player.<clip>.*` numa sala, para sobrescrever) | `assets/sprites`, `docs/GAME_DESIGN.md`; `src/content/ActorFiles.*`, `src/content/RoomLibrary.*` |
 | Novo clip de objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md` |
 | Regra que escolhe animação | `src/game/Animation.*`, `src/game/ObjectAnimations.*` ou `src/game/Player.*` | `src/graphics/EntityRenderer.cpp` apenas se mudar a apresentação |
-| Nova direção de locomoção | `PlayerPose` e `playerLocomotionAnimations` em `src/game/Player.hpp` | regra em `Player.cpp` e clip no `.room` |
+| Nova direção de locomoção | `PlayerPose` em `src/game/Player.hpp` e `playerLocomotionAnimations` em `src/game/PlayerClips.hpp` (nomes de clips: definição, sem depender de `Player`) | regra em `Player.cpp` e clip no `.room` |
 | Ponto de entrada (`[spawn]`) e `change_room <sala> [spawn]` | `RoomSpawn`/`Room::entryPoint` em `src/game/Room.*`, `Scene::apply` | `src/content/RoomFiles.cpp`, `RoomLibrary::transitionsError`, `Application::processGameEvents`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Movimento ou obstáculo | `src/game/Navigation.*`, `src/game/Scene.cpp` | `tests/GameTests.cpp` |
 | Câmera e dimensões da sala | `src/game/Camera.*`, `src/game/Room.*`, `src/game/RoomParameters.cpp` | `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
@@ -20,15 +20,16 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` (opcional, `POINTCLICK_ENABLE_TOOLS`) | `src/debug/DebugOverlay.cpp`, `tests/EditorTests.cpp`; o que o editor pede ao app (recarregar PNGs) entra por callback ligado em `Application` (`setArtReloader`) |
 | Desenho de diagnóstico (rota, painel técnico, nova visão de debug) | `DebugViews` + `kViewSwitches` em `src/debug/DebugEditor.*` (comando `show <visão> <0\|1>`) | desenho em `src/debug/DebugOverlay.cpp` / `src/debug/DiagnosticsOverlay.*`; `tests/EditorTests.cpp`; nunca em `graphics/` (`testGameFrameHasNoDebugDrawing` em `tests/SpriteTests.cpp`) |
 | Carregar/salvar salas, layout dos assets | `src/content/RoomLibrary.*` | `core/Application.cpp` e `DebugEditor` usam a mesma biblioteca |
-| Dependência entre camadas, targets CMake | `CMakeLists.txt` (um target por pasta) | `cmake/CheckLayerIncludes.cmake`, `docs/ARCHITECTURE.md` |
+| Dependência entre camadas, targets CMake, avisos do compilador | `CMakeLists.txt` (um target por pasta; `POINTCLICK_WARNINGS` vale para todos) | `cmake/CheckLayerIncludes.cmake` (camadas e definições de `game/` sem incluir simulação/sessão), `docs/ARCHITECTURE.md` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
 | Regras de interação, itens e puzzles | `assets/rooms/*.rules`, `src/game/Interaction.*`, `src/content/InteractionFiles.*` | `src/game/Game.cpp`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` |
 | Efeito ou condição nova em `.rules` | uma entrada + uma função (`start`, e `update` se bloquear) em `src/game/ActionCatalog.cpp` | método em `src/game/ScriptHost.hpp` + `Game::Host` só se precisar de capacidade nova da cena; tabela em `docs/GAME_DESIGN.md`; `tests/EditorTests.cpp` (round-trip do catálogo) |
 | Sequências, cutscene, pilha de sequências | `src/game/ScriptRunner.*`, `src/game/ScriptHost.hpp` | `Game::Host`, `Game::inCutscene` em `src/game/Game.cpp`, `tests/GameTests.cpp` |
 | Diálogo com escolhas (formato `.dlg`) | `assets/rooms/*.dlg`, `src/content/DialogueFiles.*`, `src/game/Dialogue.*` | `start_dialogue` em `src/game/ActionCatalog.cpp`, `Game::chooseDialogueOption`, `tests/GameTests.cpp`, `tests/EditorTests.cpp` (round-trip), `docs/GAME_DESIGN.md` |
 | Menu de escolhas na tela | `src/ui/DialogueMenu.*` (layout + `ViewportUiConsumer`) | `src/graphics/DialogueMenuRenderer.cpp`, registro em `src/core/Application.cpp`, `tests/EditorTests.cpp` |
-| Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles` |
+| Tokenizer/leitura/gravação dos formatos de texto | `src/content/TextFormat.*` | `InteractionFiles`, `DialogueFiles`; todo `float` gravado passa por `TextFormat::number` (texto mais curto que relê igual), nunca por `<<` direto |
 | Progresso de partida (flags, inventário, overrides) | `src/game/SessionState.*` | `src/game/Game.cpp`, `src/graphics/SceneRenderer.cpp`, `tests/GameTests.cpp`; campo novo também em `SessionSnapshot` e `src/content/SaveFiles.cpp` |
+| Mudar o progresso por fora de um script (ferramenta, UI, teste) | `Game::changeSession` em `src/game/Game.*` | `testSessionCommandKeepsNavigation` em `tests/GameTests.cpp`; campo novo da sessão que afete a navegação entra na comparação de `changeSession` |
 | Save/load de partida (formato `save.slot`, autosave; chave nova = `currentVersion` + 1) | `src/content/SaveFiles.*`, `src/game/SavedGame.hpp`, `src/game/Autosave.*` | `SessionState::snapshot/restore`, `Application::resumeSavedGame`/`processGameEvents`/`lifecycleWatch`, `tests/GameTests.cpp`, `docs/ARCHITECTURE.md` |
 | UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
 | Efeitos visuais de transição de sala | `RoomChangeRequested` / `RoomEntered` em `Application::processGameEvents` | efeito visual temporizado em `graphics/` |
@@ -46,6 +47,9 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   save (`SessionSnapshot`), junto com a sala atual e os pés; nada além disso. Editar a sala em tempo real no `DebugEditor`
   (`Game::applyRoom(room, false, error)`) ou trocar de sala **nunca** apaga o
   `SessionState`.
+- `Game::session()` é só leitura. Fora dos scripts (`ScriptHost`), o progresso muda por
+  `Game::changeSession(função)`, que reconstrói a navegação quando um objeto da sala passa a
+  bloquear ou a liberar o chão. Não devolva `SessionState&` mutável para UI, ferramentas ou testes.
 - `World::width` × `World::height` (`1280 × 720`) definem o campo de visão fixo da
   câmera/viewport lógica; o tamanho total da cena pertence a `Room::width` e
   `Room::height`. UI e overlays usam coordenadas de viewport; o mundo usa coordenadas

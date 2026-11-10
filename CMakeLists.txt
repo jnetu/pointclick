@@ -20,6 +20,10 @@ if(MSVC)
     set(POINTCLICK_KEEP_ASSERTS /UNDEBUG)
 else()
     set(POINTCLICK_WARNINGS -Wall -Wextra -Wpedantic -Wconversion -Wshadow)
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+        # GCC's -Wextra flags every designated initializer that leaves a defaulted member out.
+        list(APPEND POINTCLICK_WARNINGS -Wno-missing-field-initializers)
+    endif()
     set(POINTCLICK_KEEP_ASSERTS -UNDEBUG)
 endif()
 

@@ -78,7 +78,8 @@ se uma pasta incluir uma camada proibida, se `game/` incluir SDL além de `SDL_r
 ficam em `game/PlayerClips.hpp` justamente para `Room` validar a sala sem conhecer `Player`.
 
 Todos os targets compilam com `POINTCLICK_WARNINGS` (`-Wall -Wextra -Wpedantic -Wconversion
--Wshadow`; `/W4` no MSVC).
+-Wshadow`; `/W4` no MSVC). No GCC entra também `-Wno-missing-field-initializers`: o `-Wextra`
+dele acusa todo inicializador designado que omite um campo com valor padrão.
 
 ## Fluxos principais
 

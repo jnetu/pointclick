@@ -113,7 +113,9 @@ desktop está testado, o caso Android em si continua sem aparelho para conferir)
 `GameTests.cpp`) e D4 (`relatorio.md` e a auditoria foram para `docs/historico/`).
 Quarto lote (higiene), também em 10/11/2026: D3 (`Game::changeSession`, teste em `GameTests.cpp`),
 D5 (eram 19 avisos com as flags estritas, não 11; zerados no clang e `-Wconversion -Wshadow`
-ligados em todos os targets; GCC e MSVC não foram conferidos), D6 (`game/PlayerClips.hpp`, com
+ligados em todos os targets; conferido depois no GCC 16.2, também sem avisos, com
+`-Wno-missing-field-initializers` só nele, por causa dos inicializadores designados dos testes;
+MSVC não foi conferido), D6 (`game/PlayerClips.hpp`, com
 regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, testes em
 `GameTests.cpp` e `EditorTests.cpp`) e D8 (teste em `EditorTests.cpp`).
 

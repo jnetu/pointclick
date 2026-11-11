@@ -28,6 +28,7 @@ struct RoomBundleResult {
 //   <assets>/rooms/<id>.room|.rules|.dlg
 //   <assets>/actors/player.actor   shared player art every room inherits
 //   <assets>/sprites/              PNGs, relative paths in clips
+//   <assets>/fonts/                TTF files of the game text (graphics/FontLibrary)
 // The game and the tools load and save rooms through it, so both see the same inherited art.
 class RoomLibrary {
 public:
@@ -40,6 +41,7 @@ public:
 
     [[nodiscard]] const std::filesystem::path& roomsDirectory() const { return roomsDirectory_; }
     [[nodiscard]] std::filesystem::path spritesDirectory() const;
+    [[nodiscard]] std::filesystem::path fontsDirectory() const;
     [[nodiscard]] std::filesystem::path playerActorPath() const;
     [[nodiscard]] const AnimationSet& playerArt() const { return playerArt_; }
 

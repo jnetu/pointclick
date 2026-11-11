@@ -25,6 +25,10 @@ std::filesystem::path RoomLibrary::spritesDirectory() const {
     return roomsDirectory_.parent_path() / "sprites";
 }
 
+std::filesystem::path RoomLibrary::fontsDirectory() const {
+    return roomsDirectory_.parent_path() / "fonts";
+}
+
 std::filesystem::path RoomLibrary::playerActorPath() const {
     return roomsDirectory_.parent_path() / "actors" / "player.actor";
 }

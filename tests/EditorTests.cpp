@@ -1208,6 +1208,31 @@ void testTypedTextNeverBecomesSpeech() {
     assert(!game.inCutscene() && game.session().hasFlag("line_done"));
 }
 
+void testDialogueMenuWrapsLongOptions() {
+    Game game(RoomPresets::firstRoom());
+    const std::string longText(80, 'x'); // 99 glyphs fit a row: the word moves to line 2
+    DialogueChoice a{.id = "a", .text = "Curta", .conditions = {}, .effects = {}};
+    DialogueChoice b{.id = "b", .text = "Você tem certeza de que " + longText, .conditions = {},
+                     .effects = {}};
+    game.setDialogues(RoomDialogues{{DialogueNode{"menu", {}, {a, b}}}});
+    constexpr MonospaceTextMetrics metrics{12.0F, 28.0F};
+    DialogueMenu menu(game, metrics);
+    assert(game.startDialogue("menu") && game.awaitingDialogueChoice());
+    assert(menu.rowCount() == 2);
+    const DialogueMenu::Row& wrappedRow = menu.row(1);
+    assert(wrappedRow.lines.size() == 2);
+    assert(wrappedRow.rect.h == 2.0F * 28.0F + DialogueMenu::kRowPaddingY * 2.0F);
+    for (const TextLine& line : wrappedRow.lines) {
+        assert(line.width <= wrappedRow.rect.w - DialogueMenu::kTextInsetX * 2.0F);
+    }
+    // The taller row moves the panel up; it still ends at the bottom margin.
+    const SDL_FRect panel = menu.panelRect();
+    assert(panel.y + panel.h == 720.0F - DialogueMenu::kMargin);
+    assert(panel.h == DialogueMenu::kPadding * 2.0F + DialogueMenu::kMinRowHeight
+                              + wrappedRow.rect.h);
+    assert(menu.optionAt({640.0F, wrappedRow.rect.y + wrappedRow.rect.h - 2.0F}) == 1u);
+}
+
 void testDialogueMenuInput() {
     Game game(RoomPresets::firstRoom());
     DialogueChoice a{.id = "a", .text = "Primeira", .conditions = {},
@@ -1218,7 +1243,8 @@ void testDialogueMenuInput() {
                      .effects = {InteractionEffect::make("set_flag", {"picked_c"})}};
     game.setDialogues(RoomDialogues{{DialogueNode{
             "menu", {InteractionEffect::make("say", {"Escolha"})}, {a, b, c}}}});
-    DialogueMenu menu(game);
+    constexpr MonospaceTextMetrics metrics{12.0F, 28.0F};
+    DialogueMenu menu(game, metrics);
     InputRouter router;
     router.addUiConsumer(&menu);
     DebugEditor editor;
@@ -1247,16 +1273,24 @@ void testDialogueMenuInput() {
     for (int i = 0; i < 200 && game.scene().player().moving(); ++i) game.tick(0.05F);
     assert(!navigate(UiNavAction::down).consumedByUi);
 
-    // Layout: rows stack inside the panel, at the bottom of the 1280x720 viewport.
-    const SDL_FRect panel = DialogueMenu::panelRect(3);
-    assert(panel.y + panel.h <= 720.0F && panel.x >= 0.0F && panel.x + panel.w <= 1280.0F);
-    const SDL_FRect row1 = DialogueMenu::optionRect(1, 3);
-    assert(DialogueMenu::optionAt(center(row1), 3) == 1u);
-    assert(!DialogueMenu::optionAt({10.0F, 10.0F}, 3));
+    // Closed: no rows, nothing to hit.
+    assert(menu.rowCount() == 0 && !menu.optionAt({640.0F, 650.0F}));
 
     // Click/touch on a row chooses it.
     assert(game.startDialogue("menu"));
     assert(game.awaitingDialogueChoice());
+
+    // Layout: rows stack inside the panel, at the bottom of the 1280x720 viewport, sized by the
+    // measured text ("2. Segunda" is one 28-unit line, so the 40-unit minimum row applies).
+    assert(menu.rowCount() == 3 && menu.row(1).label == "2. Segunda");
+    const SDL_FRect panel = menu.panelRect();
+    assert(panel.y + panel.h <= 720.0F && panel.x >= 0.0F && panel.x + panel.w <= 1280.0F);
+    const SDL_FRect row1 = menu.optionRect(1);
+    assert(row1.h == DialogueMenu::kMinRowHeight && row1.y == menu.optionRect(0).y + row1.h);
+    assert(menu.optionAt(center(row1)) == 1u);
+    assert(!menu.optionAt({10.0F, 10.0F}));
+    const SDL_FPoint text = menu.lineOrigin(1, 0);
+    assert(text.x == row1.x + DialogueMenu::kTextInsetX && text.y == row1.y + 6.0F);
     const SDL_FPoint feet = game.scene().player().feet();
     assert(press({200.0F, 100.0F}).consumedByUi); // modal: outside the rows does nothing
     assert(game.awaitingDialogueChoice() && !game.scene().player().moving());
@@ -1289,7 +1323,7 @@ void testDialogueMenuInput() {
 
     // Hover follows the pointer and is consumed inside the panel.
     assert(game.startDialogue("menu"));
-    hover.viewportPoint = center(DialogueMenu::optionRect(2, 3));
+    hover.viewportPoint = center(menu.optionRect(2));
     assert(router.routeTranslated(hover, game).consumedByUi);
     assert(menu.highlighted() == 2 && !game.scene().pointerInside());
 
@@ -1669,6 +1703,7 @@ int main() {
     testActionCatalogRoundtrip(directory);
     testDialogueFiles(directory);
     testDialogueMenuInput();
+    testDialogueMenuWrapsLongOptions();
     testTypedTextNeverBecomesSpeech();
     testRoomLibraryAndActors(directory);
     testRoomSpawnFilesAndTransitions(directory);

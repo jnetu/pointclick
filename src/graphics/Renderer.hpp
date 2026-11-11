@@ -1,7 +1,9 @@
 #pragma once
 
 #include <SDL3/SDL_rect.h>
+#include "graphics/SpeechRenderer.hpp"
 #include "graphics/SpriteLibrary.hpp"
+#include "graphics/TextRenderer.hpp"
 #include "input/InputSystem.hpp"
 
 #include <string>
@@ -19,6 +21,10 @@ public:
     // True when presenting waits for the display; otherwise the caller must pace the frames.
     [[nodiscard]] bool vsyncActive() const noexcept { return vsync_; }
     void setSpriteRoot(std::filesystem::path root);
+    // <assets>/fonts; without it (or when a font fails) game text uses the debug font.
+    bool setFontRoot(std::filesystem::path root);
+    // Measures of the game text, for ui/ layouts (DialogueMenu). Lives as long as the Renderer.
+    [[nodiscard]] const TextMetrics& textMetrics() const noexcept { return text_; }
     void invalidateTextures();
     [[nodiscard]] bool windowToViewport(float x, float y, SDL_FPoint& result) const;
     [[nodiscard]] bool touchToViewport(float normalizedX, float normalizedY,
@@ -38,6 +44,8 @@ private:
     SDL_Window* window_ = nullptr;
     bool vsync_ = false;
     SpriteLibrary sprites_;
+    TextRenderer text_;
+    SpeechRenderer speech_;
     std::string lastRoomId_;
     std::vector<const RenderOverlay*> overlays_;
 };

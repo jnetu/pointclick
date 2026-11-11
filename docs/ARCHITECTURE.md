@@ -43,8 +43,14 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `debug/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa, desenhados pelo `DebugOverlay` |
 | `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
 | `input/InputRouter` | Cadeia de consumo por prioridade: Ciclo de Vida → `ToolInputConsumer` opcional → `ViewportUiConsumer` (UIs de gameplay) → `Game` |
-| `ui/DialogueMenu` | Menu de escolhas: layout na viewport, hit-test, destaque por ponteiro/setas e `Game::chooseDialogueOption` |
+| `ui/DialogueMenu` | Menu de escolhas: layout na viewport (linhas medidas e quebradas com `TextMetrics`, em cache), hit-test, destaque por ponteiro/setas e `Game::chooseDialogueOption` |
+| `ui/TextMetrics` | `FontRole` (papéis semânticos do texto) e a interface de medida em unidades da viewport, injetada nos layouts de `ui/`; `MonospaceTextMetrics` para testes e fallback |
+| `ui/TextLayout` | Quebra por palavras UTF-8 (e por `\n`) com medida injetável, sem cópia (`TextLine` = faixa de bytes), e `placeAbove` (caixa centrada e mantida dentro de uma área) |
+| `ui/SpeechLayout` | Layout da fala: quebra até 820 px, nome do orador opcional, centralizada acima da cabeça e dentro da viewport; refaz a quebra só quando texto ou métrica mudam |
 | `graphics/DialogueMenuRenderer` | Desenho do menu de escolhas com o layout de `DialogueMenu` |
+| `graphics/FontLibrary` | Único mapeamento `FontRole` → arquivo TTF/tamanho/contorno; abre por `SDL_IOStream` (funciona no APK/bundle) na escala de pixels da saída |
+| `graphics/TextRenderer` | SDL3_ttf: implementa `TextMetrics`, cache de `TTF_Text` por (papel, linha) com descarte por desuso, atlas de glifos do *text engine*, contorno escuro, desenho 1:1 em pixels de saída (DPI), fallback para a fonte de debug por papel |
+| `graphics/SpeechRenderer` | Desenha `Scene::floatingText` com `SpeechLayout`, ancorada em `EntityRenderer::playerRect` |
 | `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera |
 | `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena (filtrando objetos ocultos em `SessionState`) |
@@ -61,7 +67,7 @@ Cada camada é uma biblioteca estática, e o linker recusa dependências proibid
 | `pointclick_content` | `src/content/` | `game` |
 | `pointclick_input` | `src/input/` | `game` |
 | `pointclick_ui` | `src/ui/` | `input`, `game` |
-| `pointclick_graphics` | `src/graphics/` | `ui`, `input`, `game` |
+| `pointclick_graphics` | `src/graphics/` | `ui`, `input`, `game`, SDL3_ttf (privado) |
 | `pointclick_tools` (opcional) | `src/debug/` | `content`, `graphics` |
 | `pointclick` | `src/core/`, `main.cpp` | todos; `pointclick_tools` só com `POINTCLICK_ENABLE_TOOLS=ON` |
 
@@ -155,6 +161,18 @@ O empacotamento deve preservar `assets/rooms` dentro do espaço de assets do APK
 (por exemplo, `app/src/main/assets/assets/rooms/first.room`), ou usar `--rooms`
 para indicar outra raiz. `SDL_GetBasePath` devolve um ponteiro mantido pelo SDL,
 que o chamador não deve liberar.
+
+Texto de jogo: `RoomLibrary::fontsDirectory()` (`<assets>/fonts`, irmã de `rooms/` e
+`sprites/`) é entregue a `Renderer::setFontRoot`, que abre as fontes pelo mesmo `SDL_IOStream`
+(no Android, de dentro do APK). SDL3_ttf segue a regra do SDL3: `POINTCLICK_SDL3_TTF_VERSION`
+em `cmake/Dependencies.cmake` é o mínimo do pacote do sistema e a versão fixa do CPM; sem pacote,
+o CPM compila o SDL3_ttf com o FreeType do sistema ou, em mobile/console/MSVC (ou com
+`POINTCLICK_VENDOR_FREETYPE=ON`), com o FreeType fixado (`POINTCLICK_FREETYPE_VERSION`).
+HarfBuzz e plutosvg ficam desligados. Fonte ausente não impede o jogo: log e fonte de debug para
+aquele papel. A escala de pixels (saída ÷ `1280×720`, em passos de 0,25) é conferida a cada quadro;
+quando muda, as fontes são re-rasterizadas, o cache de linhas é limpo e `TextMetrics::revision()`
+avança para os layouts de `ui/` refazerem a quebra. `RENDER_DEVICE_RESET` também recria o
+*text engine*. O desenho de diagnóstico continua com `SDL_RenderDebugText`, só em `debug/`.
 
 A gravação passa por `TextFormat::writeTextAtomic` (`std::ofstream` num `.tmp` e
 `std::filesystem::rename`), sempre no sistema de arquivos local, com dois destinos: as salas

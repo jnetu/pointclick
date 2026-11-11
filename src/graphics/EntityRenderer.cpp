@@ -39,6 +39,19 @@ void EntityRenderer::drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
     SDL_RenderRect(renderer, &bounds);
 }
 
+SDL_FRect EntityRenderer::playerRect(const Room& room, const Player& player, const SDL_FPoint feet,
+                                     const SDL_FPoint cameraOffset) {
+    const SDL_FPoint screenFeet{feet.x - cameraOffset.x, feet.y - cameraOffset.y};
+    const float scale = room.scaleAt(feet.y);
+    if (const SpriteClip* clip = findAnimation(
+                room.playerAnimations, playerClipName(player, room.playerAnimations))) {
+        return clip->targetRect(screenFeet, room.playerBaseSize.x, room.playerBaseSize.y, scale);
+    }
+    const float width = room.playerBaseSize.x * scale;
+    const float height = room.playerBaseSize.y * scale;
+    return {screenFeet.x - width * 0.5F, screenFeet.y - height, width, height};
+}
+
 void EntityRenderer::drawPlayer(SpriteLibrary& sprites, const Room& room,
                                 const Player& player, const SDL_FPoint feet,
                                 const SDL_FPoint cameraOffset, const float interpolation) {

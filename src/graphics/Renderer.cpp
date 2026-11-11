@@ -22,6 +22,7 @@ bool Renderer::initialize(SDL_Window* window) {
     vsync_ = SDL_SetRenderVSync(renderer_, 1);
     if (!vsync_) SDL_Log("VSync unavailable, using the frame limiter: %s", SDL_GetError());
     sprites_.initialize(renderer_);
+    text_.initialize(renderer_);
     return true;
 }
 
@@ -29,8 +30,13 @@ void Renderer::setSpriteRoot(std::filesystem::path root) {
     sprites_.setRoot(std::move(root));
 }
 
+bool Renderer::setFontRoot(std::filesystem::path root) {
+    return text_.setFontRoot(std::move(root));
+}
+
 void Renderer::invalidateTextures() {
     sprites_.clear();
+    text_.invalidate();
 }
 
 bool Renderer::windowToViewport(const float x, const float y, SDL_FPoint& result) const {
@@ -94,8 +100,10 @@ void Renderer::render(const Game& game, const float interpolation,
         lastRoomId_ = game.scene().room().id;
         sprites_.beginRoom();
     }
+    text_.beginFrame();
     SceneRenderer::draw(renderer_, sprites_, game.scene(), interpolation);
-    if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, game, *dialogueMenu);
+    speech_.draw(text_, game.scene(), interpolation);
+    if (dialogueMenu) DialogueMenuRenderer::draw(renderer_, text_, game, *dialogueMenu);
     for (const RenderOverlay* overlay : overlays_) overlay->draw(renderer_, game, interpolation);
     if (input && input->activeDevice() == InputDevice::gamepad) {
         const SDL_FPoint cursor = input->cursorViewport();
@@ -113,6 +121,7 @@ void Renderer::render(const Game& game, const float interpolation,
 
 void Renderer::shutdown() {
     sprites_.clear();
+    text_.shutdown(); // before the renderer: the text engine owns renderer textures
     if (renderer_ != nullptr) {
         SDL_DestroyRenderer(renderer_);
         renderer_ = nullptr;

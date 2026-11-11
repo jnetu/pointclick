@@ -14,6 +14,9 @@ O preset `debug` usa o gerador padrão da plataforma (ou `CMAKE_GENERATOR`);
 com Ninja no `PATH`, use `ninja-debug`/`ninja-release`. O SDL3 do sistema só é
 usado se for >= `POINTCLICK_SDL3_VERSION` (`cmake/Dependencies.cmake`); caso
 contrário, o CPM baixa e compila essa mesma versão.
+O SDL3_ttf (texto do jogo) segue a mesma regra com `POINTCLICK_SDL3_TTF_VERSION`; sem
+pacote do sistema, o CPM o compila com o FreeType do sistema (ou com o FreeType fixado, em
+mobile/console). As fontes ficam em [assets/fonts](assets/fonts), com as licenças OFL.
 
 Digite **DEBUG** para abrir o editor durante o jogo. Use cima/baixo para
 selecionar e esquerda/direita para alterar valores. **Tab** oculta o painel

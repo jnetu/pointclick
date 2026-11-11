@@ -7,12 +7,14 @@
 #include "graphics/SpriteLibrary.hpp"
 
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <cassert>
 #include <chrono>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <string>
 
 namespace {
 const AnimationSet& sharedPlayerArt() {
@@ -393,6 +395,92 @@ void testGameFrameHasNoDebugDrawing() {
     SDL_Quit();
 }
 
+// Counts pixels of the speech fill color (250, 236, 170) and of its dark outline in a frame.
+struct SpeechPixels {
+    int fill = 0;
+    int outline = 0;
+    SDL_Rect bounds{1280, 720, -1, -1}; // min x, min y, max x, max y of the fill
+};
+
+SpeechPixels speechPixels(SDL_Surface* frame) {
+    SpeechPixels result;
+    for (int y = 0; y < frame->h; ++y) {
+        for (int x = 0; x < frame->w; ++x) {
+            const SDL_Color c = pixel(frame, x, y);
+            if (c.r >= 245 && c.g >= 230 && c.g <= 242 && c.b >= 160 && c.b <= 180) {
+                ++result.fill;
+                result.bounds.x = std::min(result.bounds.x, x);
+                result.bounds.y = std::min(result.bounds.y, y);
+                result.bounds.w = std::max(result.bounds.w, x);
+                result.bounds.h = std::max(result.bounds.h, y);
+            } else if (c.r == 10 && c.g == 12 && c.b == 18) {
+                ++result.outline;
+            }
+        }
+    }
+    return result;
+}
+
+// A long accented line, drawn with the real TTF fonts (and again with the debug-font fallback):
+// it shows, wraps inside the viewport and sits above the player.
+void testSpeechUsesTtfText() {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    assert(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Speech test", 1280, 720, SDL_WINDOW_HIDDEN);
+    assert(window);
+    const std::string line = "Encontrei uma chave de latão escondida na caixa azul! Será que "
+                             "ela abre a porta do salão? Não custa tentar, já que ninguém viu.";
+    const auto render = [&](Renderer& renderer, const bool fonts) {
+        Game game(RoomPresets::firstRoom());
+        game.setDialogues(RoomDialogues{{DialogueNode{
+                "fala", {InteractionEffect::make("say", {line})}, {}}}});
+        assert(game.startDialogue("fala"));
+        game.tick(0.016F);
+        assert(game.scene().floatingText().isVisible());
+        const TextMetrics& metrics = renderer.textMetrics();
+        const float width = metrics.width(FontRole::dialogue, line);
+        assert(width > 1280.0F); // one line would not fit: it must wrap
+        if (fonts) {
+            // Proportional font: "i" is narrower than "M", unlike the debug font.
+            assert(metrics.width(FontRole::dialogue, "iiii") < metrics.width(FontRole::dialogue, "MMMM"));
+            assert(metrics.lineHeight(FontRole::dialogue) > 30.0F);
+        }
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        assert(frame);
+        const SpeechPixels found = speechPixels(frame);
+        SDL_DestroySurface(frame);
+        assert(found.fill > 200 && found.outline > 100);
+        assert(found.bounds.x >= 8 && found.bounds.w <= 1272 && found.bounds.y >= 8);
+        // Several lines tall, and entirely above the player's feet.
+        assert(static_cast<float>(found.bounds.h - found.bounds.y)
+               > metrics.lineHeight(FontRole::dialogue) * 1.5F);
+        assert(static_cast<float>(found.bounds.h) < game.scene().player().feet().y);
+    };
+    {
+        Renderer renderer;
+        assert(renderer.initialize(window));
+        renderer.setSpriteRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/sprites");
+        assert(renderer.setFontRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/fonts"));
+        render(renderer, true);
+        // Device reset drops the glyph atlases; the next frame draws again.
+        renderer.invalidateTextures();
+        render(renderer, true);
+        renderer.shutdown();
+    }
+    {
+        Renderer renderer;
+        assert(renderer.initialize(window));
+        // Missing fonts: logged, the game text falls back to the debug font and still shows.
+        assert(!renderer.setFontRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "no-fonts"));
+        render(renderer, false);
+        renderer.shutdown();
+    }
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 int main() {
     const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto directory = std::filesystem::temp_directory_path()
@@ -403,5 +491,6 @@ int main() {
     testEntityAnimationSelection(directory);
     testPlayerArtwork();
     testGameFrameHasNoDebugDrawing();
+    testSpeechUsesTtfText();
     std::filesystem::remove_all(directory);
 }

@@ -330,7 +330,7 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Condição** | `flag_set <flag>` / `flag_not_set <flag>` | Testa se uma flag de progresso está ativa ou não |
 | **Condição** | `has_item <itemId>` / `lacks_item <itemId>` | Testa se o jogador possui (ou não) o item no inventário |
 | **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
-| **Efeito** | `say "<texto>"` | Exibe a fala/observação e espera o tempo de leitura ou um clique. Aceita `\"`; `\n` é lido e gravado, mas a fonte de depuração atual não quebra linha nem mostra acentos, e falas com mais de 39 caracteres saem cortadas na borda (`docs/ROADMAP.md`, C2 e M1) |
+| **Efeito** | `say "<texto>"` | Exibe a fala/observação e espera o tempo de leitura ou um clique. Texto UTF-8 com acentos. Aceita `\"` e `\n` (quebra de linha forçada); o resto quebra sozinho por palavras (até ~820 px de largura), centralizado acima da cabeça do player e sempre dentro da tela |
 | **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
@@ -400,7 +400,7 @@ de uma escolha, nesta ordem:
 ```ini
 # gallery.dlg
 [node mesa]
-say "Uma mesa de madeira solida. O que fazer?"
+say "Uma mesa de madeira sólida. O que fazer?"
 
 # So aparece depois de achar o bilhete na planta.
 [choice ler_bilhete "Ler o bilhete sobre a mesa."]
@@ -417,10 +417,10 @@ goto fundo_falso
 say "Melhor seguir em frente."
 
 [node fundo_falso]
-say "Forcar o fundo falso?"
+say "Forçar o fundo falso?"
 
-[choice forcar "Forcar."]
-say "Nada alem de poeira."
+[choice forcar "Forçar."]
+say "Nada além de poeira."
 goto mesa
 
 [choice deixar "Deixar quieto."]
@@ -442,8 +442,26 @@ arquivo; todo `start_dialogue` do `.rules` aponta para um nó do `.dlg`; `start_
 vale dentro do `.dlg` (use `goto`); condições, `once` e `goto` só valem dentro de
 `[choice ...]`. Um erro aponta a linha (por exemplo,
 `Linha 12: Destino de goto desconhecido: porao`). O comando `load` do painel DEBUG recarrega
-`.room`, `.rules` e `.dlg` juntos. O texto usa a fonte de depuração, então prefira ASCII sem
-acentos por enquanto, como nas falas.
+`.room`, `.rules` e `.dlg` juntos. Falas e opções aceitam acentos (UTF-8); uma opção longa
+quebra em várias linhas e a linha do menu cresce para caber.
+
+### Texto na tela e fontes
+
+O texto do jogo usa fontes TrueType de `assets/fonts/` (licença SIL OFL, `OFL.txt` ao lado de
+cada família; mantenha-o junto ao distribuir). O código pede um **papel**, não um arquivo; o
+mapeamento fica só em `graphics/FontLibrary.cpp`:
+
+| Papel | Fonte | Uso |
+| --- | --- | --- |
+| `dialogue` | Atkinson Hyperlegible Regular, 30 px | Falas e observações (`say`), com contorno escuro |
+| `choice` | Atkinson Hyperlegible Regular, 24 px | Opções do menu de diálogo |
+| `speaker` | Lora Regular, 26 px | Nome de quem fala, acima da fala (pronto; `say` ainda não tem orador) |
+| `title` | Lora Regular, 44 px | Títulos (reservado para menus futuros) |
+
+Tamanhos em pixels da viewport `1280×720`; a fonte é rasterizada na escala real da tela, então
+fica nítida em telas de alta densidade. Itálico e negrito das duas famílias já estão na pasta para
+ênfase futura. Se uma fonte faltar, o jogo registra no log e usa a fonte de depuração (sem
+acentos) só para aquele papel.
 
 ### Exemplo prático: chave coletável, NPC condicional e porta trancada
 

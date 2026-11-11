@@ -17,6 +17,10 @@ void drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                 SDL_FPoint cameraOffset = {},
                 std::optional<bool> solidOverride = std::nullopt,
                 float interpolation = 1.0F);
+// Where the player's sprite lands on screen (its current clip, or the room's base size when it
+// has none); the speech is anchored to its top.
+[[nodiscard]] SDL_FRect playerRect(const Room& room, const Player& player, SDL_FPoint feet,
+                                   SDL_FPoint cameraOffset = {});
 void drawPlayer(SpriteLibrary& sprites, const Room& room,
                 const Player& player, SDL_FPoint feet,
                 SDL_FPoint cameraOffset = {}, float interpolation = 1.0F);

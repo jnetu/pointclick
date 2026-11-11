@@ -76,7 +76,8 @@ bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
     // Built aside and committed only when complete: a refused save leaves no half game behind.
     std::unique_ptr<Gameplay> gameplay;
     try {
-        gameplay = std::make_unique<Gameplay>(std::move(bundle.room), std::move(progress));
+        gameplay = std::make_unique<Gameplay>(std::move(bundle.room), std::move(progress),
+                                              renderer_.textMetrics());
     } catch (const std::exception& exception) {
         SDL_Log("Could not apply room: %s", exception.what());
         return false;
@@ -220,6 +221,8 @@ bool Application::initialize() {
         return false;
     }
     renderer_.setSpriteRoot(library_.spritesDirectory());
+    // A missing font is logged and drawn with the debug font: the game still starts.
+    (void)renderer_.setFontRoot(library_.fontsDirectory());
     if (std::string error; (savePath_ = SaveFiles::defaultSlot(error)).empty()) {
         SDL_Log("No writable folder for saves, playing without them: %s", error.c_str());
     }

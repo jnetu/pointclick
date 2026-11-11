@@ -3,13 +3,13 @@
 # depois once (opcional), os efeitos e por ultimo goto <no> (sem goto, a conversa termina).
 
 [node mesa]
-say "Uma mesa de madeira solida. O que fazer?"
+say "Uma mesa de madeira sólida. O que fazer?"
 
 # So aparece depois de achar o bilhete na planta.
 [choice ler_bilhete "Ler o bilhete sobre a mesa."]
 has_item gallery_note
 say "Coloquei o bilhete sobre a mesa para ler melhor."
-say "\"A chave esta onde a luz nao alcanca.\""
+say "\"A chave está onde a luz não alcança.\""
 set_flag read_gallery_note
 
 [choice gavetas "Procurar nas gavetas."]
@@ -21,10 +21,10 @@ goto fundo_falso
 say "Melhor seguir em frente."
 
 [node fundo_falso]
-say "Forcar o fundo falso?"
+say "Forçar o fundo falso?"
 
-[choice forcar "Forcar."]
-say "Nada alem de poeira."
+[choice forcar "Forçar."]
+say "Nada além de poeira."
 goto mesa
 
 [choice deixar "Deixar quieto."]

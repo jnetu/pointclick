@@ -122,7 +122,7 @@ regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, teste
 | # | Problema | Evidência | Onde / correção | Esforço |
 | --- | --- | --- | --- | --- |
 | C1 ✅ | **Softlock de cutscene:** `wait_animation` nunca termina num clip com `loop = 0` e `fps = 0` (imagem estática). A sala é aceita pela validação. | Sonda: após 125 s e cliques, `inCutscene() == true`. | `AnimationPlayback::finished` exige `fps > 0` ([Animation.cpp:36](../src/game/Animation.cpp)). Tratar `fps <= 0` como terminado em `Scene::animationFinished` + teste. | 30 min |
-| C2 | **Fala ilegível:** texto em 4× da fonte de debug, sem quebra de linha, começando em x=20. Cabem 39 caracteres; **10 das 15 falas dos assets são cortadas**, e o painel de diagnóstico cobre o começo. `\n`, documentado em `GAME_DESIGN.md:313`, não quebra linha (limite do `SDL_RenderDebugText`). O texto ainda deriva 5 px/s. | Captura headless: de "Encontrei uma chave de latao escondida na caixa azul!" só aparece "chave de latao escondida n". | Paliativo: quebra por palavras em `graphics/` (ASCII, escala 2), centralizado acima do player, sem deriva em `FloatingText`. Solução real: M1. | ½ dia |
+| C2 ✅ | **Fala ilegível:** texto em 4× da fonte de debug, sem quebra de linha, começando em x=20. Cabem 39 caracteres; **10 das 15 falas dos assets são cortadas**, e o painel de diagnóstico cobre o começo. `\n` não quebrava linha (limite do `SDL_RenderDebugText`). O texto ainda derivava 5 px/s. | Captura headless: de "Encontrei uma chave de latao escondida na caixa azul!" só aparecia "chave de latao escondida n". | Resolvido direto pela solução real (M1), sem o paliativo: fala em TTF, quebrada por palavras e por `\n`, centralizada acima do player e dentro da viewport; `FloatingText` sem posição nem deriva. Testes em `TextLayoutTests.cpp` e `SpriteTests.cpp` (`testSpeechUsesTtfText`). | ½ dia |
 | C3 ✅ | **BOM UTF-8 quebra todos os formatos** com mensagem enganosa na linha 1 (arquivo salvo no Bloco de Notas do Windows). CRLF já funciona. | Sonda: `.room`, `.rules`, `.dlg` e save recusados. | Remover o BOM em `TextFormat::readFile`/`readOptionalFile` (um lugar só) + teste por formato. | 30 min |
 | C4 | **Estado visual de objeto não persiste:** `play_animation porta open` volta ao clip inicial ao sair e voltar da sala e ao carregar o save, enquanto flag e colisão continuam "aberta". | Sonda: `anim=idle`, `flag=1`, `solid=0`; o save não contém a animação. | Campo `animation` em `ObjectStateOverride` + efeito persistente (`set_animation <obj> <clip>`, ou `play_animation` de clip sem loop passa a persistir); `ObjectAnimations::rebuild` parte do clip salvo já no último quadro. Toca `SessionState`, `SaveFiles` (versão 3), `ActionCatalog`, `Scene::apply`, docs, testes. | 1–2 dias |
 | C5 ✅ | **Fala atravessa a troca de sala:** `change_room b` seguido de `say` (último passo, não esperado) deixa o texto na sala nova. | Sonda: fala visível após `applyRoom`. | `speech_.hide()` em `Scene::apply` quando `resetPlayer` + teste. | 15 min |
@@ -200,11 +200,20 @@ regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, teste
 Ordem sugerida: M1 e M2 primeiro (sem texto e fundo, nenhuma outra mecânica é avaliável na tela),
 depois M3–M6 (o núcleo de um point & click), depois o resto.
 
-- **M1 — Texto de verdade.** `graphics/TextRenderer` com SDL3_ttf (ou fonte bitmap UTF-8),
-  cache de glifos e quebra de linha; layout da fala em `ui/` (ancorada ao falante, dentro da
-  viewport); `LineSpoken{speaker, text}`; `say` com falante opcional. Substitui o paliativo de
-  C2 e destrava acentos. Toca: `graphics/` (novo), `ui/` (novo), `GameEvent.hpp`,
-  `ActionCatalog.cpp`, `cmake/Dependencies.cmake`.
+- ✅ **M1 — Texto de verdade** (10/11/2026, exceto o orador). SDL3_ttf fixado em
+  `cmake/Dependencies.cmake` (sistema como mínimo, CPM com FreeType do sistema ou fixado);
+  `graphics/FontLibrary` (papel → arquivo/tamanho num lugar só: Atkinson Hyperlegible para falas
+  e menu, Lora para orador e títulos) e `graphics/TextRenderer` (cache de `TTF_Text` por linha,
+  atlas de glifos, contorno, escala de pixels da saída, fallback para a fonte de debug); quebra e
+  posição em `ui/TextLayout` e `ui/SpeechLayout` com medida injetada (`ui/TextMetrics`);
+  `DialogueMenu` mede o texto real (linhas quebradas, altura da linha). Falas dos assets
+  acentuadas. **Pendente:** orador. `FontRole::speaker` e `SpeechLayout` já desenham o nome
+  acima da fala, mas `FloatingText::speaker()` está sempre vazio: falta `say <texto> [orador]`
+  (ou `say_as <ator> <texto>`) no `ActionCatalog`, `ScriptHost::say` com orador e
+  `LineSpoken{speaker, text}`. É mudança de formato do `.rules`/`.dlg` e casa melhor com M7
+  (atores/NPCs), que dá o ID do falante e a âncora da fala sobre ele em vez do player. Também
+  em aberto: um menu de diálogo com opções suficientes para passar da altura da tela não rola
+  (o painel para na margem de cima e as últimas linhas saem da tela).
 - **M2 — Fundo e camadas.** Hoje a sala é só cor chapada + guias, e objeto sem clip desenha um
   retângulo colorido: não dá para ter *hotspot* invisível sobre uma arte de fundo. Acrescentar
   `[layer <id>]` (arquivo, `scroll_factor` para parallax, atrás/à frente, `baseline`),
@@ -304,7 +313,7 @@ depois M3–M6 (o núcleo de um point & click), depois o resto.
 ## 6. Dependências entre os itens
 
 ```text
-C2 (paliativo) ─► M1 texto ─┬─► M3 hover/verbos ─► M4 inventário ─► M12 menus
+C2 ✅ + M1 texto ✅ ─┬─► M3 hover/verbos ─► M4 inventário ─► M12 menus
 D1 flags de debug ──────────┤                 └─► M13 localização
 M2 fundo/camadas/hotspots ──┘
 D3 + F2 (comandos de sessão) ─► F3 playgrounds + teste de percurso ─► M17 CI

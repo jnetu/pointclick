@@ -75,7 +75,9 @@ target_link_libraries(pointclick_input PUBLIC pointclick_game)
 
 # Gameplay UI consumers in viewport space.
 add_library(pointclick_ui STATIC
-        src/ui/DialogueMenu.cpp)
+        src/ui/DialogueMenu.cpp
+        src/ui/SpeechLayout.cpp
+        src/ui/TextLayout.cpp)
 target_link_libraries(pointclick_ui PUBLIC pointclick_input)
 
 # Read-only presentation.
@@ -85,8 +87,11 @@ add_library(pointclick_graphics STATIC
         src/graphics/RoomBackdropRenderer.cpp
         src/graphics/SceneRenderer.cpp
         src/graphics/SpriteLibrary.cpp
-        src/graphics/DialogueMenuRenderer.cpp)
-target_link_libraries(pointclick_graphics PUBLIC pointclick_ui)
+        src/graphics/DialogueMenuRenderer.cpp
+        src/graphics/FontLibrary.cpp
+        src/graphics/SpeechRenderer.cpp
+        src/graphics/TextRenderer.cpp)
+target_link_libraries(pointclick_graphics PUBLIC pointclick_ui PRIVATE SDL3_ttf::SDL3_ttf)
 
 set(POINTCLICK_LAYER_TARGETS pointclick_game pointclick_content pointclick_input
         pointclick_ui pointclick_graphics)
@@ -128,7 +133,10 @@ if(BUILD_TESTING)
             pointclick_test_support)
     target_compile_definitions(pointclick_sprite_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests)
+    # Text layout links ui/ only: wrapping is tested with fake metrics, no window or GPU.
+    add_executable(pointclick_text_tests tests/TextLayoutTests.cpp)
+    target_link_libraries(pointclick_text_tests PRIVATE pointclick_ui)
+    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests pointclick_text_tests)
     if(POINTCLICK_ENABLE_TOOLS)
         add_executable(pointclick_editor_tests tests/EditorTests.cpp)
         target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools pointclick_test_support)

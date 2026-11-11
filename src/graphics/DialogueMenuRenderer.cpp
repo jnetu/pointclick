@@ -1,45 +1,43 @@
 #include "graphics/DialogueMenuRenderer.hpp"
 
 #include "game/Game.hpp"
+#include "graphics/TextRenderer.hpp"
 #include "ui/DialogueMenu.hpp"
 
 #include <SDL3/SDL.h>
 
 namespace {
-constexpr float kTextScale = 2.0F;
-constexpr float kGlyph = 8.0F * kTextScale; // SDL debug font is 8x8
+constexpr SDL_Color kTextColor{205, 210, 220, 255};
+constexpr SDL_Color kHighlightedTextColor{255, 240, 168, 255};
 } // namespace
 
-void DialogueMenuRenderer::draw(SDL_Renderer* renderer, const Game& game,
+void DialogueMenuRenderer::draw(SDL_Renderer* renderer, TextRenderer& text, const Game& game,
                                 const DialogueMenu& menu) {
     if (!game.awaitingDialogueChoice()) return;
-    const auto options = game.dialogueOptions();
-    if (options.empty()) return;
+    const std::size_t count = menu.rowCount();
+    if (count == 0) return;
 
     SDL_BlendMode previousBlend = SDL_BLENDMODE_NONE;
     SDL_GetRenderDrawBlendMode(renderer, &previousBlend);
     SDL_SetRenderDrawBlendMode(renderer, SDL_BLENDMODE_BLEND);
-    const SDL_FRect panel = DialogueMenu::panelRect(options.size());
+    const SDL_FRect panel = menu.panelRect();
     SDL_SetRenderDrawColor(renderer, 12, 18, 28, 225);
     SDL_RenderFillRect(renderer, &panel);
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
     SDL_RenderRect(renderer, &panel);
 
     const std::size_t highlighted = menu.highlighted();
-    for (std::size_t i = 0; i < options.size(); ++i) {
-        const SDL_FRect row = DialogueMenu::optionRect(i, options.size());
+    for (std::size_t i = 0; i < count; ++i) {
+        const DialogueMenu::Row& row = menu.row(i);
         if (i == highlighted) {
             SDL_SetRenderDrawColor(renderer, 70, 82, 110, 235);
-            SDL_RenderFillRect(renderer, &row);
-            SDL_SetRenderDrawColor(renderer, 255, 240, 168, 255);
-        } else {
-            SDL_SetRenderDrawColor(renderer, 205, 210, 220, 255);
+            SDL_RenderFillRect(renderer, &row.rect);
         }
-        SDL_SetRenderScale(renderer, kTextScale, kTextScale);
-        SDL_RenderDebugTextFormat(renderer, (row.x + 12.0F) / kTextScale,
-                                  (row.y + (row.h - kGlyph) * 0.5F) / kTextScale, "%zu. %s",
-                                  i + 1, options[i]->text.c_str());
-        SDL_SetRenderScale(renderer, 1.0F, 1.0F);
+        const SDL_Color color = i == highlighted ? kHighlightedTextColor : kTextColor;
+        for (std::size_t line = 0; line < row.lines.size(); ++line) {
+            text.draw(FontRole::choice, row.lines[line].in(row.label), menu.lineOrigin(i, line),
+                      color);
+        }
     }
     SDL_SetRenderDrawBlendMode(renderer, previousBlend);
 }

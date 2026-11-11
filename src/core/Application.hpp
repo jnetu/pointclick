@@ -55,9 +55,10 @@ private:
     // Exists only once a room is loaded (the saved one or first.room): the binary carries no
     // placeholder room.
     struct Gameplay {
-        Gameplay(Room room, SessionState progress) : game(std::move(room), std::move(progress)) {}
+        Gameplay(Room room, SessionState progress, const TextMetrics& text)
+            : game(std::move(room), std::move(progress)), dialogueMenu(game, text) {}
         Game game;
-        DialogueMenu dialogueMenu{game};
+        DialogueMenu dialogueMenu;
     };
 
     RoomLibrary library_;

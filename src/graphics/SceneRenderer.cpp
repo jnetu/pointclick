@@ -38,13 +38,4 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
                                        scene.isObjectSolid(object), interpolation);
         }
     }
-
-    const FloatingText& floating = scene.floatingText();
-    if (floating.isVisible()) {
-        SDL_SetRenderDrawColor(renderer, 240, 220, 100, 255);
-        SDL_SetRenderScale(renderer, 4.0F, 4.0F);
-        SDL_RenderDebugText(renderer, floating.interpolatedX(interpolation) / 4.0F,
-                            floating.y() / 4.0F, floating.text().c_str());
-        SDL_SetRenderScale(renderer, 1.0F, 1.0F);
-    }
 }

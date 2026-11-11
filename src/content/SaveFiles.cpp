@@ -289,7 +289,9 @@ ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibr
         out.error = std::move(loaded.error);
     }
     if (refused == RefusedSave::keep) return out; // the file stays exactly as it is
-    if (std::string renameError; !quarantine(path, renameError)) {
+    if (std::string renameError; quarantine(path, renameError)) {
+        out.setAside = true;
+    } else {
         out.error += " (" + renameError + ")";
     }
     return out;

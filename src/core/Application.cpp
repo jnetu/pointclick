@@ -109,8 +109,11 @@ bool Application::resumeSavedGame() {
     // save is set aside as .bad before the autosave of the new game can replace it.
     const RefusedSave refused = options_.noSave ? RefusedSave::keep : RefusedSave::quarantine;
     const std::string file = TextFormat::pathToUtf8(savePath_.filename());
-    const std::string fate = options_.noSave ? "--no-save: " + file + " left untouched"
-                                             : "kept as " + file + ".bad";
+    // What became of a refused save file, for the log (decided after the attempt, not before).
+    const auto fate = [&](const bool setAside) {
+        if (options_.noSave) return "--no-save: " + file + " left untouched";
+        return setAside ? "kept as " + file + ".bad" : "could not be set aside as " + file + ".bad";
+    };
     ResumeResult resumed = SaveFiles::resume(savePath_, library_, refused);
     if (!resumed.warning.empty()) {
         SDL_Log("The saved room did not load, resuming the progress in %s: %s",
@@ -118,16 +121,18 @@ bool Application::resumeSavedGame() {
     }
     if (!resumed.save) {
         if (!resumed.error.empty()) {
-            SDL_Log("Ignoring the save (%s), starting a new game: %s", fate.c_str(),
-                    resumed.error.c_str());
+            SDL_Log("Ignoring the save (%s), starting a new game: %s",
+                    fate(resumed.setAside).c_str(), resumed.error.c_str());
         }
         return false;
     }
     if (startGameplay(std::move(*resumed.bundle), &*resumed.save)) return true;
     // Read and cross-checked, but the game refused to apply it: same fate as a refused file.
     std::string renameError;
-    if (refused == RefusedSave::quarantine) (void)SaveFiles::quarantine(savePath_, renameError);
-    SDL_Log("Ignoring the save (%s), starting a new game", fate.c_str());
+    const bool setAside = refused == RefusedSave::quarantine
+                          && SaveFiles::quarantine(savePath_, renameError);
+    SDL_Log("Ignoring the save (%s), starting a new game%s%s", fate(setAside).c_str(),
+            renameError.empty() ? "" : ": ", renameError.c_str());
     return false;
 }
 

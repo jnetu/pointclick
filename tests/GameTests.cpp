@@ -1661,6 +1661,19 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(!future.save && future.error == "Linha 1: Versao de save desconhecida: 9");
     assert(!std::filesystem::exists(slot));
     assert(readAll(bad) == "version = 9\n"); // the newest refused one
+    assert(future.setAside && gone.setAside && !kept.setAside);
+
+    // A rename that fails (a non-empty folder sits where .bad goes) is reported, not hidden.
+    std::filesystem::remove(bad);
+    std::filesystem::create_directory(bad);
+    std::ofstream(bad / "keep.txt") << "x";
+    std::ofstream(slot) << "version = 9\n";
+    ResumeResult stuck = SaveFiles::resume(slot, library, RefusedSave::quarantine);
+    assert(!stuck.save && !stuck.setAside);
+    assert(stuck.error.starts_with("Linha 1: Versao de save desconhecida: 9 ("));
+    assert(readAll(slot) == "version = 9\n"); // still there
+    std::filesystem::remove_all(bad);
+    std::ofstream(bad) << "version = 9\n"; // as the next checks expect it
 
     // A good save is never touched, in either mode (the older .bad stays too).
     const std::string good = "version = 1\nroom = first\nfeet = 300, 600\nitem = chave\n";

@@ -26,6 +26,9 @@ struct ResumeResult {
     std::optional<RoomBundle> bundle;
     std::string error;   // why a present save was refused (see RefusedSave for what became of it)
     std::string warning; // set when the saved room did not load and the start room took its place
+    // The refused file really became <file>.bad. False for RefusedSave::keep, when nothing was
+    // refused, and when the rename failed (the reason is then appended to `error`).
+    bool setAside = false;
 };
 
 // The match progress file (SavedGame), in the `key = value` style of .room:

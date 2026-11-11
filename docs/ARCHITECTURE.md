@@ -493,5 +493,31 @@ quarentena `.bad`, escrita atômica e autosave uma vez por ida ao background), p
 configurações inválidas, entrada multiplataforma e independência de resolução (720p,
 1080p, 2K, 4K e Ultrawide). Os testes de sprites cobrem cortes, animação, seleção de
 direção, persistência e imagem de substituição. Os testes gráficos usam o driver
-virtual e o renderizador de software do SDL. As verificações também ficam ativas
-em Release.
+virtual e o renderizador de software do SDL.
+
+Os testes usam o **doctest** (versão e hash fixos em `cmake/Dependencies.cmake`, baixado pelo
+CPM só com `BUILD_TESTING`). As regras:
+
+- **Um `TEST_CASE` por comportamento, com o nome da antiga função** (`testSaveRoundTrip`). Uma
+  falha nomeia o caso, o arquivo, a linha e os valores, e os outros casos continuam. As
+  verificações são `REQUIRE` (o caso para na primeira falha, porque o código seguinte costuma
+  depender dela); condições com `&&`/`||` ficam entre parênteses duplos, que o doctest relata
+  sem decompor os valores.
+- **Cada caso é independente**: cria a própria pasta (`tests/support/TempDirectory.hpp`, apagada
+  ao fim do caso, mesmo quando um `REQUIRE` falha) e os próprios arquivos. Por isso qualquer caso
+  roda sozinho (`--test-case=`) e em qualquer ordem (`--order-by=rand`).
+- **Um executável por conjunto de camadas, como antes.** `pointclick_tests` linka só `content` +
+  `game` (o domínio roda sem render), `pointclick_text_tests` só `ui`. O `main` e a implementação
+  do doctest ficam em `pointclick_test_main` (`tests/support/DoctestMain.cpp`), que não linka
+  nada do projeto. O `ctest` continua com uma entrada por executável.
+- **Ativas em Release**: `REQUIRE` não olha `NDEBUG`; `POINTCLICK_KEEP_ASSERTS` continua nos
+  alvos de teste para um eventual `assert` de helper.
+
+Fora do `ctest` há o fuzz dos parsers (`tests/fuzz/ParserFuzz.cpp`, `POINTCLICK_ENABLE_FUZZ`):
+um laço determinístico que muta os assets reais e chama os parsers e os writers de `content/`
+sob ASan + UBSan. Ele só exige "aceitou ou recusou, sem crash"; o significado de cada entrada é
+assunto dos testes.
+
+A CI (`.github/workflows/ci.yml`) roda os mesmos presets (`debug`, `asan`, `store`) em macOS,
+Linux (clang e gcc) e Windows (MSVC), mais o `--check` dos assets. O que ela ainda não provou
+está em `docs/ROADMAP.md`, seção 3.3.

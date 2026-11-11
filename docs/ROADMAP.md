@@ -14,6 +14,13 @@ para a seção 3.1. Com eles o `ctest` tem 10 testes (9 na build sem ferramentas
 ASan + UBSan 10/10 sem relatório, Release com `-DPOINTCLICK_ENABLE_TOOLS=OFF` 9/9, nenhum aviso
 do compilador. A tabela da seção 1 continua registrando os números da revisão de 10/11.
 
+**Terceira atualização de 11/11/2026:** a maior parte do M17 foi concluída sobre `344ac15` e
+passou para a seção 3.1: testes em doctest (62 casos nomeados), `.github/workflows/ci.yml`
+(macOS, Linux clang/gcc, Windows MSVC, ASan + UBSan, build de loja), presets `asan` e `store` e o
+fuzz dos parsers como target opcional. **A CI foi escrita e conferida comando a comando no
+macOS, mas ainda não rodou no GitHub Actions**: Linux, Windows/MSVC e o próprio workflow seguem
+sem prova (seção 3.3).
+
 Este projeto é a **engine**; história, personagens e música ficam nos jogos construídos sobre
 ela. Aqui só entram mecânicas e *playgrounds* pequenos para testá-las. As listas abaixo seguem
 esse recorte.
@@ -100,8 +107,8 @@ Riscos concretos antes de um primeiro build mobile (inalterados):
   ([TextFormat.cpp:205](../src/content/TextFormat.cpp)); consoles pedem a API de armazenamento
   da plataforma (`SDL_Storage`) e nem todos têm `std::filesystem` completo. `std::filesystem::path`
   aparece nas interfaces de `content/` e até na validação de `game/SpriteClip.cpp`.
-- Sem CI: Windows/MSVC nunca foi compilado; Linux/GCC só à mão, numa revisão anterior
-  (GCC 16.2, sem avisos; não repetido agora).
+- A CI existe desde 11/11 (M17) mas ainda não rodou: Windows/MSVC nunca foi compilado; Linux só
+  pela leitura do workflow. GCC 16 no macOS: sem avisos, com `-Werror` (repetido em 11/11).
 - A entrada só tem ação primária: falta botão direito / toque longo / *release* (M3), que é o
   que substitui o *hover* no toque.
 - O caso Android do C8 (`player.actor` dentro do APK) continua sem aparelho para conferir.
@@ -179,14 +186,19 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 | F6 | `face <direção>` | `ScriptHost::facePlayer` + `ArgType::facing` | `testFaceDirection` |
 | F7 | `flip_x` nos clips | campo em `SpriteClip`/`SpriteFields`, XOR com o chamador | pixels em `SpriteTests.cpp`, round-trip |
 | F8 | Arte ausente só aparecia em jogo (quadriculado roxo, fonte de debug) | Continua não sendo erro: a sala carrega e o jogo roda. `clipFitsImage`/`spriteSheetColumns` viraram funções puras em `game/SpriteClip` (o `SpriteLibrary` usa as mesmas). `content/ArtCheck` lê só o cabeçalho do PNG por `SDL_IOStream` (cache por arquivo na chamada) e devolve avisos: PNG ausente ou ilegível, corte que não cabe, clip sem arquivo, fonte ausente (lista vinda de `FontLibrary::files`, injetada). `Application::logArtWarnings` registra cada aviso uma vez por execução ao carregar a sala; `--check` imprime `aviso: <sala>: <arquivo>: <motivo>`, conta no resumo e **não** muda o código de saída | `testArtWarnings` e `testRoomWithMissingArtStillRuns` (`SpriteTests.cpp`, frame headless com o quadriculado), `testCheckWarnsAboutMissingArt` (`CommandLineTests.cpp`), `pointclick_check_missing_art` (sai 0) e `pointclick_check_missing_art_report` no `ctest`, fixture `tests/fixtures/missing_art` |
+| M17 | Qualidade (parcial): testes sem nome de caso, sem CI, fuzz só à mão | **doctest** 2.4.12 por CPM com hash fixo (`POINTCLICK_DOCTEST_VERSION`, só com `BUILD_TESTING`); os cinco executáveis viraram 62 `TEST_CASE` com os nomes das funções e 1.319 `REQUIRE` (mesma contagem dos `assert`), `main` único em `pointclick_test_main`, mesmo link por camada, um `add_test` por executável, filtros do doctest. Cada caso cria a própria pasta (`tests/support/TempDirectory.hpp`); `SpriteTests` tinha dois casos que dependiam do `sheet.png` deixado por outro (agora `writeSheetPng`). **CI** em `.github/workflows/ci.yml`: macOS (AppleClang), Linux (clang, gcc), Windows (MSVC, gerador padrão), Linux ASan + UBSan (preset `asan`) e Linux Release sem ferramentas (preset `store`); cada job roda os presets, o `ctest` e `pointclick --rooms assets/rooms --check`, com cache do CPM e ccache; `POINTCLICK_WARNINGS_AS_ERRORS` ligado fora do Windows. **Fuzz**: `pointclick_parser_fuzz` (`POINTCLICK_ENABLE_FUZZ`, fora do `ctest`), laço determinístico que muta os assets e sementes com inteiros com sinal, `face`, curingas, `flip_x`, `set_animation` e o save v3. `src/` não mudou | Falha proposital em `testFlagCounters` relatada com caso, linha e valores (`REQUIRE( 0 == 42 )`); cada um dos 62 casos passa sozinho e em ordem aleatória; `ctest` 10/10 em debug, ASan + UBSan e GCC 16 com `-Werror`, 9/9 na loja (clang e GCC), também com SDL3/SDL3_ttf compilados pelo CPM; fuzz com 360.018 entradas (sementes 20261111 e 7) sem crash nem relatório. **Não provado:** a execução no GitHub Actions (3.3) |
 | M1 | Texto de verdade (parcial) | SDL3_ttf, `FontLibrary`, `TextRenderer`, `ui/TextLayout`, `ui/SpeechLayout`, `DialogueMenu` medindo o texto real | `TextLayoutTests.cpp`, `SpriteTests.cpp`; resto na seção 5 |
 
 ### 3.2 Estado dos testes
 
-1.319 `assert` em 62 funções de teste, cinco executáveis (`pointclick_tests`,
-`pointclick_sprite_tests`, `pointclick_text_tests`, `pointclick_cli_tests`,
-`pointclick_editor_tests`), mais cinco testes de linha de comando/camadas no `ctest`. A primeira
-falha ainda aborta o executável sem nomear o caso (M17). Nenhum teste **joga** os assets reais:
+1.319 `REQUIRE` em 62 `TEST_CASE` do doctest, cinco executáveis (`pointclick_tests` 29 casos,
+`pointclick_sprite_tests` 8, `pointclick_text_tests` 7, `pointclick_cli_tests` 4,
+`pointclick_editor_tests` 14), mais cinco testes de linha de comando/camadas no `ctest`. Uma falha
+nomeia o caso, o arquivo e a linha e os outros casos continuam; cada caso roda sozinho
+(`--test-case=`). Das 1.319 verificações, 234 têm `&&`/`||` e ficam entre parênteses duplos: o
+relatório delas mostra a expressão, não os valores dos dois lados. Os laços de pixels dos testes
+gráficos passam por `REQUIRE` (cerca de 21 milhões de verificações por execução), o que levou o
+`ctest` de debug de ~0,8 s para ~3 s (15 s sob ASan). Nenhum teste **joga** os assets reais:
 `pointclick_check_assets` só prova que eles carregam (F3).
 
 ### 3.3 Verificações em aberto dos itens concluídos
@@ -195,7 +207,20 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
 
 - **VSync** (D2) e **`flip_x`** (F7) numa janela com GPU real.
 - **Android** (C8): leitura do `player.actor`, das fontes e dos PNGs de dentro do APK.
-- **MSVC** (D5): `/W4 /permissive-` nunca foi compilado.
+- **CI no GitHub Actions** (M17): o workflow nunca rodou. Foi validado só como YAML bem formado
+  e pela execução local, no macOS, dos mesmos comandos (presets `debug`, `asan`, `store`, clang e
+  GCC 16, com e sem o SDL do sistema). Pontos de risco até a primeira execução real:
+  - **Windows/MSVC** (D5): `/W4 /permissive-` nunca foi compilado, nem o doctest e o SDL3 +
+    SDL3_ttf + FreeType do CPM com o gerador do Visual Studio; `/WX` está desligado nesse job
+    até se saber o que o `/W4` diz. O FreeType vem de `download.savannah.gnu.org`, que costuma
+    oscilar. O compilador de cache não vale com o gerador do Visual Studio (só o cache do CPM).
+  - **Linux**: GCC 13 e clang 18 do `ubuntu-24.04` (aqui só GCC 16 e AppleClang) com `-Werror`;
+    a lista de pacotes `-dev` para o SDL3 do CPM; os testes gráficos sem display (driver
+    `dummy` + renderer de software, provado só no macOS); LeakSanitizer, que no Linux vem ligado
+    com o ASan e no macOS não existe.
+  - **macOS do runner**: versão do SDL3/SDL3_ttf do Homebrew no dia (se for anterior à de
+    referência, o CPM compila o SDL3 e o SDL3_ttf do Homebrew ficaria ligado a outro SDL3).
+  - Chaves de cache, `concurrency` e o tempo dos jobs (SDL3 compilado do zero no primeiro run).
 - **`--room <sala> <spawn>`** (F1) com um spawn válido: os assets não têm `[spawn]`.
 - **Autosave de saída com `--no-save`** (F1): o SIGINT não encerra o jogo com o driver `dummy`.
 - **Avisos de arte** (F8) no Android: a leitura do cabeçalho do PNG usa `SDL_IOStream`, mas só
@@ -203,7 +228,7 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
   de `content/` que ele chama).
 - **`set_animation`** (C4) numa janela real e num playground com porta: os assets ainda não têm
   objeto com clip (F3).
-- **Fuzz dos parsers** com o vocabulário novo (inteiros com sinal, direções, curingas, `flip_x`).
+- **Fuzz dos parsers** (M17): roda à mão no macOS; não está na CI nem em outro compilador.
 
 ---
 
@@ -234,10 +259,13 @@ Nenhuma em aberto (D12 foi concluído; seção 3.1).
 
 ### 4.4 Ordem sugerida
 
-1. F2 com o `CommandCatalog`, porque destrava testar à mão o que já existe.
-2. F3, para as mecânicas prontas terem prova em jogo real e CI (F8 já avisa da arte ausente e
-   C4 já dá à sala `door` o estado persistente, com o save na versão 3).
-3. Daí em diante, M2 e M3 (seção 5).
+1. Empurrar o M17 e olhar a primeira execução da CI: é o que fecha (ou abre) os riscos de
+   Windows/MSVC e Linux da lista 3.3. Custa minutos e vale para tudo o que vier depois.
+2. F2 com o `CommandCatalog`, porque destrava testar à mão o que já existe.
+3. F3, para as mecânicas prontas terem prova em jogo real; o teste de percurso entra na CI sem
+   trabalho extra, porque ela roda o `ctest` (F8 já avisa da arte ausente e C4 já dá à sala
+   `door` o estado persistente, com o save na versão 3).
+4. Daí em diante, M2 e M3 (seção 5).
 
 ---
 
@@ -317,10 +345,13 @@ M3–M6 (o núcleo de um point & click), depois o resto.
   overlays por flag (grade de navegação, hotspots, pontos de aproximação; `DebugViews` já é o
   lugar); recarga automática de `.rules`/`.dlg` ao salvar o arquivo; histórico de comandos; o
   `save` do editor descarta os comentários do designer no `.room`.
-- **M17 — Qualidade.** Migrar para doctest (1.229 `assert` em cinco executáveis; a primeira
-  falha aborta sem nomear o caso); **CI** em macOS/Linux/Windows com ASan/UBSan (não existe
-  nenhuma: é o que transformaria "multiplataforma" de leitura em prova, e fecha o MSVC da lista
-  3.3); o fuzz como target; teste de frame de referência; `--check` dos assets na CI.
+- **M17 — Qualidade (o que sobrou).** doctest, CI, presets `asan`/`store` e o fuzz como target
+  estão prontos (seção 3.1). Falta: (1) **rodar a CI de verdade** e corrigir o que ela mostrar
+  (riscos na seção 3.3), depois ligar `/WX` no job do Windows; (2) teste de **frame de
+  referência** (comparar um frame headless com uma imagem guardada); (3) fuzz e `format-check`
+  como jobs da CI; (4) cache de compilação no Windows (Ninja + MSVC ou sccache); (5) trocar por
+  comparações simples as 234 verificações compostas, para o relatório mostrar os valores, e
+  tirar os laços de pixels do `REQUIRE` se o tempo sob ASan incomodar.
 
 ---
 
@@ -369,10 +400,11 @@ M3–M6 (o núcleo de um point & click), depois o resto.
 M1 texto ✅ ────────────────┬─► M3 hover/verbos ─► M4 inventário ─► M12 menus
 D1 flags de debug ✅ ───────┤                 └─► M13 localização
 M2 fundo/camadas/hotspots ──┘
-D3 ✅ + F2 (comandos de sessão) ─► F3 playgrounds + teste de percurso ─► M17 CI
+D3 ✅ + F2 (comandos de sessão) ─► F3 playgrounds + teste de percurso ─► CI (M17 ✅ parcial: falta rodar)
 F8 (aviso de arte no --check) ✅ ───────────────────────────────────────┘
 C4 (estado persistente de objeto) ✅ ─► M15 save
 C13 (limite dos contadores) ✅ ─► add_flag em laço já não estoura o contador
+M17 doctest + CI + fuzz ✅ (parcial) ─► primeira execução no GitHub Actions ─► MSVC/Linux da 3.3
 M5 gatilhos ─► M6 scripts ─► M7 atores ─► orador do M1
 M10 manifesto ─► L1 engine reutilizável ─► L2 plataformas ─► L3 I/O
 ```

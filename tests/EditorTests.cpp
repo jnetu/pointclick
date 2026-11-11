@@ -15,8 +15,10 @@
 #include "input/InputSystem.hpp"
 #include "ui/DialogueMenu.hpp"
 
+#include "support/TempDirectory.hpp"
+
+#include <doctest/doctest.h>
 #include <SDL3/SDL.h>
-#include <cassert>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -42,7 +44,7 @@ const AnimationSet* sharedPlayerArt() {
     static const AnimationSet art = [] {
         const auto loaded = ActorFiles::load(std::filesystem::path(POINTCLICK_SOURCE_DIR)
                                              / "assets/actors/player.actor");
-        assert(loaded.animations);
+        REQUIRE(loaded.animations);
         return *loaded.animations;
     }();
     return &art;
@@ -51,115 +53,119 @@ const AnimationSet* sharedPlayerArt() {
 RoomLibrary openLibrary(const std::filesystem::path& roomsDirectory) {
     RoomLibrary library;
     std::string error;
-    assert(library.open(roomsDirectory, error));
+    REQUIRE(library.open(roomsDirectory, error));
     return library;
 }
 
 void command(DebugEditor& editor, Game& game, const std::string_view text) {
-    assert(editor.onTextInput(text, game));
-    assert(editor.onToolAction(ToolAction::submit, game));
+    REQUIRE(editor.onTextInput(text, game));
+    REQUIRE(editor.onToolAction(ToolAction::submit, game));
 }
 
-void testEditing(const std::filesystem::path& directory) {
+TEST_CASE("testEditing") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     Game game(RoomPresets::firstRoom());
     DebugEditor editor;
     const RoomLibrary library = openLibrary(directory);
     editor.setLibrary(library);
     int artReloads = 0;
     editor.setArtReloader([&artReloads] { ++artReloads; });
-    assert(!editor.onToolAction(ToolAction::increase, game));
-    assert(!editor.onTextInput("DE", game));
-    assert(!editor.active());
-    assert(editor.onTextInput("bug", game));
-    assert(editor.active());
+    REQUIRE(!editor.onToolAction(ToolAction::increase, game));
+    REQUIRE(!editor.onTextInput("DE", game));
+    REQUIRE(!editor.active());
+    REQUIRE(editor.onTextInput("bug", game));
+    REQUIRE(editor.active());
     editor.onToolAction(ToolAction::increase, game);
-    assert(game.scene().room().playerFarSpeed == 120);
+    REQUIRE(game.scene().room().playerFarSpeed == 120);
     command(editor, game, "set player.near_speed 400");
-    assert(game.scene().room().playerNearSpeed == 400);
+    REQUIRE(game.scene().room().playerNearSpeed == 400);
 
     game.onClick({700, 400});
     const auto before = game.scene().player().destination();
     command(editor, game, "set perspective.near_y 100");
-    assert(game.scene().room().nearDepthY == 720);
-    assert(game.scene().player().moving()); // Rejected changes preserve the whole simulation.
-    assert(game.scene().player().destination().x == before.x);
+    REQUIRE(game.scene().room().nearDepthY == 720);
+    REQUIRE(game.scene().player().moving()); // Rejected changes preserve the whole simulation.
+    REQUIRE(game.scene().player().destination().x == before.x);
     command(editor, game, "set player.width -1");
-    assert(game.scene().room().playerBaseSize.x == 48);
+    REQUIRE(game.scene().room().playerBaseSize.x == 48);
     command(editor, game, "set player.width nan");
-    assert(game.scene().room().playerBaseSize.x == 48);
+    REQUIRE(game.scene().room().playerBaseSize.x == 48);
 
     command(editor, game, "save authored.room");
     command(editor, game, "set player.near_speed 500");
     command(editor, game, "undo");
-    assert(game.scene().room().playerNearSpeed == 400);
-    assert(artReloads == 0); // edits, save and undo keep the texture cache
+    REQUIRE(game.scene().room().playerNearSpeed == 400);
+    REQUIRE(artReloads == 0); // edits, save and undo keep the texture cache
     command(editor, game, "load authored.room");
-    assert(game.scene().room().playerFarSpeed == 120);
-    assert(!game.scene().player().moving());
+    REQUIRE(game.scene().room().playerFarSpeed == 120);
+    REQUIRE(!game.scene().player().moving());
     // `load` also asks for the PNGs again (art edited on disk); `reload` does only that.
-    assert(artReloads == 1);
+    REQUIRE(artReloads == 1);
     const SDL_FPoint feetBeforeReload = game.scene().player().feet();
     command(editor, game, "reload");
-    assert(artReloads == 2 && editor.status() == "Sprites recarregados do disco");
-    assert(game.scene().player().feet().x == feetBeforeReload.x);
+    REQUIRE((artReloads == 2 && editor.status() == "Sprites recarregados do disco"));
+    REQUIRE(game.scene().player().feet().x == feetBeforeReload.x);
     command(editor, game, "load nao_existe.room");
-    assert(artReloads == 2); // a refused load reloads nothing
+    REQUIRE(artReloads == 2); // a refused load reloads nothing
     command(editor, game, "save ../escape.room");
-    assert(editor.status().find("sem pastas") != std::string::npos);
+    REQUIRE(editor.status().find("sem pastas") != std::string::npos);
 
     command(editor, game, "teleport 860 575");
-    assert(game.scene().player().feet().x == 640); // Cannot place feet in the red base.
+    REQUIRE(game.scene().player().feet().x == 640); // Cannot place feet in the red base.
     command(editor, game, "move red_box 620 240");
-    assert(game.scene().player().feet().x != 640 || game.scene().player().feet().y != 360);
-    assert(game.scene().room().scenery[1].bounds.x == 620);
+    REQUIRE((game.scene().player().feet().x != 640 || game.scene().player().feet().y != 360));
+    REQUIRE(game.scene().room().scenery[1].bounds.x == 620);
     command(editor, game, "move red_box 2000 240");
-    assert(game.scene().room().scenery[1].bounds.x == 620);
+    REQUIRE(game.scene().room().scenery[1].bounds.x == 620);
     command(editor, game, "set room.width 1000");
-    assert(game.scene().room().width == 1280);
+    REQUIRE(game.scene().room().width == 1280);
     command(editor, game, "set room.height 600");
-    assert(game.scene().room().height == 720);
+    REQUIRE(game.scene().room().height == 720);
     command(editor, game, "set room.width 2560");
-    assert(game.scene().room().width == 2560);
+    REQUIRE(game.scene().room().width == 2560);
     command(editor, game, "move red_box 2000 240");
-    assert(game.scene().room().scenery[1].bounds.x == 2000);
+    REQUIRE(game.scene().room().scenery[1].bounds.x == 2000);
     command(editor, game, "set room.width 1280");
-    assert(game.scene().room().width == 2560); // Cannot shrink past an object at x = 2000.
+    REQUIRE(game.scene().room().width == 2560); // Cannot shrink past an object at x = 2000.
     command(editor, game, "reset");
-    assert(game.scene().room().width == 1280);
-    assert(game.scene().room().playerFarSpeed == 110);
-    assert(game.scene().room().scenery[1].bounds.x == 810);
+    REQUIRE(game.scene().room().width == 1280);
+    REQUIRE(game.scene().room().playerFarSpeed == 110);
+    REQUIRE(game.scene().room().scenery[1].bounds.x == 810);
 
     editor.onToolAction(ToolAction::togglePanel, game);
-    assert(editor.active() && !editor.panelVisible());
+    REQUIRE((editor.active() && !editor.panelVisible()));
     editor.onToolAction(ToolAction::increase, game);
-    assert(game.scene().room().playerFarSpeed == 110);
-    assert(editor.onTextInput("set player.far_speed 500", game));
-    assert(editor.command().empty());
+    REQUIRE(game.scene().room().playerFarSpeed == 110);
+    REQUIRE(editor.onTextInput("set player.far_speed 500", game));
+    REQUIRE(editor.command().empty());
     editor.onToolAction(ToolAction::togglePanel, game);
-    assert(editor.panelVisible());
+    REQUIRE(editor.panelVisible());
 
     editor.onToolAction(ToolAction::close, game);
-    assert(!editor.active());
-    assert(!editor.onToolAction(ToolAction::increase, game));
-    assert(game.scene().room().playerFarSpeed == 110);
+    REQUIRE(!editor.active());
+    REQUIRE(!editor.onToolAction(ToolAction::increase, game));
+    REQUIRE(game.scene().room().playerFarSpeed == 110);
 
     Room blocked = game.scene().room();
     blocked.scenery = {{{0, 0, 1280, 720}, {255, 0, 0, 255}, SceneObjectType::solid,
                        {0, 0, 1280, 720}, "wall", {}}};
     std::string error;
-    assert(!game.applyRoom(blocked, false, error));
-    assert(game.scene().room().scenery.size() == 2);
+    REQUIRE(!game.applyRoom(blocked, false, error));
+    REQUIRE(game.scene().room().scenery.size() == 2);
 }
 
-void testRoomFiles(const std::filesystem::path& directory) {
+TEST_CASE("testRoomFiles") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     const auto source = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms/first.room";
     const auto loaded = RoomFiles::load(source, sharedPlayerArt());
-    assert(loaded.room);
-    assert(loaded.room->width == 1280.0F && loaded.room->height == 720.0F);
-    assert(loaded.room->scenery.size() == 2);
+    REQUIRE(loaded.room);
+    REQUIRE((loaded.room->width == 1280.0F && loaded.room->height == 720.0F));
+    REQUIRE(loaded.room->scenery.size() == 2);
     const auto missing = RoomFiles::load(directory / std::filesystem::path(u8"ausente-\u00e7.room"));
-    assert(!missing.room);
-    assert(missing.error == "Nao foi possivel abrir ausente-\xC3\xA7.room");
+    REQUIRE(!missing.room);
+    REQUIRE(missing.error == "Nao foi possivel abrir ausente-\xC3\xA7.room");
 
     const auto unicodeDirectory = directory / std::filesystem::path(u8"salas-a\u00e7\u00e3o");
     std::filesystem::create_directory(unicodeDirectory);
@@ -170,15 +176,15 @@ void testRoomFiles(const std::filesystem::path& directory) {
                "player.far_speed = 123.5 # velocidade";
     }
     const auto commented = RoomFiles::load(commentedPath, sharedPlayerArt());
-    assert(commented.room && commented.error.empty());
-    assert(commented.room->id == "commented");
-    assert(commented.room->playerFarSpeed == 123.5F);
+    REQUIRE((commented.room && commented.error.empty()));
+    REQUIRE(commented.room->id == "commented");
+    REQUIRE(commented.room->playerFarSpeed == 123.5F);
 
     const auto emptyPath = directory / "empty.room";
     { std::ofstream out(emptyPath, std::ios::binary); }
     const auto empty = RoomFiles::load(emptyPath, sharedPlayerArt());
-    assert(empty.room && empty.error.empty());
-    assert(empty.room->id == "empty"); // no `id` key: named after the file, not "first"
+    REQUIRE((empty.room && empty.error.empty()));
+    REQUIRE(empty.room->id == "empty"); // no `id` key: named after the file, not "first"
 
     const auto nulPath = directory / "nul.room";
     {
@@ -188,14 +194,14 @@ void testRoomFiles(const std::filesystem::path& directory) {
         out << '\n';
     }
     const auto nul = RoomFiles::load(nulPath);
-    assert(!nul.room && nul.error == "Linha 3: Esperado chave = valor");
+    REQUIRE((!nul.room && nul.error == "Linha 3: Esperado chave = valor"));
 
     const auto gallery = RoomFiles::load(source.parent_path() / "gallery.room", sharedPlayerArt());
-    assert(gallery.room);
+    REQUIRE(gallery.room);
     Game other(*gallery.room);
-    assert(other.scene().room().id == "gallery");
+    REQUIRE(other.scene().room().id == "gallery");
     other.onClick({400, 460});
-    assert(other.scene().player().moving());
+    REQUIRE(other.scene().player().moving());
     Room room = *loaded.room;
     room.id = "other_room";
     room.width = 2560.0F;
@@ -214,25 +220,25 @@ void testRoomFiles(const std::filesystem::path& directory) {
     // flip_x (F7): absent stays absent on save; set survives the round-trip.
     room.scenery[1].animations["idle"] = SpriteClip{.file = "red_idle.png"};
     room.scenery[1].animations["walk"] = SpriteClip{.file = "red_walk.png"};
-    assert(RoomFiles::save(path, room, error));
-    assert(TextFormat::readFile(path).text->find("flip_x") == std::string::npos);
+    REQUIRE(RoomFiles::save(path, room, error));
+    REQUIRE(TextFormat::readFile(path).text->find("flip_x") == std::string::npos);
     room.scenery[1].animations["walk"].flipX = true;
-    assert(RoomFiles::save(path, room, error));
-    assert(TextFormat::readFile(path).text->find("animation.walk.flip_x = 1")
-           != std::string::npos);
+    REQUIRE(RoomFiles::save(path, room, error));
+    REQUIRE(TextFormat::readFile(path).text->find("animation.walk.flip_x = 1")
+            != std::string::npos);
     const auto restored = RoomFiles::load(path);
-    assert(restored.room);
-    assert(restored.room->scenery[1].animations.at("walk").flipX);
+    REQUIRE(restored.room);
+    REQUIRE(restored.room->scenery[1].animations.at("walk").flipX);
     for (const auto& parameter : roomParameters()) {
-        assert(parameter.read(room) == parameter.read(*restored.room));
+        REQUIRE(parameter.read(room) == parameter.read(*restored.room));
     }
-    assert(restored.room->id == room.id);
-    assert(restored.room->width == 2560.0F);
-    assert(restored.room->height == 1440.0F);
-    assert(restored.room->floorColor.b == room.floorColor.b);
-    assert(restored.room->scenery[1].bounds.x == 2100.0F);
-    assert(restored.room->scenery[1].collisionFootprint.h == 21.5F);
-    assert(restored.room->scenery[1].id == "red_box");
+    REQUIRE(restored.room->id == room.id);
+    REQUIRE(restored.room->width == 2560.0F);
+    REQUIRE(restored.room->height == 1440.0F);
+    REQUIRE(restored.room->floorColor.b == room.floorColor.b);
+    REQUIRE(restored.room->scenery[1].bounds.x == 2100.0F);
+    REQUIRE(restored.room->scenery[1].collisionFootprint.h == 21.5F);
+    REQUIRE(restored.room->scenery[1].id == "red_box");
 
     const struct { const char* text; const char* error; } invalidRooms[]{
         {"player.far_speed = nan", "Linha 1: Chave ou valor invalido: player.far_speed"},
@@ -250,55 +256,57 @@ void testRoomFiles(const std::filesystem::path& directory) {
     for (const auto& invalid : invalidRooms) {
         { std::ofstream bad(directory / "bad.room", std::ios::binary); bad << invalid.text; }
         const auto result = RoomFiles::load(directory / "bad.room");
-        assert(!result.room && result.error == invalid.error);
+        REQUIRE((!result.room && result.error == invalid.error));
     }
     const auto validSpeed = restored.room->playerNearSpeed;
     room.nearDepthY = room.farDepthY;
-    assert(!RoomFiles::save(path, room, error));
-    assert(RoomFiles::load(path).room->playerNearSpeed == validSpeed);
+    REQUIRE(!RoomFiles::save(path, room, error));
+    REQUIRE(RoomFiles::load(path).room->playerNearSpeed == validSpeed);
 }
 
 // D12: every [object] error of Room::validationIssue reaches the designer as "Linha N: ...",
 // N being the key that fed it or, when the file has no such key, the block header.
-void testRoomObjectErrorsCarryLines(const std::filesystem::path& directory) {
+TEST_CASE("testRoomObjectErrorsCarryLines") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     const auto errorOf = [&](const std::string& text) {
         {
             std::ofstream bad(directory / "bad_object.room", std::ios::binary);
             bad << text;
         }
         const auto result = RoomFiles::load(directory / "bad_object.room", sharedPlayerArt());
-        assert(!result.room);
+        REQUIRE(!result.room);
         return result.error;
     };
     const std::string box = "# caixa\n[object box]\nbounds = 10, 300, 40, 40\n";
     // Invalid or repeated ID: refused on the header itself.
-    assert(errorOf("[room]\n[object caixa azul]\nbounds = 10, 300, 40, 40\n")
-           == "Linha 2: ID de objeto invalido ou repetido");
-    assert(errorOf(box + "\n[object box]\nbounds = 90, 300, 40, 40\n")
-           == "Linha 5: ID de objeto invalido ou repetido");
+    REQUIRE(errorOf("[room]\n[object caixa azul]\nbounds = 10, 300, 40, 40\n")
+            == "Linha 2: ID de objeto invalido ou repetido");
+    REQUIRE(errorOf(box + "\n[object box]\nbounds = 90, 300, 40, 40\n")
+            == "Linha 5: ID de objeto invalido ou repetido");
     // Object outside the room: the bounds line, or the header when bounds is missing.
-    assert(errorOf(box + "[object far]\ncolor = 1, 2, 3, 255\nbounds = 1270, 300, 40, 40\n")
-           == "Linha 6: Objeto fora da sala: far");
-    assert(errorOf(box + "[object empty]\ncolor = 1, 2, 3, 255\n")
-           == "Linha 4: Objeto fora da sala: empty");
+    REQUIRE(errorOf(box + "[object far]\ncolor = 1, 2, 3, 255\nbounds = 1270, 300, 40, 40\n")
+            == "Linha 6: Objeto fora da sala: far");
+    REQUIRE(errorOf(box + "[object empty]\ncolor = 1, 2, 3, 255\n")
+            == "Linha 4: Objeto fora da sala: empty");
     // Initial animation that no clip declares.
-    assert(errorOf(box + "animation.open.file = door.png\nanimation.initial = closed\n")
-           == "Linha 5: Animacao inicial ausente: box");
-    assert(errorOf(box + "animation.open.file = door.png\n")
-           == "Linha 2: Animacao inicial ausente: box");
+    REQUIRE(errorOf(box + "animation.open.file = door.png\nanimation.initial = closed\n")
+            == "Linha 5: Animacao inicial ausente: box");
+    REQUIRE(errorOf(box + "animation.open.file = door.png\n")
+            == "Linha 2: Animacao inicial ausente: box");
     // Collision footprint that does not fit the bounds (or a solid without one).
-    assert(errorOf(box + "collision = 0, 30, 80, 10\n")
-           == "Linha 4: Base de colisao invalida: box");
-    assert(errorOf(box + "type = solid\n") == "Linha 2: Base de colisao invalida: box");
+    REQUIRE(errorOf(box + "collision = 0, 30, 80, 10\n")
+            == "Linha 4: Base de colisao invalida: box");
+    REQUIRE(errorOf(box + "type = solid\n") == "Linha 2: Base de colisao invalida: box");
     // Errors of the room as a whole keep their text, with no line to point at.
-    assert(errorOf(box + "[room]\nperspective.far_y = 500\nperspective.near_y = 500\n")
-           == "far_y deve ser menor que near_y");
+    REQUIRE(errorOf(box + "[room]\nperspective.far_y = 500\nperspective.near_y = 500\n")
+            == "far_y deve ser menor que near_y");
     // The same blocks, valid, still load.
     {
         std::ofstream good(directory / "good_object.room", std::ios::binary);
         good << box << "type = solid\ncollision = 0, 30, 40, 10\n";
     }
-    assert(RoomFiles::load(directory / "good_object.room", sharedPlayerArt()).room);
+    REQUIRE(RoomFiles::load(directory / "good_object.room", sharedPlayerArt()).room);
 }
 
 // step 1 finds one-pixel lines and text; the default samples large areas quickly.
@@ -306,7 +314,7 @@ bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target, const in
     for (int y = 0; y < surface->h; y += step) {
         for (int x = 0; x < surface->w; x += step) {
             SDL_Color color{};
-            assert(SDL_ReadSurfacePixel(surface, x, y, &color.r, &color.g, &color.b, &color.a));
+            REQUIRE(SDL_ReadSurfacePixel(surface, x, y, &color.r, &color.g, &color.b, &color.a));
             if (color.r == target.r && color.g == target.g && color.b == target.b) {
                 return true;
             }
@@ -315,14 +323,14 @@ bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target, const in
     return false;
 }
 
-void testDebugRendering() {
+TEST_CASE("testDebugRendering") {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-    assert(SDL_Init(SDL_INIT_VIDEO));
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* window = SDL_CreateWindow("Editor test", 1280, 720, SDL_WINDOW_HIDDEN);
-    assert(window);
+    REQUIRE(window);
     Renderer renderer;
-    assert(renderer.initialize(window));
+    REQUIRE(renderer.initialize(window));
     Game game(RoomPresets::firstRoom());
     DebugEditor editor;
     const DebugOverlay overlay(editor);
@@ -337,53 +345,54 @@ void testDebugRendering() {
     const auto frameHas = [&](const SDL_Color color) {
         renderer.render(game, 1.0F);
         SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-        assert(frame);
+        REQUIRE(frame);
         const bool found = surfaceContainsColor(frame, color, 1);
         SDL_DestroySurface(frame);
         return found;
     };
     game.onClick({300.0F, 600.0F}); // to the left, clear of the editor panel
     game.tick(0.05F);
-    assert(game.scene().player().moving());
-    assert(!frameHas(routeColor) && !frameHas(crossColor) && !frameHas(readoutColor));
-    assert(frameHas(hintColor));
+    REQUIRE(game.scene().player().moving());
+    REQUIRE((!frameHas(routeColor) && !frameHas(crossColor) && !frameHas(readoutColor)));
+    REQUIRE(frameHas(hintColor));
     editor.onTextInput("DEBUG", game);
-    assert(frameHas(routeColor) && frameHas(crossColor) && frameHas(readoutColor));
-    assert(!frameHas(hintColor));
+    REQUIRE((frameHas(routeColor) && frameHas(crossColor) && frameHas(readoutColor)));
+    REQUIRE(!frameHas(hintColor));
     command(editor, game, "show route 0");
-    assert(!editor.views().route && editor.status() == "route: oculto");
-    assert(!frameHas(routeColor) && !frameHas(crossColor) && frameHas(readoutColor));
+    REQUIRE((!editor.views().route && editor.status() == "route: oculto"));
+    REQUIRE((!frameHas(routeColor) && !frameHas(crossColor) && frameHas(readoutColor)));
     command(editor, game, "show diagnostics 0");
-    assert(!frameHas(readoutColor));
+    REQUIRE(!frameHas(readoutColor));
     command(editor, game, "show grade 1");
-    assert(editor.status() == "Use: show route|diagnostics|hint 0/1");
+    REQUIRE(editor.status() == "Use: show route|diagnostics|hint 0/1");
     command(editor, game, "show route 2");
-    assert(editor.status() == "Use: show route|diagnostics|hint 0/1" && !editor.views().route);
+    REQUIRE((editor.status() == "Use: show route|diagnostics|hint 0/1" && !editor.views().route));
     command(editor, game, "show hint 0");
-    assert(editor.onToolAction(ToolAction::close, game) && !editor.active());
-    assert(!frameHas(hintColor) && !frameHas(routeColor) && !frameHas(readoutColor));
+    REQUIRE((editor.onToolAction(ToolAction::close, game) && !editor.active()));
+    REQUIRE((!frameHas(hintColor) && !frameHas(routeColor) && !frameHas(readoutColor)));
 
     editor.onTextInput("DEBUG", game);
     command(editor, game, "show route 1");
     command(editor, game, "show diagnostics 1");
     command(editor, game, "show hint 1");
-    assert(editor.views().route && editor.views().diagnostics && editor.views().hint);
+    REQUIRE((editor.views().route && editor.views().diagnostics && editor.views().hint));
     renderer.render(game, 1.0F);
     SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    assert(pixels);
-    if (const char* capture = std::getenv("POINTCLICK_DEBUG_CAPTURE")) assert(SDL_SaveBMP(pixels, capture));
+    REQUIRE(pixels);
+    if (const char* capture = std::getenv("POINTCLICK_DEBUG_CAPTURE"))
+        REQUIRE(SDL_SaveBMP(pixels, capture));
     SDL_DestroySurface(pixels);
     // Resizing preserves the logical center used by the mouse and editor.
-    assert(SDL_SetWindowSize(window, 1000, 1000));
+    REQUIRE(SDL_SetWindowSize(window, 1000, 1000));
     SDL_PumpEvents();
     renderer.render(game, 1.0F);
     SDL_FPoint center{};
-    assert(renderer.windowToWorld(500, 500, center));
-    assert(std::abs(center.x - 640) < 0.1F && std::abs(center.y - 360) < 0.1F);
+    REQUIRE(renderer.windowToWorld(500, 500, center));
+    REQUIRE((std::abs(center.x - 640) < 0.1F && std::abs(center.y - 360) < 0.1F));
     SDL_FPoint bar{};
-    assert(renderer.windowToWorld(500, 20, bar));
-    assert(bar.y < 0);
-    assert(!Renderer::containsViewportPoint(bar));
+    REQUIRE(renderer.windowToWorld(500, 20, bar));
+    REQUIRE(bar.y < 0);
+    REQUIRE(!Renderer::containsViewportPoint(bar));
 
     // Panoramic room: 2K, 4K, and Ultrawide windows must keep the exact 1280x720 camera FOV
     // without revealing off-camera scenery outside [camera.x, camera.x + 1280).
@@ -397,7 +406,7 @@ void testDebugRendering() {
          SceneObjectType::decoration, {}, "beacon", {}, "idle"},
     };
     game.loadRoom(panorama);
-    assert(std::abs(game.scene().camera().position().x) < 0.01F);
+    REQUIRE(std::abs(game.scene().camera().position().x) < 0.01F);
 
     const struct { int w; int h; } resolutions[]{
         {1280, 720},
@@ -407,75 +416,76 @@ void testDebugRendering() {
         {3440, 1440}, // 21:9 Ultrawide (pillarboxed)
     };
     for (const auto res : resolutions) {
-        assert(SDL_SetWindowSize(window, res.w, res.h));
+        REQUIRE(SDL_SetWindowSize(window, res.w, res.h));
         SDL_PumpEvents();
         renderer.render(game, 1.0F, nullptr);
 
         SDL_FRect presentation{};
-        assert(SDL_GetRenderLogicalPresentationRect(SDL_GetRenderer(window), &presentation));
+        REQUIRE(SDL_GetRenderLogicalPresentationRect(SDL_GetRenderer(window), &presentation));
         SDL_FPoint vpCenter{};
         SDL_FPoint worldCenter{};
         const float centerX = static_cast<float>(res.w) * 0.5F;
         const float centerY = static_cast<float>(res.h) * 0.5F;
-        assert(renderer.windowToViewport(centerX, centerY, vpCenter));
-        assert(renderer.windowToWorld(centerX, centerY, worldCenter,
-                                      game.scene().camera().position()));
-        assert(std::abs(vpCenter.x - 640.0F) < 0.5F && std::abs(vpCenter.y - 360.0F) < 0.5F);
-        assert(std::abs(worldCenter.x - 640.0F) < 0.5F && std::abs(worldCenter.y - 360.0F) < 0.5F);
+        REQUIRE(renderer.windowToViewport(centerX, centerY, vpCenter));
+        REQUIRE(renderer.windowToWorld(centerX, centerY, worldCenter,
+                                       game.scene().camera().position()));
+        REQUIRE((std::abs(vpCenter.x - 640.0F) < 0.5F && std::abs(vpCenter.y - 360.0F) < 0.5F));
+        REQUIRE((std::abs(worldCenter.x - 640.0F) < 0.5F
+                 && std::abs(worldCenter.y - 360.0F) < 0.5F));
 
         SDL_FPoint leftEdge{};
         SDL_FPoint rightEdge{};
-        assert(renderer.windowToWorld(presentation.x + 0.5F, centerY, leftEdge,
-                                      game.scene().camera().position()));
-        assert(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, centerY,
-                                      rightEdge, game.scene().camera().position()));
-        assert(leftEdge.x >= 0.0F && rightEdge.x <= 1280.0F);
-        assert(std::abs((rightEdge.x - leftEdge.x) - 1280.0F) < 2.0F);
+        REQUIRE(renderer.windowToWorld(presentation.x + 0.5F, centerY, leftEdge,
+                                       game.scene().camera().position()));
+        REQUIRE(renderer.windowToWorld(presentation.x + presentation.w - 0.5F, centerY, rightEdge,
+                                       game.scene().camera().position()));
+        REQUIRE((leftEdge.x >= 0.0F && rightEdge.x <= 1280.0F));
+        REQUIRE(std::abs((rightEdge.x - leftEdge.x) - 1280.0F) < 2.0F);
 
         SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-        assert(frame);
+        REQUIRE(frame);
         // The beacon at x = 1500..1720 must remain completely invisible while camera.x == 0.
-        assert(!surfaceContainsColor(frame, offscreenBeaconColor));
+        REQUIRE(!surfaceContainsColor(frame, offscreenBeaconColor));
         SDL_DestroySurface(frame);
     }
 
     // Once the camera scrolls to center on x = 1550 (camera.x = 910), the beacon enters view
     // while Ultrawide pillarbox bars remain outside the viewport and keep the clear color.
     std::string teleportError;
-    assert(game.teleportPlayer({1550.0F, 620.0F}, teleportError));
-    assert(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
-    assert(SDL_SetWindowSize(window, 3440, 1440));
+    REQUIRE(game.teleportPlayer({1550.0F, 620.0F}, teleportError));
+    REQUIRE(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
+    REQUIRE(SDL_SetWindowSize(window, 3440, 1440));
     SDL_PumpEvents();
     renderer.render(game, 1.0F, nullptr);
 
     SDL_FPoint ultrawideBar{};
-    assert(renderer.windowToViewport(10.0F, 720.0F, ultrawideBar));
-    assert(ultrawideBar.x < 0.0F && !Renderer::containsViewportPoint(ultrawideBar));
+    REQUIRE(renderer.windowToViewport(10.0F, 720.0F, ultrawideBar));
+    REQUIRE((ultrawideBar.x < 0.0F && !Renderer::containsViewportPoint(ultrawideBar)));
 
     SDL_FPoint scrolledCenterViewport{};
     SDL_FPoint scrolledCenterWorld{};
-    assert(renderer.windowToViewport(1720.0F, 720.0F, scrolledCenterViewport));
-    assert(renderer.windowToWorld(1720.0F, 720.0F, scrolledCenterWorld,
-                                  game.scene().camera().position()));
-    assert(std::abs(scrolledCenterViewport.x - 640.0F) < 0.5F);
-    assert(std::abs(scrolledCenterWorld.x - 1550.0F) < 0.5F);
+    REQUIRE(renderer.windowToViewport(1720.0F, 720.0F, scrolledCenterViewport));
+    REQUIRE(renderer.windowToWorld(1720.0F, 720.0F, scrolledCenterWorld,
+                                   game.scene().camera().position()));
+    REQUIRE(std::abs(scrolledCenterViewport.x - 640.0F) < 0.5F);
+    REQUIRE(std::abs(scrolledCenterWorld.x - 1550.0F) < 0.5F);
 
     SDL_Surface* scrolledFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    assert(scrolledFrame);
-    assert(scrolledFrame->w == 2560 && scrolledFrame->h == 1440);
-    assert(surfaceContainsColor(scrolledFrame, offscreenBeaconColor));
+    REQUIRE(scrolledFrame);
+    REQUIRE((scrolledFrame->w == 2560 && scrolledFrame->h == 1440));
+    REQUIRE(surfaceContainsColor(scrolledFrame, offscreenBeaconColor));
     SDL_DestroySurface(scrolledFrame);
 
     if (SDL_Surface* windowSurface = SDL_GetWindowSurface(window)) {
-        assert(windowSurface->w == 3440 && windowSurface->h == 1440);
+        REQUIRE((windowSurface->w == 3440 && windowSurface->h == 1440));
         SDL_Color leftBar{};
         SDL_Color rightBar{};
-        assert(SDL_ReadSurfacePixel(windowSurface, 10, 720,
-                                    &leftBar.r, &leftBar.g, &leftBar.b, &leftBar.a));
-        assert(SDL_ReadSurfacePixel(windowSurface, 3430, 720,
-                                    &rightBar.r, &rightBar.g, &rightBar.b, &rightBar.a));
-        assert(leftBar.r == 8 && leftBar.g == 10 && leftBar.b == 16);
-        assert(rightBar.r == 8 && rightBar.g == 10 && rightBar.b == 16);
+        REQUIRE(SDL_ReadSurfacePixel(windowSurface, 10, 720, &leftBar.r, &leftBar.g, &leftBar.b,
+                                     &leftBar.a));
+        REQUIRE(SDL_ReadSurfacePixel(windowSurface, 3430, 720, &rightBar.r, &rightBar.g,
+                                     &rightBar.b, &rightBar.a));
+        REQUIRE((leftBar.r == 8 && leftBar.g == 10 && leftBar.b == 16));
+        REQUIRE((rightBar.r == 8 && rightBar.g == 10 && rightBar.b == 16));
     }
 
     renderer.shutdown();
@@ -483,15 +493,15 @@ void testDebugRendering() {
     SDL_Quit();
 }
 
-void testMultiplatformInputAndRouting() {
+TEST_CASE("testMultiplatformInputAndRouting") {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-    assert(SDL_Init(SDL_INIT_VIDEO));
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* window = SDL_CreateWindow("Input routing test", 3440, 1440, SDL_WINDOW_HIDDEN);
-    assert(window);
+    REQUIRE(window);
     Renderer renderer;
-    assert(renderer.initialize(window));
-    assert(SDL_SetWindowSize(window, 3440, 1440));
+    REQUIRE(renderer.initialize(window));
+    REQUIRE(SDL_SetWindowSize(window, 3440, 1440));
     SDL_PumpEvents();
 
     // Panoramic room (2560x720) with no obstacles so every floor point is walkable.
@@ -501,7 +511,7 @@ void testMultiplatformInputAndRouting() {
     panorama.scenery.clear();
     panorama.playerStart = {1550.0F, 520.0F}; // Camera snaps to x = 910 (1550 - 640).
     Game game(panorama);
-    assert(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
+    REQUIRE(std::abs(game.scene().camera().position().x - 910.0F) < 0.01F);
     renderer.render(game, 1.0F, nullptr);
 
     DebugEditor editor;
@@ -511,11 +521,11 @@ void testMultiplatformInputAndRouting() {
     const ViewportCoordinateMapper mapper = renderer.viewportMapper();
 
     // 1. DebugEditor panel hit-test: blocks clicks when visible, releases when hidden or closed.
-    assert(!editor.consumesViewportPoint({900.0F, 500.0F}));
-    assert(editor.onTextInput("DEBUG", game));
-    assert(editor.active() && editor.panelVisible());
-    assert(editor.consumesViewportPoint({900.0F, 500.0F}));
-    assert(!editor.consumesViewportPoint({300.0F, 500.0F}));
+    REQUIRE(!editor.consumesViewportPoint({900.0F, 500.0F}));
+    REQUIRE(editor.onTextInput("DEBUG", game));
+    REQUIRE((editor.active() && editor.panelVisible()));
+    REQUIRE(editor.consumesViewportPoint({900.0F, 500.0F}));
+    REQUIRE(!editor.consumesViewportPoint({300.0F, 500.0F}));
 
     // In 3440x1440 Ultrawide, logical 1280x720 renders in [440..3000] x [0..1440] (scale 2.0).
     // Window (2240, 1000) -> Viewport (900, 500), which lies inside DebugEditor::panelRect().
@@ -527,52 +537,52 @@ void testMultiplatformInputAndRouting() {
     panelClick.button.x = 440.0F + 900.0F * 2.0F;
     panelClick.button.y = 500.0F * 2.0F;
     auto routeResult = router.handleEvent(panelClick, input, game, mapper);
-    assert(routeResult.consumedByDebug);
-    assert(!game.scene().player().moving());
+    REQUIRE(routeResult.consumedByDebug);
+    REQUIRE(!game.scene().player().moving());
 
     // Clicking outside the panel at Viewport (300, 520) -> World (1210, 520) walks the player.
     SDL_Event outsidePanelClick = panelClick;
     outsidePanelClick.button.x = 440.0F + 300.0F * 2.0F;
     outsidePanelClick.button.y = 520.0F * 2.0F;
     routeResult = router.handleEvent(outsidePanelClick, input, game, mapper);
-    assert(!routeResult.consumedByDebug);
-    assert(game.scene().player().moving());
-    assert(std::abs(game.scene().player().destination().x - 1210.0F) < 0.5F);
-    assert(std::abs(game.scene().player().destination().y - 520.0F) < 0.5F);
+    REQUIRE(!routeResult.consumedByDebug);
+    REQUIRE(game.scene().player().moving());
+    REQUIRE(std::abs(game.scene().player().destination().x - 1210.0F) < 0.5F);
+    REQUIRE(std::abs(game.scene().player().destination().y - 520.0F) < 0.5F);
 
     std::string teleportError;
-    assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
+    REQUIRE(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
     // Hiding the panel with TAB allows clicking at Viewport (900, 500) -> World (1810, 500).
     SDL_Event tabKey{};
     tabKey.type = SDL_EVENT_KEY_DOWN;
     tabKey.key.key = SDLK_TAB;
     tabKey.key.down = true;
-    assert(router.handleEvent(tabKey, input, game, mapper).consumedByDebug);
-    assert(editor.active() && !editor.panelVisible());
-    assert(!editor.consumesViewportPoint({900.0F, 500.0F}));
+    REQUIRE(router.handleEvent(tabKey, input, game, mapper).consumedByDebug);
+    REQUIRE((editor.active() && !editor.panelVisible()));
+    REQUIRE(!editor.consumesViewportPoint({900.0F, 500.0F}));
 
     routeResult = router.handleEvent(panelClick, input, game, mapper);
-    assert(!routeResult.consumedByDebug);
-    assert(game.scene().player().moving());
-    assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
-    assert(std::abs(game.scene().player().destination().y - 500.0F) < 0.5F);
+    REQUIRE(!routeResult.consumedByDebug);
+    REQUIRE(game.scene().player().moving());
+    REQUIRE(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
+    REQUIRE(std::abs(game.scene().player().destination().y - 500.0F) < 0.5F);
 
-    assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
+    REQUIRE(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
     // Closing the editor with ESC also leaves the panel area unblocked.
     SDL_Event escKey{};
     escKey.type = SDL_EVENT_KEY_DOWN;
     escKey.key.key = SDLK_ESCAPE;
     escKey.key.down = true;
-    assert(router.handleEvent(escKey, input, game, mapper).consumedByDebug);
-    assert(!editor.active());
+    REQUIRE(router.handleEvent(escKey, input, game, mapper).consumedByDebug);
+    REQUIRE(!editor.active());
     routeResult = router.handleEvent(panelClick, input, game, mapper);
-    assert(!routeResult.consumedByDebug);
-    assert(game.scene().player().moving());
-    assert(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
+    REQUIRE(!routeResult.consumedByDebug);
+    REQUIRE(game.scene().player().moving());
+    REQUIRE(std::abs(game.scene().player().destination().x - 1810.0F) < 0.5F);
 
-    assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
+    REQUIRE(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
     // The mouse leaving the window: its last motion was still inside, so only this event tells.
     SDL_Event mouseMotion{};
@@ -580,15 +590,15 @@ void testMultiplatformInputAndRouting() {
     mouseMotion.motion.x = 2240.0F; // viewport (900, 500)
     mouseMotion.motion.y = 1000.0F;
     (void)router.handleEvent(mouseMotion, input, game, mapper);
-    assert(game.scene().pointerInside());
+    REQUIRE(game.scene().pointerInside());
     SDL_Event mouseLeave{};
     mouseLeave.type = SDL_EVENT_WINDOW_MOUSE_LEAVE;
     (void)router.handleEvent(mouseLeave, input, game, mapper);
-    assert(!game.scene().pointerInside());
-    assert(std::abs(input.cursorViewport().x - 900.0F) < 0.5F); // the cursor stays where it left
-    assert(!game.scene().player().moving());
+    REQUIRE(!game.scene().pointerInside());
+    REQUIRE(std::abs(input.cursorViewport().x - 900.0F) < 0.5F); // the cursor stays where it left
+    REQUIRE(!game.scene().player().moving());
     (void)router.handleEvent(mouseMotion, input, game, mapper);
-    assert(game.scene().pointerInside());
+    REQUIRE(game.scene().pointerInside());
 
     // 2. Touch translation + letterbox/pillarbox rejection + SDL_TOUCH_MOUSEID filtering.
     // Touch inside left Ultrawide pillarbox bar (normalized x = 0.02 -> window x = 68.8 < 440).
@@ -599,8 +609,8 @@ void testMultiplatformInputAndRouting() {
     pillarboxTouch.tfinger.x = 0.02F;
     pillarboxTouch.tfinger.y = 0.75F;
     (void)router.handleEvent(pillarboxTouch, input, game, mapper);
-    assert(!game.scene().player().moving());
-    assert(!game.scene().pointerInside());
+    REQUIRE(!game.scene().player().moving());
+    REQUIRE(!game.scene().pointerInside());
 
     SDL_Event pillarboxTouchUp = pillarboxTouch;
     pillarboxTouchUp.type = SDL_EVENT_FINGER_UP;
@@ -615,10 +625,10 @@ void testMultiplatformInputAndRouting() {
     worldTouch.tfinger.x = (440.0F + 800.0F * 2.0F) / 3440.0F;
     worldTouch.tfinger.y = 540.0F / 720.0F;
     (void)router.handleEvent(worldTouch, input, game, mapper);
-    assert(input.activeDevice() == InputDevice::touch);
-    assert(game.scene().player().moving());
-    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F); // 800 + 910
-    assert(std::abs(game.scene().player().destination().y - 540.0F) < 0.5F);
+    REQUIRE(input.activeDevice() == InputDevice::touch);
+    REQUIRE(game.scene().player().moving());
+    REQUIRE(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F); // 800 + 910
+    REQUIRE(std::abs(game.scene().player().destination().y - 540.0F) < 0.5F);
 
     // Synthetic mouse motion & click emitted by touch must be ignored (no double-click / retarget).
     SDL_Event syntheticMouseClick{};
@@ -629,8 +639,8 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseClick.button.x = 440.0F + 200.0F * 2.0F;
     syntheticMouseClick.button.y = 600.0F * 2.0F;
     (void)router.handleEvent(syntheticMouseClick, input, game, mapper);
-    assert(input.activeDevice() == InputDevice::touch);
-    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
+    REQUIRE(input.activeDevice() == InputDevice::touch);
+    REQUIRE(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
     SDL_Event syntheticMouseTouch{};
     syntheticMouseTouch.type = SDL_EVENT_FINGER_DOWN;
@@ -639,20 +649,20 @@ void testMultiplatformInputAndRouting() {
     syntheticMouseTouch.tfinger.x = 0.3F;
     syntheticMouseTouch.tfinger.y = 0.8F;
     (void)router.handleEvent(syntheticMouseTouch, input, game, mapper);
-    assert(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
+    REQUIRE(std::abs(game.scene().player().destination().x - 1710.0F) < 0.5F);
 
     SDL_Event worldTouchUp = worldTouch;
     worldTouchUp.type = SDL_EVENT_FINGER_UP;
     (void)router.handleEvent(worldTouchUp, input, game, mapper);
 
-    assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
+    REQUIRE(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
 
     // 3. Gamepad hotplug, deadzone, virtual cursor movement, and scrolled world click.
     SDL_Event padAdded{};
     padAdded.type = SDL_EVENT_GAMEPAD_ADDED;
     padAdded.gdevice.which = 77;
     (void)router.handleEvent(padAdded, input, game, mapper);
-    assert(input.gamepadCount() == 1);
+    REQUIRE(input.gamepadCount() == 1);
 
     input.setCursorViewport({640.0F, 360.0F});
     input.setCursorSpeed(400.0F);
@@ -664,34 +674,34 @@ void testMultiplatformInputAndRouting() {
     smallTilt.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTX;
     smallTilt.gaxis.value = 3000; // ~0.09 < 0.24 deadzone
     (void)router.handleEvent(smallTilt, input, game, mapper);
-    assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
+    REQUIRE((input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F));
     router.update(0.5F, input, game);
-    assert(std::abs(input.cursorViewport().x - 640.0F) < 0.01F);
+    REQUIRE(std::abs(input.cursorViewport().x - 640.0F) < 0.01F);
 
     // Full stick deflection right & down moves the virtual cursor smoothly in viewport space.
     SDL_Event stickRight = smallTilt;
     stickRight.gaxis.value = 32767;
     (void)router.handleEvent(stickRight, input, game, mapper);
-    assert(std::abs(input.moveAxis().x - 1.0F) < 0.01F);
+    REQUIRE(std::abs(input.moveAxis().x - 1.0F) < 0.01F);
 
     SDL_Event stickDown = smallTilt;
     stickDown.gaxis.axis = SDL_GAMEPAD_AXIS_LEFTY;
     stickDown.gaxis.value = 32767;
     (void)router.handleEvent(stickDown, input, game, mapper);
-    assert(std::hypot(input.moveAxis().x, input.moveAxis().y) <= 1.001F);
+    REQUIRE(std::hypot(input.moveAxis().x, input.moveAxis().y) <= 1.001F);
 
     // Zero Y, move purely right by 200px (0.5s * 400px/s) and down by 100px: cursor -> (840, 460).
     stickDown.gaxis.value = 0;
     (void)router.handleEvent(stickDown, input, game, mapper);
     router.update(0.5F, input, game);
-    assert(std::abs(input.cursorViewport().x - 840.0F) < 0.1F);
+    REQUIRE(std::abs(input.cursorViewport().x - 840.0F) < 0.1F);
 
     stickRight.gaxis.value = 0;
     (void)router.handleEvent(stickRight, input, game, mapper);
     stickDown.gaxis.value = 32767;
     (void)router.handleEvent(stickDown, input, game, mapper);
     router.update(0.25F, input, game);
-    assert(std::abs(input.cursorViewport().y - 460.0F) < 0.1F);
+    REQUIRE(std::abs(input.cursorViewport().y - 460.0F) < 0.1F);
 
     // Primary gamepad button (SOUTH) clicks at virtual cursor (840, 460) -> World (1750, 460).
     SDL_Event southPress{};
@@ -700,83 +710,83 @@ void testMultiplatformInputAndRouting() {
     southPress.gbutton.button = SDL_GAMEPAD_BUTTON_SOUTH;
     southPress.gbutton.down = true;
     (void)router.handleEvent(southPress, input, game, mapper);
-    assert(input.activeDevice() == InputDevice::gamepad);
-    assert(game.scene().player().moving());
-    assert(std::abs(game.scene().player().destination().x - 1750.0F) < 0.5F); // 840 + 910
-    assert(std::abs(game.scene().player().destination().y - 460.0F) < 0.5F);
+    REQUIRE(input.activeDevice() == InputDevice::gamepad);
+    REQUIRE(game.scene().player().moving());
+    REQUIRE(std::abs(game.scene().player().destination().x - 1750.0F) < 0.5F); // 840 + 910
+    REQUIRE(std::abs(game.scene().player().destination().y - 460.0F) < 0.5F);
 
     // The gamepad's virtual cursor is not the mouse: the OS pointer leaving changes nothing.
-    assert(game.scene().pointerInside());
+    REQUIRE(game.scene().pointerInside());
     (void)router.handleEvent(mouseLeave, input, game, mapper);
-    assert(game.scene().pointerInside());
+    REQUIRE(game.scene().pointerInside());
 
     // Virtual cursor clamps cleanly at viewport boundaries [0..1279] x [0..719].
     router.update(10.0F, input, game);
-    assert(Renderer::containsViewportPoint(input.cursorViewport()));
-    assert(std::abs(input.cursorViewport().y - 719.0F) < 0.01F);
+    REQUIRE(Renderer::containsViewportPoint(input.cursorViewport()));
+    REQUIRE(std::abs(input.cursorViewport().y - 719.0F) < 0.01F);
 
     // Unplugging the gamepad resets held stick axes to prevent drift.
     SDL_Event padRemoved{};
     padRemoved.type = SDL_EVENT_GAMEPAD_REMOVED;
     padRemoved.gdevice.which = 77;
     (void)router.handleEvent(padRemoved, input, game, mapper);
-    assert(input.gamepadCount() == 0);
-    assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
+    REQUIRE(input.gamepadCount() == 0);
+    REQUIRE((input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F));
 
     // 4. DebugEditor open/navigate/adjust via Keyboard (F1 + arrows) and Gamepad (BACK + D-Pad/Shoulders).
     SDL_Event f1Key{};
     f1Key.type = SDL_EVENT_KEY_DOWN;
     f1Key.key.key = SDLK_F1;
     f1Key.key.down = true;
-    assert(router.handleEvent(f1Key, input, game, mapper).consumedByDebug);
-    assert(editor.active() && editor.panelVisible());
+    REQUIRE(router.handleEvent(f1Key, input, game, mapper).consumedByDebug);
+    REQUIRE((editor.active() && editor.panelVisible()));
 
     SDL_Event padBack{};
     padBack.type = SDL_EVENT_GAMEPAD_BUTTON_DOWN;
     padBack.gbutton.which = 77;
     padBack.gbutton.button = SDL_GAMEPAD_BUTTON_BACK;
     padBack.gbutton.down = true;
-    assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
-    assert(!editor.active()); // Toggled closed by gamepad BACK.
-    assert(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
-    assert(editor.active() && editor.panelVisible()); // Re-opened without typing "DEBUG".
+    REQUIRE(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
+    REQUIRE(!editor.active()); // Toggled closed by gamepad BACK.
+    REQUIRE(router.handleEvent(padBack, input, game, mapper).consumedByDebug);
+    REQUIRE((editor.active() && editor.panelVisible())); // Re-opened without typing "DEBUG".
 
     const float initialFarSpeed = game.scene().room().playerFarSpeed;
-    assert(editor.selected() == 0);
+    REQUIRE(editor.selected() == 0);
 
     SDL_Event dpadRight = padBack;
     dpadRight.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_RIGHT;
-    assert(router.handleEvent(dpadRight, input, game, mapper).consumedByDebug);
-    assert(game.scene().room().playerFarSpeed > initialFarSpeed);
+    REQUIRE(router.handleEvent(dpadRight, input, game, mapper).consumedByDebug);
+    REQUIRE(game.scene().room().playerFarSpeed > initialFarSpeed);
 
     SDL_Event leftShoulder = padBack;
     leftShoulder.gbutton.button = SDL_GAMEPAD_BUTTON_LEFT_SHOULDER;
-    assert(router.handleEvent(leftShoulder, input, game, mapper).consumedByDebug);
-    assert(std::abs(game.scene().room().playerFarSpeed - initialFarSpeed) < 0.01F);
+    REQUIRE(router.handleEvent(leftShoulder, input, game, mapper).consumedByDebug);
+    REQUIRE(std::abs(game.scene().room().playerFarSpeed - initialFarSpeed) < 0.01F);
 
     SDL_Event dpadDown = padBack;
     dpadDown.gbutton.button = SDL_GAMEPAD_BUTTON_DPAD_DOWN;
-    assert(router.handleEvent(dpadDown, input, game, mapper).consumedByDebug);
-    assert(editor.selected() == 1);
+    REQUIRE(router.handleEvent(dpadDown, input, game, mapper).consumedByDebug);
+    REQUIRE(editor.selected() == 1);
 
     SDL_Event keyUp{};
     keyUp.type = SDL_EVENT_KEY_DOWN;
     keyUp.key.key = SDLK_UP;
     keyUp.key.down = true;
-    assert(router.handleEvent(keyUp, input, game, mapper).consumedByDebug);
-    assert(editor.selected() == 0);
+    REQUIRE(router.handleEvent(keyUp, input, game, mapper).consumedByDebug);
+    REQUIRE(editor.selected() == 0);
 
     SDL_Event padWest = padBack;
     padWest.gbutton.button = SDL_GAMEPAD_BUTTON_WEST;
-    assert(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
-    assert(editor.active() && !editor.panelVisible());
-    assert(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
-    assert(editor.panelVisible());
+    REQUIRE(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
+    REQUIRE((editor.active() && !editor.panelVisible()));
+    REQUIRE(router.handleEvent(padWest, input, game, mapper).consumedByDebug);
+    REQUIRE(editor.panelVisible());
 
     SDL_Event padEast = padBack;
     padEast.gbutton.button = SDL_GAMEPAD_BUTTON_EAST;
-    assert(router.handleEvent(padEast, input, game, mapper).consumedByDebug);
-    assert(!editor.active());
+    REQUIRE(router.handleEvent(padEast, input, game, mapper).consumedByDebug);
+    REQUIRE(!editor.active());
 
     // 5. Layer 3 ViewportUiConsumer priority & Layer 1 mobile/console lifecycle signals.
     struct MockModalUi final : ViewportUiConsumer {
@@ -792,48 +802,50 @@ void testMultiplatformInputAndRouting() {
     } modalUi;
     router.addUiConsumer(&modalUi);
 
-    assert(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
+    REQUIRE(game.teleportPlayer({1550.0F, 520.0F}, teleportError));
     SDL_Event modalClick = panelClick;
     modalClick.button.x = 440.0F + 300.0F * 2.0F; // Viewport (300, 300) inside modalBox
     modalClick.button.y = 300.0F * 2.0F;
     routeResult = router.handleEvent(modalClick, input, game, mapper);
-    assert(routeResult.consumedByUi);
-    assert(!game.scene().player().moving());
+    REQUIRE(routeResult.consumedByUi);
+    REQUIRE(!game.scene().player().moving());
 
     routeResult = router.handleEvent(dpadDown, input, game, mapper);
-    assert(routeResult.consumedByUi && modalUi.navCount == 1);
+    REQUIRE((routeResult.consumedByUi && modalUi.navCount == 1));
     router.clearUiConsumers();
 
     // Lifecycle signals: background clears transient axes, device reset signals invalidation.
     stickRight.gaxis.value = 32767;
     (void)router.handleEvent(stickRight, input, game, mapper);
-    assert(input.moveAxis().x > 0.5F);
+    REQUIRE(input.moveAxis().x > 0.5F);
 
     SDL_Event bgEvent{};
     bgEvent.type = SDL_EVENT_WILL_ENTER_BACKGROUND;
     routeResult = router.handleEvent(bgEvent, input, game, mapper);
-    assert(routeResult.enteredBackground);
-    assert(input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F);
+    REQUIRE(routeResult.enteredBackground);
+    REQUIRE((input.moveAxis().x == 0.0F && input.moveAxis().y == 0.0F));
 
     SDL_Event fgEvent{};
     fgEvent.type = SDL_EVENT_DID_ENTER_FOREGROUND;
-    assert(router.handleEvent(fgEvent, input, game, mapper).enteredForeground);
+    REQUIRE(router.handleEvent(fgEvent, input, game, mapper).enteredForeground);
 
     SDL_Event resetEvent{};
     resetEvent.type = SDL_EVENT_RENDER_DEVICE_RESET;
-    assert(router.handleEvent(resetEvent, input, game, mapper).invalidateGraphics);
+    REQUIRE(router.handleEvent(resetEvent, input, game, mapper).invalidateGraphics);
     renderer.invalidateTextures();
 
     SDL_Event quitEvent{};
     quitEvent.type = SDL_EVENT_QUIT;
-    assert(router.handleEvent(quitEvent, input, game, mapper).quitRequested);
+    REQUIRE(router.handleEvent(quitEvent, input, game, mapper).quitRequested);
 
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
 }
 
-void testEditorPreservesSessionState(const std::filesystem::path& directory) {
+TEST_CASE("testEditorPreservesSessionState") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     Room room = RoomPresets::firstRoom();
     const SDL_Color pickupColor{251, 31, 189, 255};
     room.scenery.push_back({{500.0F, 480.0F, 60.0F, 60.0F}, pickupColor,
@@ -855,71 +867,71 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     // 1. Collect brass_key from blue_box, unlock solid red_box via useItemOnObject, and pick up magenta_gem.
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 80; ++i) game.tick(0.05F);
-    assert(game.session().hasFlag("found_brass_key"));
-    assert(game.session().hasItem("brass_key"));
+    REQUIRE(game.session().hasFlag("found_brass_key"));
+    REQUIRE(game.session().hasItem("brass_key"));
 
-    assert(game.useItemOnObject("brass_key", "red_box"));
+    REQUIRE(game.useItemOnObject("brass_key", "red_box"));
     for (int i = 0; i < 100; ++i) game.tick(0.05F);
-    assert(!game.session().hasItem("brass_key"));
-    assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
-    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    REQUIRE(!game.session().hasItem("brass_key"));
+    REQUIRE(game.session().hasFlag("red_box_unlocked"));
+    REQUIRE(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     game.onClick({530.0F, 510.0F});
     for (int i = 0; i < 80; ++i) game.tick(0.05F);
-    assert(game.session().hasItem("magenta_gem"));
-    assert(!game.scene().isObjectVisible("magenta_gem"));
+    REQUIRE(game.session().hasItem("magenta_gem"));
+    REQUIRE(!game.scene().isObjectVisible("magenta_gem"));
 
     // 2. Live edits in DebugEditor (set, move, undo, reset) preserve SessionState.
     DebugEditor editor;
     const RoomLibrary library = openLibrary(directory);
     editor.setLibrary(library);
-    assert(editor.onTextInput("DEBUG", game));
-    assert(editor.active());
+    REQUIRE(editor.onTextInput("DEBUG", game));
+    REQUIRE(editor.active());
 
     command(editor, game, "set player.far_speed 180");
-    assert(game.scene().room().playerFarSpeed == 180.0F);
-    assert(game.session().hasItem("magenta_gem"));
-    assert(game.session().hasFlag("found_brass_key"));
-    assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.scene().isObjectVisible("magenta_gem"));
-    assert(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
-    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    REQUIRE(game.scene().room().playerFarSpeed == 180.0F);
+    REQUIRE(game.session().hasItem("magenta_gem"));
+    REQUIRE(game.session().hasFlag("found_brass_key"));
+    REQUIRE(game.session().hasFlag("red_box_unlocked"));
+    REQUIRE(!game.scene().isObjectVisible("magenta_gem"));
+    REQUIRE(!game.scene().isObjectSolid(game.scene().room().scenery[1]));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "move blue_box 300 350");
-    assert(game.scene().room().scenery[0].bounds.x == 300.0F);
-    assert(game.session().hasItem("magenta_gem"));
-    assert(!game.scene().isObjectVisible("magenta_gem"));
-    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    REQUIRE(game.scene().room().scenery[0].bounds.x == 300.0F);
+    REQUIRE(game.session().hasItem("magenta_gem"));
+    REQUIRE(!game.scene().isObjectVisible("magenta_gem"));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "undo");
-    assert(game.scene().room().scenery[0].bounds.x == 380.0F);
-    assert(game.session().hasItem("magenta_gem"));
-    assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.scene().isObjectVisible("magenta_gem"));
-    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    REQUIRE(game.scene().room().scenery[0].bounds.x == 380.0F);
+    REQUIRE(game.session().hasItem("magenta_gem"));
+    REQUIRE(game.session().hasFlag("red_box_unlocked"));
+    REQUIRE(!game.scene().isObjectVisible("magenta_gem"));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
 
     command(editor, game, "reset");
-    assert(game.scene().room().playerFarSpeed == 110.0F);
-    assert(game.session().hasItem("magenta_gem"));
-    assert(game.session().hasFlag("red_box_unlocked"));
-    assert(!game.scene().isObjectVisible("magenta_gem"));
-    assert(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    REQUIRE(game.scene().room().playerFarSpeed == 110.0F);
+    REQUIRE(game.session().hasItem("magenta_gem"));
+    REQUIRE(game.session().hasFlag("red_box_unlocked"));
+    REQUIRE(!game.scene().isObjectVisible("magenta_gem"));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
     editor.onToolAction(ToolAction::close, game);
 
     // 3. Headless SceneRenderer check: hidden magenta_gem is not drawn; showing it draws it again.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-    assert(SDL_Init(SDL_INIT_VIDEO));
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* window = SDL_CreateWindow("Visibility render test", 1280, 720, SDL_WINDOW_HIDDEN);
-    assert(window);
+    REQUIRE(window);
     Renderer renderer;
-    assert(renderer.initialize(window));
+    REQUIRE(renderer.initialize(window));
 
     renderer.render(game, 1.0F, nullptr);
     SDL_Surface* hiddenFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    assert(hiddenFrame);
-    assert(!surfaceContainsColor(hiddenFrame, pickupColor));
+    REQUIRE(hiddenFrame);
+    REQUIRE(!surfaceContainsColor(hiddenFrame, pickupColor));
     SDL_DestroySurface(hiddenFrame);
 
     game.changeSession([&](SessionState& session) {
@@ -927,8 +939,8 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     });
     renderer.render(game, 1.0F, nullptr);
     SDL_Surface* shownFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    assert(shownFrame);
-    assert(surfaceContainsColor(shownFrame, pickupColor));
+    REQUIRE(shownFrame);
+    REQUIRE(surfaceContainsColor(shownFrame, pickupColor));
     SDL_DestroySurface(shownFrame);
 
     renderer.shutdown();
@@ -936,39 +948,41 @@ void testEditorPreservesSessionState(const std::filesystem::path& directory) {
     SDL_Quit();
 }
 
-void testInteractionRulesFilesAndValidation(const std::filesystem::path& directory) {
+TEST_CASE("testInteractionRulesFilesAndValidation") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     // 1. Validate shipped companion .rules files against shipped .room files.
     const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
     const auto firstRoom = RoomFiles::load(roomsDir / "first.room", sharedPlayerArt());
-    assert(firstRoom.room);
+    REQUIRE(firstRoom.room);
     const auto firstRules = InteractionFiles::loadOptionalForRoom(
             roomsDir / "first.room", &*firstRoom.room);
-    assert(firstRules.interactions && firstRules.error.empty());
-    assert(!firstRules.interactions->empty());
-    assert(firstRules.interactions->hasRulesForObject("blue_box"));
-    assert(firstRules.interactions->hasRulesForObject("red_box"));
+    REQUIRE((firstRules.interactions && firstRules.error.empty()));
+    REQUIRE(!firstRules.interactions->empty());
+    REQUIRE(firstRules.interactions->hasRulesForObject("blue_box"));
+    REQUIRE(firstRules.interactions->hasRulesForObject("red_box"));
 
     const auto galleryRoom = RoomFiles::load(roomsDir / "gallery.room", sharedPlayerArt());
-    assert(galleryRoom.room);
+    REQUIRE(galleryRoom.room);
     const auto galleryRules = InteractionFiles::loadOptionalForRoom(
             roomsDir / "gallery.room", &*galleryRoom.room);
-    assert(galleryRules.interactions && galleryRules.error.empty());
-    assert(galleryRules.interactions->hasRulesForObject("plant"));
-    assert(galleryRules.interactions->hasRulesForObject("table"));
+    REQUIRE((galleryRules.interactions && galleryRules.error.empty()));
+    REQUIRE(galleryRules.interactions->hasRulesForObject("plant"));
+    REQUIRE(galleryRules.interactions->hasRulesForObject("table"));
 
     // 2. Optional companion loading succeeds with empty rules when no .rules exists.
     const auto lonelyRoomPath = directory / "no_rules_here.room";
     std::string saveError;
-    assert(RoomFiles::save(lonelyRoomPath, *firstRoom.room, saveError));
+    REQUIRE(RoomFiles::save(lonelyRoomPath, *firstRoom.room, saveError));
     const auto optionalMissing = InteractionFiles::loadOptionalForRoom(
             lonelyRoomPath, &*firstRoom.room);
-    assert(optionalMissing.interactions && optionalMissing.interactions->empty());
-    assert(optionalMissing.error.empty());
+    REQUIRE((optionalMissing.interactions && optionalMissing.interactions->empty()));
+    REQUIRE(optionalMissing.error.empty());
 
     // Direct load on a missing .rules file returns a clear open error.
     const auto directMissing = InteractionFiles::load(directory / "missing.rules");
-    assert(!directMissing.interactions);
-    assert(directMissing.error == "Nao foi possivel abrir missing.rules");
+    REQUIRE(!directMissing.interactions);
+    REQUIRE(directMissing.error == "Nao foi possivel abrir missing.rules");
 
     // 3. Full save/load roundtrip covering all triggers, conditions, effects, quotes, and '#' in strings.
     Room testRoom = RoomPresets::firstRoom();
@@ -1003,20 +1017,22 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
         "say \"Ja passamos por aqui.\"\r\n";
 
     const auto parsed = InteractionFiles::parse(authoredRulesText, &testRoom);
-    assert(parsed.interactions && parsed.error.empty());
-    assert(parsed.interactions->rules.size() == 3);
-    assert(parsed.interactions->rules[0].effects[2].args[0] == "Item #1: \"ficha dourada\" encontrada!");
+    REQUIRE((parsed.interactions && parsed.error.empty()));
+    REQUIRE(parsed.interactions->rules.size() == 3);
+    REQUIRE(parsed.interactions->rules[0].effects[2].args[0]
+            == "Item #1: \"ficha dourada\" encontrada!");
 
     const auto rulesPath = directory / "roundtrip.rules";
-    assert(InteractionFiles::save(rulesPath, *parsed.interactions, saveError, &testRoom));
+    REQUIRE(InteractionFiles::save(rulesPath, *parsed.interactions, saveError, &testRoom));
     const auto reloaded = InteractionFiles::load(rulesPath, &testRoom);
-    assert(reloaded.interactions && reloaded.error.empty());
-    assert(reloaded.interactions->rules.size() == 3);
-    assert(reloaded.interactions->rules[0].effects[2].args[0] == "Item #1: \"ficha dourada\" encontrada!");
-    assert(reloaded.interactions->rules[1].trigger.kind == InteractionTriggerKind::useItem);
-    assert(reloaded.interactions->rules[1].trigger.itemId == "golden_token");
-    assert(reloaded.interactions->rules[1].trigger.objectId == "red_box");
-    assert(reloaded.interactions->rules[1].effects.size() == 8);
+    REQUIRE((reloaded.interactions && reloaded.error.empty()));
+    REQUIRE(reloaded.interactions->rules.size() == 3);
+    REQUIRE(reloaded.interactions->rules[0].effects[2].args[0]
+            == "Item #1: \"ficha dourada\" encontrada!");
+    REQUIRE(reloaded.interactions->rules[1].trigger.kind == InteractionTriggerKind::useItem);
+    REQUIRE(reloaded.interactions->rules[1].trigger.itemId == "golden_token");
+    REQUIRE(reloaded.interactions->rules[1].trigger.objectId == "red_box");
+    REQUIRE(reloaded.interactions->rules[1].effects.size() == 8);
 
     // F4 / C12: wildcard triggers parse against the room (no object lookup for `*`) and
     // survive save -> load unchanged.
@@ -1025,32 +1041,33 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
                 "[use_item * red_box]\nsay \"a\"\n[use_item golden_token *]\nsay \"b\"\n"
                 "[use_item * *]\nsay \"c\"\n[interact *]\nsay \"d\"\n",
                 &testRoom);
-        assert(wild.interactions && wild.error.empty());
+        REQUIRE((wild.interactions && wild.error.empty()));
         const auto& rules = wild.interactions->rules;
-        assert(rules[0].trigger.itemId == "*" && rules[0].trigger.objectId == "red_box");
-        assert(rules[1].trigger.itemId == "golden_token" && rules[1].trigger.objectId == "*");
-        assert(rules[3].trigger.kind == InteractionTriggerKind::interact
-               && rules[3].trigger.objectId == "*");
-        assert(rules[0].trigger.wildcardLevel() == 1 && rules[1].trigger.wildcardLevel() == 2
-               && rules[2].trigger.wildcardLevel() == 3 && rules[3].trigger.wildcardLevel() == 1);
+        REQUIRE((rules[0].trigger.itemId == "*" && rules[0].trigger.objectId == "red_box"));
+        REQUIRE((rules[1].trigger.itemId == "golden_token" && rules[1].trigger.objectId == "*"));
+        REQUIRE((rules[3].trigger.kind == InteractionTriggerKind::interact
+                 && rules[3].trigger.objectId == "*"));
+        REQUIRE((rules[0].trigger.wildcardLevel() == 1 && rules[1].trigger.wildcardLevel() == 2
+                 && rules[2].trigger.wildcardLevel() == 3
+                 && rules[3].trigger.wildcardLevel() == 1));
         const auto wildPath = directory / "wildcard.rules";
-        assert(InteractionFiles::save(wildPath, *wild.interactions, saveError, &testRoom));
+        REQUIRE(InteractionFiles::save(wildPath, *wild.interactions, saveError, &testRoom));
         const std::string written = *TextFormat::readFile(wildPath).text;
-        assert(written.find("[use_item * red_box]") != std::string::npos);
-        assert(written.find("[use_item golden_token *]") != std::string::npos);
-        assert(written.find("[use_item * *]") != std::string::npos);
-        assert(written.find("[interact *]") != std::string::npos);
+        REQUIRE(written.find("[use_item * red_box]") != std::string::npos);
+        REQUIRE(written.find("[use_item golden_token *]") != std::string::npos);
+        REQUIRE(written.find("[use_item * *]") != std::string::npos);
+        REQUIRE(written.find("[interact *]") != std::string::npos);
         const auto wildBack = InteractionFiles::load(wildPath, &testRoom);
-        assert(wildBack.interactions && wildBack.interactions->rules.size() == 4);
+        REQUIRE((wildBack.interactions && wildBack.interactions->rules.size() == 4));
         for (std::size_t i = 0; i < 4; ++i) {
-            assert(wildBack.interactions->rules[i].trigger.objectId == rules[i].trigger.objectId);
-            assert(wildBack.interactions->rules[i].trigger.itemId == rules[i].trigger.itemId);
+            REQUIRE(wildBack.interactions->rules[i].trigger.objectId == rules[i].trigger.objectId);
+            REQUIRE(wildBack.interactions->rules[i].trigger.itemId == rules[i].trigger.itemId);
         }
         // `*` is only a whole token: anything else is still a bad identifier.
-        assert(InteractionFiles::parse("[interact **]\nsay \"x\"\n", &testRoom).error
-               == "Linha 1: Identificador de objeto invalido: **");
-        assert(InteractionFiles::parse("[use_item a* red_box]\nsay \"x\"\n", &testRoom).error
-               == "Linha 1: Identificador de item invalido: a*");
+        REQUIRE(InteractionFiles::parse("[interact **]\nsay \"x\"\n", &testRoom).error
+                == "Linha 1: Identificador de objeto invalido: **");
+        REQUIRE(InteractionFiles::parse("[use_item a* red_box]\nsay \"x\"\n", &testRoom).error
+                == "Linha 1: Identificador de item invalido: a*");
     }
 
     // 4. DebugEditor 'load' rejects a room if its companion .rules file has a syntax error,
@@ -1058,7 +1075,7 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     const auto brokenCompanionRoom = directory / "broken_rules.room";
     Room brokenRulesRoom = testRoom;
     brokenRulesRoom.id = "broken_rules"; // the library requires id == file name
-    assert(RoomFiles::save(brokenCompanionRoom, brokenRulesRoom, saveError));
+    REQUIRE(RoomFiles::save(brokenCompanionRoom, brokenRulesRoom, saveError));
     {
         std::ofstream badCompanion(directory / "broken_rules.rules", std::ios::binary);
         badCompanion << "[interact blue_box]\nsay \"sem fechar aspas\n";
@@ -1067,14 +1084,14 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     DebugEditor editor;
     const RoomLibrary library = openLibrary(directory);
     editor.setLibrary(library);
-    assert(editor.onTextInput("DEBUG", editorGame));
+    REQUIRE(editor.onTextInput("DEBUG", editorGame));
     command(editor, editorGame, "set player.far_speed 155");
-    assert(editorGame.scene().room().playerFarSpeed == 155.0F);
+    REQUIRE(editorGame.scene().room().playerFarSpeed == 155.0F);
     command(editor, editorGame, "load broken_rules.room");
-    assert(editor.status() == "Linha 2: Texto entre aspas nao fechado");
-    assert(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back.
+    REQUIRE(editor.status() == "Linha 2: Texto entre aspas nao fechado");
+    REQUIRE(editorGame.scene().room().playerFarSpeed == 155.0F); // Rolled back.
     command(editor, editorGame, "reload"); // no reloader wired (as in these tests): reported
-    assert(editor.status() == "Recarga de sprites indisponivel");
+    REQUIRE(editor.status() == "Recarga de sprites indisponivel");
 
     // 5. Clear line-by-line error messages for invalid rule syntax and invalid room references.
     const struct {
@@ -1117,60 +1134,63 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
 
     for (const auto& testCase : invalidCases) {
         const auto bad = InteractionFiles::parse(testCase.text, &testRoom);
-        assert(!bad.interactions);
-        assert(bad.error == testCase.expectedError);
+        REQUIRE(!bad.interactions);
+        REQUIRE(bad.error == testCase.expectedError);
     }
 }
 
 void assertSameSteps(const std::vector<InteractionEffect>& a, const std::vector<InteractionEffect>& b) {
-    assert(a.size() == b.size());
+    REQUIRE(a.size() == b.size());
     for (std::size_t i = 0; i < a.size(); ++i) {
-        assert(a[i].effect == b[i].effect && a[i].args == b[i].args);
+        REQUIRE((a[i].effect == b[i].effect && a[i].args == b[i].args));
     }
 }
 
 void assertSameDialogues(const RoomDialogues& a, const RoomDialogues& b) {
-    assert(a.nodes.size() == b.nodes.size());
+    REQUIRE(a.nodes.size() == b.nodes.size());
     for (std::size_t n = 0; n < a.nodes.size(); ++n) {
         const DialogueNode& x = a.nodes[n];
         const DialogueNode& y = b.nodes[n];
-        assert(x.id == y.id && x.choices.size() == y.choices.size());
+        REQUIRE((x.id == y.id && x.choices.size() == y.choices.size()));
         assertSameSteps(x.lines, y.lines);
         for (std::size_t c = 0; c < x.choices.size(); ++c) {
             const DialogueChoice& p = x.choices[c];
             const DialogueChoice& q = y.choices[c];
-            assert(p.id == q.id && p.text == q.text && p.once == q.once && p.next == q.next);
-            assert(p.conditions.size() == q.conditions.size());
+            REQUIRE((p.id == q.id && p.text == q.text && p.once == q.once && p.next == q.next));
+            REQUIRE(p.conditions.size() == q.conditions.size());
             for (std::size_t i = 0; i < p.conditions.size(); ++i) {
-                assert(p.conditions[i].condition == q.conditions[i].condition);
-                assert(p.conditions[i].args == q.conditions[i].args);
+                REQUIRE(p.conditions[i].condition == q.conditions[i].condition);
+                REQUIRE(p.conditions[i].args == q.conditions[i].args);
             }
             assertSameSteps(p.effects, q.effects);
         }
     }
 }
 
-void testDialogueFiles(const std::filesystem::path& directory) {
+TEST_CASE("testDialogueFiles") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     // 1. The shipped gallery.dlg loads against gallery.room and matches gallery.rules.
     const auto roomsDir = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
     const auto gallery = RoomFiles::load(roomsDir / "gallery.room", sharedPlayerArt());
-    assert(gallery.room);
+    REQUIRE(gallery.room);
     const auto shipped = DialogueFiles::loadOptionalForRoom(roomsDir / "gallery.room",
                                                             &*gallery.room);
-    assert(shipped.dialogues && shipped.error.empty());
+    REQUIRE((shipped.dialogues && shipped.error.empty()));
     const DialogueNode* table = shipped.dialogues->findNode("mesa");
-    assert(table && table->choices.size() == 3);
-    assert(table->findChoice("ler_bilhete")->conditions.size() == 1);
-    assert(table->findChoice("gavetas")->once && table->findChoice("gavetas")->next == "fundo_falso");
+    REQUIRE((table && table->choices.size() == 3));
+    REQUIRE(table->findChoice("ler_bilhete")->conditions.size() == 1);
+    REQUIRE((table->findChoice("gavetas")->once
+             && table->findChoice("gavetas")->next == "fundo_falso"));
     const auto galleryRules = InteractionFiles::loadOptionalForRoom(roomsDir / "gallery.room",
                                                                     &*gallery.room);
-    assert(galleryRules.interactions);
-    assert(dialogueReferencesError(*galleryRules.interactions, *shipped.dialogues).empty());
+    REQUIRE(galleryRules.interactions);
+    REQUIRE(dialogueReferencesError(*galleryRules.interactions, *shipped.dialogues).empty());
     const auto firstRoom = RoomFiles::load(roomsDir / "first.room", sharedPlayerArt());
     const auto firstNone = DialogueFiles::loadOptionalForRoom(roomsDir / "first.room",
                                                               &*firstRoom.room);
-    assert(firstNone.dialogues && firstNone.dialogues->empty() && firstNone.error.empty());
-    assert(!DialogueFiles::load(directory / "missing.dlg").dialogues);
+    REQUIRE((firstNone.dialogues && firstNone.dialogues->empty() && firstNone.error.empty()));
+    REQUIRE(!DialogueFiles::load(directory / "missing.dlg").dialogues);
 
     // 2. Round trip: parse -> save -> load keeps every field, and saving is stable.
     Room room = RoomPresets::firstRoom();
@@ -1195,33 +1215,33 @@ say "Pode passar."
 wait 0.5
 )";
     const auto parsed = DialogueFiles::parse(authored, &room);
-    assert(parsed.dialogues && parsed.error.empty());
+    REQUIRE((parsed.dialogues && parsed.error.empty()));
     const DialogueChoice* key = parsed.dialogues->findNode("guarda")->findChoice("chave");
-    assert(key->text == "Tenho a \"chave\"." && key->once && key->next == "liberado");
-    assert(key->conditions.size() == 2 && key->effects.size() == 2);
-    assert(parsed.dialogues->findNode("guarda")->lines[0].args[0] == "Alto la! #1");
-    assert(parsed.dialogues->findNode("guarda")->findChoice("tchau")->effects.empty());
+    REQUIRE((key->text == "Tenho a \"chave\"." && key->once && key->next == "liberado"));
+    REQUIRE((key->conditions.size() == 2 && key->effects.size() == 2));
+    REQUIRE(parsed.dialogues->findNode("guarda")->lines[0].args[0] == "Alto la! #1");
+    REQUIRE(parsed.dialogues->findNode("guarda")->findChoice("tchau")->effects.empty());
 
     const auto path = directory / "roundtrip.dlg";
     std::string error;
-    assert(DialogueFiles::save(path, *parsed.dialogues, error, &room));
+    REQUIRE(DialogueFiles::save(path, *parsed.dialogues, error, &room));
     const auto reloaded = DialogueFiles::load(path, &room);
-    assert(reloaded.dialogues && reloaded.error.empty());
+    REQUIRE((reloaded.dialogues && reloaded.error.empty()));
     assertSameDialogues(*parsed.dialogues, *reloaded.dialogues);
     const auto path2 = directory / "roundtrip2.dlg";
-    assert(DialogueFiles::save(path2, *reloaded.dialogues, error, &room));
+    REQUIRE(DialogueFiles::save(path2, *reloaded.dialogues, error, &room));
     std::ifstream first(path), second(path2);
     const std::string firstText((std::istreambuf_iterator<char>(first)), {});
     const std::string secondText((std::istreambuf_iterator<char>(second)), {});
-    assert(!firstText.empty() && firstText == secondText);
-    assert(!std::filesystem::exists(directory / "roundtrip.dlg.tmp"));
+    REQUIRE((!firstText.empty() && firstText == secondText));
+    REQUIRE(!std::filesystem::exists(directory / "roundtrip.dlg.tmp"));
 
     // Invalid definitions are refused before touching the file.
     RoomDialogues broken = *parsed.dialogues;
     broken.nodes[0].choices[0].next = "nowhere";
-    assert(!DialogueFiles::save(path, broken, error, &room));
-    assert(error == "Destino de goto desconhecido: nowhere");
-    assert(DialogueFiles::load(path, &room).dialogues);
+    REQUIRE(!DialogueFiles::save(path, broken, error, &room));
+    REQUIRE(error == "Destino de goto desconhecido: nowhere");
+    REQUIRE(DialogueFiles::load(path, &room).dialogues);
 
     // 3. Line-by-line validation names the line and the expected form.
     const struct {
@@ -1253,17 +1273,17 @@ wait 0.5
     };
     for (const auto& testCase : invalidCases) {
         const auto bad = DialogueFiles::parse(testCase.text, &room);
-        assert(!bad.dialogues);
+        REQUIRE(!bad.dialogues);
         if (bad.error != testCase.expectedError) {
             SDL_Log("dialogue case: got '%s' expected '%s'", bad.error.c_str(), testCase.expectedError);
         }
-        assert(bad.error == testCase.expectedError);
+        REQUIRE(bad.error == testCase.expectedError);
     }
 }
 
 // Choice menu: modal only while a choice is expected; click/touch, up/down + confirm, gamepad South.
 // The world drops free text, so typing during a cutscene never replaces the line.
-void testTypedTextNeverBecomesSpeech() {
+TEST_CASE("testTypedTextNeverBecomesSpeech") {
     Game game(RoomPresets::firstRoom());
     game.setInteractions(RoomInteractions{{{
         .trigger = InteractionTrigger::interact("blue_box"),
@@ -1274,29 +1294,29 @@ void testTypedTextNeverBecomesSpeech() {
     }}});
     game.onClick({430.0F, 410.0F});
     for (int i = 0; i < 200 && !game.inCutscene(); ++i) game.tick(0.05F);
-    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+    REQUIRE((game.inCutscene() && game.scene().floatingText().text() == "Linha"));
 
     TranslatedInput typed;
     typed.textInput = "x";
     const InputRouter storeRouter; // no tools layer, as in a store build
     const InputRouteResult storeResult = storeRouter.routeTranslated(typed, game);
-    assert(!storeResult.consumedByDebug && !storeResult.consumedByUi);
-    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+    REQUIRE((!storeResult.consumedByDebug && !storeResult.consumedByUi));
+    REQUIRE((game.inCutscene() && game.scene().floatingText().text() == "Linha"));
 
     DebugEditor editor;
     InputRouter toolsRouter;
     toolsRouter.setToolConsumer(&editor);
     typed.textInput = "DEBU"; // not yet the activation word: the editor lets it through
-    assert(!toolsRouter.routeTranslated(typed, game).consumedByDebug);
-    assert(!editor.active());
-    assert(game.inCutscene() && game.scene().floatingText().text() == "Linha");
+    REQUIRE(!toolsRouter.routeTranslated(typed, game).consumedByDebug);
+    REQUIRE(!editor.active());
+    REQUIRE((game.inCutscene() && game.scene().floatingText().text() == "Linha"));
 
     // The line still ends after its reading time (2 s for "Linha"), not a 10 s echo.
     for (int i = 0; i < 50 && game.inCutscene(); ++i) game.tick(0.05F);
-    assert(!game.inCutscene() && game.session().hasFlag("line_done"));
+    REQUIRE((!game.inCutscene() && game.session().hasFlag("line_done")));
 }
 
-void testDialogueMenuWrapsLongOptions() {
+TEST_CASE("testDialogueMenuWrapsLongOptions") {
     Game game(RoomPresets::firstRoom());
     const std::string longText(80, 'x'); // 99 glyphs fit a row: the word moves to line 2
     DialogueChoice a{.id = "a", .text = "Curta", .conditions = {}, .effects = {}};
@@ -1305,23 +1325,23 @@ void testDialogueMenuWrapsLongOptions() {
     game.setDialogues(RoomDialogues{{DialogueNode{"menu", {}, {a, b}}}});
     constexpr MonospaceTextMetrics metrics{12.0F, 28.0F};
     DialogueMenu menu(game, metrics);
-    assert(game.startDialogue("menu") && game.awaitingDialogueChoice());
-    assert(menu.rowCount() == 2);
+    REQUIRE((game.startDialogue("menu") && game.awaitingDialogueChoice()));
+    REQUIRE(menu.rowCount() == 2);
     const DialogueMenu::Row& wrappedRow = menu.row(1);
-    assert(wrappedRow.lines.size() == 2);
-    assert(wrappedRow.rect.h == 2.0F * 28.0F + DialogueMenu::kRowPaddingY * 2.0F);
+    REQUIRE(wrappedRow.lines.size() == 2);
+    REQUIRE(wrappedRow.rect.h == 2.0F * 28.0F + DialogueMenu::kRowPaddingY * 2.0F);
     for (const TextLine& line : wrappedRow.lines) {
-        assert(line.width <= wrappedRow.rect.w - DialogueMenu::kTextInsetX * 2.0F);
+        REQUIRE(line.width <= wrappedRow.rect.w - DialogueMenu::kTextInsetX * 2.0F);
     }
     // The taller row moves the panel up; it still ends at the bottom margin.
     const SDL_FRect panel = menu.panelRect();
-    assert(panel.y + panel.h == 720.0F - DialogueMenu::kMargin);
-    assert(panel.h == DialogueMenu::kPadding * 2.0F + DialogueMenu::kMinRowHeight
-                              + wrappedRow.rect.h);
-    assert(menu.optionAt({640.0F, wrappedRow.rect.y + wrappedRow.rect.h - 2.0F}) == 1u);
+    REQUIRE(panel.y + panel.h == 720.0F - DialogueMenu::kMargin);
+    REQUIRE(panel.h
+            == DialogueMenu::kPadding * 2.0F + DialogueMenu::kMinRowHeight + wrappedRow.rect.h);
+    REQUIRE(menu.optionAt({640.0F, wrappedRow.rect.y + wrappedRow.rect.h - 2.0F}) == 1u);
 }
 
-void testDialogueMenuInput() {
+TEST_CASE("testDialogueMenuInput") {
     Game game(RoomPresets::firstRoom());
     DialogueChoice a{.id = "a", .text = "Primeira", .conditions = {},
                      .effects = {InteractionEffect::make("set_flag", {"picked_a"})}};
@@ -1356,64 +1376,64 @@ void testDialogueMenuInput() {
     };
 
     // Closed: presses reach the world.
-    assert(!press({900.0F, 600.0F}).consumedByUi);
-    assert(game.scene().player().moving());
+    REQUIRE(!press({900.0F, 600.0F}).consumedByUi);
+    REQUIRE(game.scene().player().moving());
     for (int i = 0; i < 200 && game.scene().player().moving(); ++i) game.tick(0.05F);
-    assert(!navigate(UiNavAction::down).consumedByUi);
+    REQUIRE(!navigate(UiNavAction::down).consumedByUi);
 
     // Closed: no rows, nothing to hit.
-    assert(menu.rowCount() == 0 && !menu.optionAt({640.0F, 650.0F}));
+    REQUIRE((menu.rowCount() == 0 && !menu.optionAt({640.0F, 650.0F})));
 
     // Click/touch on a row chooses it.
-    assert(game.startDialogue("menu"));
-    assert(game.awaitingDialogueChoice());
+    REQUIRE(game.startDialogue("menu"));
+    REQUIRE(game.awaitingDialogueChoice());
 
     // Layout: rows stack inside the panel, at the bottom of the 1280x720 viewport, sized by the
     // measured text ("2. Segunda" is one 28-unit line, so the 40-unit minimum row applies).
-    assert(menu.rowCount() == 3 && menu.row(1).label == "2. Segunda");
+    REQUIRE((menu.rowCount() == 3 && menu.row(1).label == "2. Segunda"));
     const SDL_FRect panel = menu.panelRect();
-    assert(panel.y + panel.h <= 720.0F && panel.x >= 0.0F && panel.x + panel.w <= 1280.0F);
+    REQUIRE((panel.y + panel.h <= 720.0F && panel.x >= 0.0F && panel.x + panel.w <= 1280.0F));
     const SDL_FRect row1 = menu.optionRect(1);
-    assert(row1.h == DialogueMenu::kMinRowHeight && row1.y == menu.optionRect(0).y + row1.h);
-    assert(menu.optionAt(center(row1)) == 1u);
-    assert(!menu.optionAt({10.0F, 10.0F}));
+    REQUIRE((row1.h == DialogueMenu::kMinRowHeight && row1.y == menu.optionRect(0).y + row1.h));
+    REQUIRE(menu.optionAt(center(row1)) == 1u);
+    REQUIRE(!menu.optionAt({10.0F, 10.0F}));
     const SDL_FPoint text = menu.lineOrigin(1, 0);
-    assert(text.x == row1.x + DialogueMenu::kTextInsetX && text.y == row1.y + 6.0F);
+    REQUIRE((text.x == row1.x + DialogueMenu::kTextInsetX && text.y == row1.y + 6.0F));
     const SDL_FPoint feet = game.scene().player().feet();
-    assert(press({200.0F, 100.0F}).consumedByUi); // modal: outside the rows does nothing
-    assert(game.awaitingDialogueChoice() && !game.scene().player().moving());
-    assert(game.scene().player().feet().x == feet.x);
-    assert(press(center(row1)).consumedByUi);
-    assert(game.session().hasFlag("picked_b") && !game.dialogueActive());
+    REQUIRE(press({200.0F, 100.0F}).consumedByUi); // modal: outside the rows does nothing
+    REQUIRE((game.awaitingDialogueChoice() && !game.scene().player().moving()));
+    REQUIRE(game.scene().player().feet().x == feet.x);
+    REQUIRE(press(center(row1)).consumedByUi);
+    REQUIRE((game.session().hasFlag("picked_b") && !game.dialogueActive()));
 
     // Keyboard / D-pad: down wraps, confirm picks the highlighted row.
-    assert(game.startDialogue("menu"));
-    assert(menu.highlighted() == 0);
-    assert(navigate(UiNavAction::up).consumedByUi);
-    assert(menu.highlighted() == 2);
-    assert(navigate(UiNavAction::down).consumedByUi);
-    assert(menu.highlighted() == 0);
-    assert(navigate(UiNavAction::cancel).consumedByUi && game.awaitingDialogueChoice());
-    assert(navigate(UiNavAction::confirm).consumedByUi);
-    assert(game.session().hasFlag("picked_a"));
+    REQUIRE(game.startDialogue("menu"));
+    REQUIRE(menu.highlighted() == 0);
+    REQUIRE(navigate(UiNavAction::up).consumedByUi);
+    REQUIRE(menu.highlighted() == 2);
+    REQUIRE(navigate(UiNavAction::down).consumedByUi);
+    REQUIRE(menu.highlighted() == 0);
+    REQUIRE((navigate(UiNavAction::cancel).consumedByUi && game.awaitingDialogueChoice()));
+    REQUIRE(navigate(UiNavAction::confirm).consumedByUi);
+    REQUIRE(game.session().hasFlag("picked_a"));
 
     // Gamepad: D-pad highlights, South (a press at the unmoved virtual cursor) confirms it.
-    assert(game.startDialogue("menu"));
+    REQUIRE(game.startDialogue("menu"));
     TranslatedInput hover;
     hover.pointerMoved = true;
     hover.viewportPoint = {200.0F, 100.0F};
     hover.insideViewport = true;
     (void)router.routeTranslated(hover, game);
-    assert(navigate(UiNavAction::down).consumedByUi);
-    assert(navigate(UiNavAction::down).consumedByUi);
-    assert(press({200.0F, 100.0F}).consumedByUi);
-    assert(game.session().hasFlag("picked_c"));
+    REQUIRE(navigate(UiNavAction::down).consumedByUi);
+    REQUIRE(navigate(UiNavAction::down).consumedByUi);
+    REQUIRE(press({200.0F, 100.0F}).consumedByUi);
+    REQUIRE(game.session().hasFlag("picked_c"));
 
     // Hover follows the pointer and is consumed inside the panel.
-    assert(game.startDialogue("menu"));
+    REQUIRE(game.startDialogue("menu"));
     hover.viewportPoint = center(menu.optionRect(2));
-    assert(router.routeTranslated(hover, game).consumedByUi);
-    assert(menu.highlighted() == 2 && !game.scene().pointerInside());
+    REQUIRE(router.routeTranslated(hover, game).consumedByUi);
+    REQUIRE((menu.highlighted() == 2 && !game.scene().pointerInside()));
 
     // The editor active with its panel hidden (TAB, to test the room) leaves arrows and Enter to
     // the menu; the same keys with the panel showing stay with the editor.
@@ -1423,33 +1443,33 @@ void testDialogueMenuInput() {
         input.navAction = nav;
         return router.routeTranslated(input, game);
     };
-    assert(editor.onToolAction(ToolAction::toggleEditor, game));
-    assert(editor.panelVisible());
-    assert(key(ToolAction::previous, UiNavAction::up).consumedByDebug);
-    assert(menu.highlighted() == 2);
-    assert(editor.onToolAction(ToolAction::togglePanel, game));
-    assert(editor.active() && !editor.panelVisible());
+    REQUIRE(editor.onToolAction(ToolAction::toggleEditor, game));
+    REQUIRE(editor.panelVisible());
+    REQUIRE(key(ToolAction::previous, UiNavAction::up).consumedByDebug);
+    REQUIRE(menu.highlighted() == 2);
+    REQUIRE(editor.onToolAction(ToolAction::togglePanel, game));
+    REQUIRE((editor.active() && !editor.panelVisible()));
     const InputRouteResult hiddenUp = key(ToolAction::previous, UiNavAction::up);
-    assert(hiddenUp.consumedByUi && !hiddenUp.consumedByDebug);
-    assert(menu.highlighted() == 1);
-    assert(key(ToolAction::submit, UiNavAction::confirm).consumedByUi);
-    assert(!game.dialogueActive());
-    assert(editor.onToolAction(ToolAction::close, game) && !editor.active());
-    assert(game.startDialogue("menu"));
+    REQUIRE((hiddenUp.consumedByUi && !hiddenUp.consumedByDebug));
+    REQUIRE(menu.highlighted() == 1);
+    REQUIRE(key(ToolAction::submit, UiNavAction::confirm).consumedByUi);
+    REQUIRE(!game.dialogueActive());
+    REQUIRE((editor.onToolAction(ToolAction::close, game) && !editor.active()));
+    REQUIRE(game.startDialogue("menu"));
 
     // Draws without a window of its own (software renderer) while open.
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-    assert(SDL_Init(SDL_INIT_VIDEO));
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
     SDL_Window* window = SDL_CreateWindow("Dialogue test", 1280, 720, SDL_WINDOW_HIDDEN);
-    assert(window);
+    REQUIRE(window);
     Renderer renderer;
-    assert(renderer.initialize(window));
+    REQUIRE(renderer.initialize(window));
     renderer.render(game, 1.0F, nullptr, &menu);
     SDL_Surface* pixels = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    assert(pixels);
+    REQUIRE(pixels);
     if (const char* capture = std::getenv("POINTCLICK_DIALOGUE_CAPTURE")) {
-        assert(SDL_SaveBMP(pixels, capture));
+        REQUIRE(SDL_SaveBMP(pixels, capture));
     }
     SDL_DestroySurface(pixels);
     renderer.shutdown();
@@ -1484,41 +1504,43 @@ std::vector<std::string> sampleArguments(const Descriptor& descriptor) {
     return args;
 }
 
-void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
+TEST_CASE("testActionCatalogRoundtrip") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     Room room = RoomPresets::firstRoom();
     room.scenery[1].animations["open"] = SpriteClip{.file = "red_open.png"};
 
     std::set<std::string_view> keywords;
     InteractionRule rule{.trigger = InteractionTrigger::interact("blue_box")};
     for (const ConditionDescriptor& condition : conditionCatalog()) {
-        assert(!condition.description.empty() && condition.evaluate);
-        assert(keywords.insert(condition.keyword).second);
+        REQUIRE((!condition.description.empty() && condition.evaluate));
+        REQUIRE(keywords.insert(condition.keyword).second);
         rule.conditions.push_back(
                 InteractionCondition::make(condition.keyword, sampleArguments(condition)));
     }
     for (const EffectDescriptor& effect : effectCatalog()) {
-        assert(!effect.description.empty() && effect.start);
-        assert(keywords.insert(effect.keyword).second);
+        REQUIRE((!effect.description.empty() && effect.start));
+        REQUIRE(keywords.insert(effect.keyword).second);
         rule.effects.push_back(InteractionEffect::make(effect.keyword, sampleArguments(effect)));
     }
     RoomInteractions authored{{rule}};
-    assert(authored.validationError(&room).empty());
+    REQUIRE(authored.validationError(&room).empty());
 
     const auto path = directory / "catalog.rules";
     std::string error;
-    assert(InteractionFiles::save(path, authored, error, &room));
+    REQUIRE(InteractionFiles::save(path, authored, error, &room));
     const auto loaded = InteractionFiles::load(path, &room);
-    assert(loaded.interactions && loaded.error.empty());
+    REQUIRE((loaded.interactions && loaded.error.empty()));
     const InteractionRule& back = loaded.interactions->rules.at(0);
-    assert(back.conditions.size() == rule.conditions.size());
-    assert(back.effects.size() == rule.effects.size());
+    REQUIRE(back.conditions.size() == rule.conditions.size());
+    REQUIRE(back.effects.size() == rule.effects.size());
     for (std::size_t i = 0; i < rule.conditions.size(); ++i) {
-        assert(back.conditions[i].condition == rule.conditions[i].condition);
-        assert(back.conditions[i].args == rule.conditions[i].args);
+        REQUIRE(back.conditions[i].condition == rule.conditions[i].condition);
+        REQUIRE(back.conditions[i].args == rule.conditions[i].args);
     }
     for (std::size_t i = 0; i < rule.effects.size(); ++i) {
-        assert(back.effects[i].effect == rule.effects[i].effect);
-        assert(back.effects[i].args == rule.effects[i].args);
+        REQUIRE(back.effects[i].effect == rule.effects[i].effect);
+        REQUIRE(back.effects[i].args == rule.effects[i].args);
     }
 
     // Typed validation applies to rules built in C++ as well as to parsed files.
@@ -1528,82 +1550,86 @@ void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
     } catch (const std::invalid_argument&) {
         threw = true;
     }
-    assert(threw);
+    REQUIRE(threw);
     const auto invalid = [&](InteractionEffect effect) {
         RoomInteractions rules{{{.trigger = InteractionTrigger::interact("blue_box"),
                                  .effects = {std::move(effect)}}}};
         return rules.validationError(&room);
     };
-    assert(invalid(InteractionEffect::make("set_solid", {"red_box", "2"}))
-           == "Use set_solid <objeto> <0|1>");
-    assert(invalid(InteractionEffect::make("set_solid", {"red_box"}))
-           == "Use set_solid <objeto> <0|1>");
-    assert(invalid(InteractionEffect::make("hide_object", {"fantasma"}))
-           == "Objeto desconhecido na sala: fantasma");
-    assert(invalid(InteractionEffect::make("play_animation", {"red_box", "danca"}))
-           == "Animacao desconhecida 'danca' no objeto: red_box");
-    assert(invalid(InteractionEffect::make("say", {""})) == "Texto vazio em say");
-    assert(invalid(InteractionEffect::make("wait", {"1,5"})) == "Numero invalido: 1,5");
-    assert(invalid(InteractionEffect::make("wait", {"-1"})) == "Numero invalido: -1");
-    assert(invalid(InteractionEffect::make("add_flag", {"coins", "1.5"}))
-           == "Inteiro invalido: 1.5");
-    assert(invalid(InteractionEffect::make("add_flag", {"coins", "+2"})) == "Inteiro invalido: +2");
-    assert(invalid(InteractionEffect::make("add_flag", {"coins"})) == "Use add_flag <flag> <n>");
+    REQUIRE(invalid(InteractionEffect::make("set_solid", {"red_box", "2"}))
+            == "Use set_solid <objeto> <0|1>");
+    REQUIRE(invalid(InteractionEffect::make("set_solid", {"red_box"}))
+            == "Use set_solid <objeto> <0|1>");
+    REQUIRE(invalid(InteractionEffect::make("hide_object", {"fantasma"}))
+            == "Objeto desconhecido na sala: fantasma");
+    REQUIRE(invalid(InteractionEffect::make("play_animation", {"red_box", "danca"}))
+            == "Animacao desconhecida 'danca' no objeto: red_box");
+    REQUIRE(invalid(InteractionEffect::make("say", {""})) == "Texto vazio em say");
+    REQUIRE(invalid(InteractionEffect::make("wait", {"1,5"})) == "Numero invalido: 1,5");
+    REQUIRE(invalid(InteractionEffect::make("wait", {"-1"})) == "Numero invalido: -1");
+    REQUIRE(invalid(InteractionEffect::make("add_flag", {"coins", "1.5"}))
+            == "Inteiro invalido: 1.5");
+    REQUIRE(invalid(InteractionEffect::make("add_flag", {"coins", "+2"}))
+            == "Inteiro invalido: +2");
+    REQUIRE(invalid(InteractionEffect::make("add_flag", {"coins"})) == "Use add_flag <flag> <n>");
     int counter = 0;
-    assert(parseIntegerArgument("-12", counter) && counter == -12);
-    assert(parseIntegerArgument("1000000", counter) && counter == 1'000'000);
-    assert(!parseIntegerArgument("1000001", counter) && !parseIntegerArgument("-", counter));
+    REQUIRE((parseIntegerArgument("-12", counter) && counter == -12));
+    REQUIRE((parseIntegerArgument("1000000", counter) && counter == 1'000'000));
+    REQUIRE((!parseIntegerArgument("1000001", counter) && !parseIntegerArgument("-", counter)));
     {
         const auto parsed = InteractionFiles::parse(
                 "[interact blue_box]\nflag_at_least coins x\nsay \"oi\"\n", &room);
-        assert(!parsed.interactions && parsed.error == "Linha 2: Inteiro invalido: x");
+        REQUIRE((!parsed.interactions && parsed.error == "Linha 2: Inteiro invalido: x"));
         const auto direction = InteractionFiles::parse(
                 "[interact blue_box]\nsay \"oi\"\nface norte\n", &room);
-        assert(!direction.interactions
-               && direction.error
-                          == "Linha 3: Direcao invalida: norte (use left, right, up ou down)");
-        assert(invalid(InteractionEffect::make("face", {"idle"}))
-               == "Direcao invalida: idle (use left, right, up ou down)");
+        REQUIRE((!direction.interactions
+                 && direction.error
+                            == "Linha 3: Direcao invalida: norte (use left, right, up ou down)"));
+        REQUIRE(invalid(InteractionEffect::make("face", {"idle"}))
+                == "Direcao invalida: idle (use left, right, up ou down)");
     }
     float seconds = 0.0F;
-    assert(parseNumberArgument("0.25", seconds) && seconds == 0.25F);
-    assert(parseNumberArgument("12", seconds) && seconds == 12.0F);
-    assert(!parseNumberArgument("1.2.3", seconds) && !parseNumberArgument(".", seconds));
-    assert(actionUsage("play_animation", findEffect("play_animation")->args)
-           == "Use play_animation <objeto> <animacao>");
+    REQUIRE((parseNumberArgument("0.25", seconds) && seconds == 0.25F));
+    REQUIRE((parseNumberArgument("12", seconds) && seconds == 12.0F));
+    REQUIRE((!parseNumberArgument("1.2.3", seconds) && !parseNumberArgument(".", seconds)));
+    REQUIRE(actionUsage("play_animation", findEffect("play_animation")->args)
+            == "Use play_animation <objeto> <animacao>");
 }
 // The shipped layout: rooms inherit assets/actors/player.actor; RoomLibrary loads a room with
 // its .rules and .dlg in one validated bundle for both the game and the editor.
-void testRoomLibraryAndActors(const std::filesystem::path& directory) {
+TEST_CASE("testRoomLibraryAndActors") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     RoomLibrary library;
     std::string error;
-    assert(library.open(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms", error));
-    assert(library.playerArt().size() == 5);
+    REQUIRE(library.open(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms", error));
+    REQUIRE(library.playerArt().size() == 5);
     const auto first = library.loadBundle("first.room");
-    assert(first.bundle && first.error.empty());
-    assert(first.bundle->room.playerAnimations == library.playerArt()); // no copy in the room
-    assert(!first.bundle->interactions.empty());
+    REQUIRE((first.bundle && first.error.empty()));
+    REQUIRE(first.bundle->room.playerAnimations == library.playerArt()); // no copy in the room
+    REQUIRE(!first.bundle->interactions.empty());
     const auto gallery = library.loadBundle("gallery.room");
-    assert(gallery.bundle && gallery.bundle->dialogues.findNode("mesa"));
-    assert(gallery.bundle->room.playerAnimations == library.playerArt());
+    REQUIRE((gallery.bundle && gallery.bundle->dialogues.findNode("mesa")));
+    REQUIRE(gallery.bundle->room.playerAnimations == library.playerArt());
 
     // Saving through the library keeps the shared art out of the room file.
     RoomLibrary scratch = openLibrary(directory);
-    assert(scratch.playerArt().empty()); // no actors/ folder next to a temp directory
-    assert(RoomFiles::save(directory / "art.room", first.bundle->room, error,
-                           &library.playerArt()));
+    REQUIRE(scratch.playerArt().empty()); // no actors/ folder next to a temp directory
+    REQUIRE(RoomFiles::save(directory / "art.room", first.bundle->room, error,
+                            &library.playerArt()));
     std::ifstream saved(directory / "art.room");
     const std::string text((std::istreambuf_iterator<char>(saved)), {});
-    assert(text.find("player.idle.") == std::string::npos);
+    REQUIRE(text.find("player.idle.") == std::string::npos);
 
     // The file name is the room's identity (change_room and SessionState must agree on it).
     Room declared = first.bundle->room;
     declared.id = "outra";
-    assert(RoomFiles::save(directory / "trocada.room", declared, error));
+    REQUIRE(RoomFiles::save(directory / "trocada.room", declared, error));
     const auto mismatched = scratch.loadBundle("trocada.room");
-    assert(!mismatched.bundle);
-    assert(mismatched.error == "id = outra nao corresponde ao arquivo trocada.room (use id = trocada)");
-    assert(!scratch.loadRoom("trocada.room").room);
+    REQUIRE(!mismatched.bundle);
+    REQUIRE(mismatched.error
+            == "id = outra nao corresponde ao arquivo trocada.room (use id = trocada)");
+    REQUIRE(!scratch.loadRoom("trocada.room").room);
     // A file without `id` is the room named after it, not Room's default "first".
     std::ifstream declaredFile(directory / "trocada.room");
     std::string withoutId;
@@ -1613,11 +1639,11 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     declaredFile.close();
     std::ofstream(directory / "semid.room") << withoutId;
     const auto unnamed = scratch.loadBundle("semid.room");
-    assert(unnamed.bundle && unnamed.bundle->room.id == "semid");
+    REQUIRE((unnamed.bundle && unnamed.bundle->room.id == "semid"));
     // Saving under another name writes that name's id, so the copy loads back as its own room.
-    assert(scratch.saveRoom("copia.room", declared, error));
+    REQUIRE(scratch.saveRoom("copia.room", declared, error));
     const auto copy = scratch.loadBundle("copia.room");
-    assert(copy.bundle && copy.bundle->room.id == "copia");
+    REQUIRE((copy.bundle && copy.bundle->room.id == "copia"));
 
     // Files saved by Windows editors start with a UTF-8 BOM and use CRLF: every format reads
     // them through the same TextFormat reader.
@@ -1628,19 +1654,19 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     std::ofstream(directory / "bom.dlg", std::ios::binary) << bom << "[node caixa]\r\nsay \"ola\"\r\n";
     std::ofstream(directory / "bom.actor", std::ios::binary) << bom << "idle.file = a.png\r\n";
     const auto withBom = scratch.loadBundle("bom.room");
-    assert(withBom.bundle && withBom.error.empty());
-    assert(withBom.bundle->room.id == "bom");
-    assert(withBom.bundle->interactions.rules.size() == 1);
-    assert(withBom.bundle->dialogues.findNode("caixa"));
-    assert(ActorFiles::load(directory / "bom.actor").animations);
+    REQUIRE((withBom.bundle && withBom.error.empty()));
+    REQUIRE(withBom.bundle->room.id == "bom");
+    REQUIRE(withBom.bundle->interactions.rules.size() == 1);
+    REQUIRE(withBom.bundle->dialogues.findNode("caixa"));
+    REQUIRE(ActorFiles::load(directory / "bom.actor").animations);
 
-    assert(ActorFiles::parse("").error == "Ator sem animacoes");
-    assert(ActorFiles::parse("idle.file = a.png\nidle.file = b.png").error
-           == "Linha 2: Chave repetida: idle.file");
-    assert(ActorFiles::parse("idle.frames = 0").error
-           == "Animacao idle: Contagem de quadros invalida");
-    assert(ActorFiles::parse("idle.colour = 1").error
-           == "Linha 1: Chave ou valor invalido: idle.colour");
+    REQUIRE(ActorFiles::parse("").error == "Ator sem animacoes");
+    REQUIRE(ActorFiles::parse("idle.file = a.png\nidle.file = b.png").error
+            == "Linha 2: Chave repetida: idle.file");
+    REQUIRE(ActorFiles::parse("idle.frames = 0").error
+            == "Animacao idle: Contagem de quadros invalida");
+    REQUIRE(ActorFiles::parse("idle.colour = 1").error
+            == "Linha 1: Chave ou valor invalido: idle.colour");
 
     // The shared actor is optional and is found by opening it (assets inside an APK are not on
     // the filesystem): absent = no art and no error; present but empty or broken = an error.
@@ -1648,22 +1674,24 @@ void testRoomLibraryAndActors(const std::filesystem::path& directory) {
     std::filesystem::create_directories(pack / "rooms");
     std::filesystem::create_directories(pack / "actors");
     const ActorLoadResult absent = ActorFiles::loadOptional(pack / "actors/player.actor");
-    assert(absent.animations && absent.animations->empty() && absent.error.empty());
+    REQUIRE((absent.animations && absent.animations->empty() && absent.error.empty()));
     RoomLibrary packed;
-    assert(packed.open(pack / "rooms", error) && packed.playerArt().empty());
+    REQUIRE((packed.open(pack / "rooms", error) && packed.playerArt().empty()));
     std::ofstream(pack / "actors/player.actor", std::ios::binary) << "";
-    assert(!packed.open(pack / "rooms", error));
-    assert(error == "player.actor: Ator sem animacoes");
+    REQUIRE(!packed.open(pack / "rooms", error));
+    REQUIRE(error == "player.actor: Ator sem animacoes");
     std::ofstream(pack / "actors/player.actor", std::ios::binary) << "idle.fps = rapido\n";
-    assert(!packed.open(pack / "rooms", error));
-    assert(error == "player.actor: Linha 1: Chave ou valor invalido: idle.fps");
+    REQUIRE(!packed.open(pack / "rooms", error));
+    REQUIRE(error == "player.actor: Linha 1: Chave ou valor invalido: idle.fps");
     std::ofstream(pack / "actors/player.actor", std::ios::binary) << "idle.file = a.png\n";
-    assert(packed.open(pack / "rooms", error) && packed.playerArt().size() == 1);
+    REQUIRE((packed.open(pack / "rooms", error) && packed.playerArt().size() == 1));
 }
 
 // [spawn <id>] in .room (feet + facing) round-trips; change_room takes an optional spawn; the
 // content check finds rooms and spawns that a change_room names but that do not exist.
-void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
+TEST_CASE("testRoomSpawnFilesAndTransitions") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path& directory = testDirectory.path();
     const auto rooms = directory / "spawn" / "rooms";
     std::filesystem::create_directories(rooms);
     std::filesystem::create_directories(directory / "spawn" / "actors");
@@ -1678,18 +1706,19 @@ void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
                        "[spawn door_right]\nfeet = 1150.5, 450\n");
     RoomLibrary library = openLibrary(rooms);
     const RoomLoadResult hall = RoomFiles::load(rooms / "hall.room", sharedPlayerArt());
-    assert(hall.room && hall.error.empty());
-    assert(hall.room->spawns.size() == 2);
-    assert(hall.room->spawns[0] == (RoomSpawn{"door_left", {120.0F, 520.0F}, Facing::right}));
-    assert(hall.room->spawns[1] == (RoomSpawn{"door_right", {1150.5F, 450.0F}, Facing::down}));
+    REQUIRE((hall.room && hall.error.empty()));
+    REQUIRE(hall.room->spawns.size() == 2);
+    REQUIRE(hall.room->spawns[0] == (RoomSpawn{"door_left", {120.0F, 520.0F}, Facing::right}));
+    REQUIRE(hall.room->spawns[1] == (RoomSpawn{"door_right", {1150.5F, 450.0F}, Facing::down}));
 
     std::string error;
-    assert(RoomFiles::save(rooms / "copy.room", *hall.room, error, sharedPlayerArt()));
+    REQUIRE(RoomFiles::save(rooms / "copy.room", *hall.room, error, sharedPlayerArt()));
     std::ifstream savedFile(rooms / "copy.room");
     const std::string saved((std::istreambuf_iterator<char>(savedFile)), {});
-    assert(saved.find("[spawn door_left]\nfeet = 120, 520\nfacing = right\n") != std::string::npos);
+    REQUIRE(saved.find("[spawn door_left]\nfeet = 120, 520\nfacing = right\n")
+            != std::string::npos);
     const RoomLoadResult copy = RoomFiles::load(rooms / "copy.room", sharedPlayerArt());
-    assert(copy.room && copy.room->spawns == hall.room->spawns);
+    REQUIRE((copy.room && copy.room->spawns == hall.room->spawns));
 
     // Saved numbers are the shortest text that reads back the same: no "53.3333321" noise.
     Room fractions = *hall.room;
@@ -1700,128 +1729,107 @@ void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
                                                       .displayWidth = 53.333333F,
                                                       .offsetY = -0.1F}}},
                                  "idle"});
-    assert(RoomFiles::save(rooms / "fractions.room", fractions, error, sharedPlayerArt()));
+    REQUIRE(RoomFiles::save(rooms / "fractions.room", fractions, error, sharedPlayerArt()));
     std::ifstream fractionsFile(rooms / "fractions.room");
     const std::string fractionsText((std::istreambuf_iterator<char>(fractionsFile)), {});
-    assert(fractionsText.find("[spawn door_right]\nfeet = 1150.1, 450.25\n") != std::string::npos);
-    assert(fractionsText.find("bounds = 100.1, 400, 53.333332, 60\n") != std::string::npos);
-    assert(fractionsText.find("animation.idle.fps = 7.5\n") != std::string::npos);
-    assert(fractionsText.find("animation.idle.display_width = 53.333332\n") != std::string::npos);
-    assert(fractionsText.find("animation.idle.offset_y = -0.1\n") != std::string::npos);
-    assert(fractionsText.find("room.width = 1280\n") != std::string::npos);
+    REQUIRE(fractionsText.find("[spawn door_right]\nfeet = 1150.1, 450.25\n") != std::string::npos);
+    REQUIRE(fractionsText.find("bounds = 100.1, 400, 53.333332, 60\n") != std::string::npos);
+    REQUIRE(fractionsText.find("animation.idle.fps = 7.5\n") != std::string::npos);
+    REQUIRE(fractionsText.find("animation.idle.display_width = 53.333332\n") != std::string::npos);
+    REQUIRE(fractionsText.find("animation.idle.offset_y = -0.1\n") != std::string::npos);
+    REQUIRE(fractionsText.find("room.width = 1280\n") != std::string::npos);
     const RoomLoadResult reread = RoomFiles::load(rooms / "fractions.room", sharedPlayerArt());
-    assert(reread.room && reread.room->spawns == fractions.spawns);
+    REQUIRE((reread.room && reread.room->spawns == fractions.spawns));
     const SceneObject& crate = reread.room->scenery.back();
-    assert(SDL_RectsEqualEpsilon(&crate.bounds, &fractions.scenery.back().bounds, 0.0F));
-    assert(crate.animations == fractions.scenery.back().animations);
+    REQUIRE(SDL_RectsEqualEpsilon(&crate.bounds, &fractions.scenery.back().bounds, 0.0F));
+    REQUIRE(crate.animations == fractions.scenery.back().animations);
     // Saving what was read gives the same bytes.
-    assert(RoomFiles::save(rooms / "fractions2.room", *reread.room, error, sharedPlayerArt()));
+    REQUIRE(RoomFiles::save(rooms / "fractions2.room", *reread.room, error, sharedPlayerArt()));
     std::ifstream fractionsAgain(rooms / "fractions2.room");
-    assert(std::string((std::istreambuf_iterator<char>(fractionsAgain)), {}) == fractionsText);
+    REQUIRE(std::string((std::istreambuf_iterator<char>(fractionsAgain)), {}) == fractionsText);
 
     const auto errorOf = [&](const std::string& text) {
         write("bad.room", text);
         const RoomLoadResult result = RoomFiles::load(rooms / "bad.room", sharedPlayerArt());
-        assert(!result.room);
+        REQUIRE(!result.room);
         return result.error;
     };
-    assert(errorOf("[spawn a]\nfacing = up\n") == "Linha 1: Spawn sem feet: a");
-    assert(errorOf("[spawn a]\nfeet = 1, 2\nfacing = norte\n")
-           == "Linha 3: Chave ou valor invalido: facing");
-    assert(errorOf("[spawn a]\nfeet = 1\n") == "Linha 2: Chave ou valor invalido: feet");
-    assert(errorOf("[spawn a]\nfeet = 1, 2\nbounds = 1, 2, 3, 4\n")
-           == "Linha 3: Chave ou valor invalido: bounds");
-    assert(errorOf("[spawn a]\nfeet = 1, 2\nfeet = 3, 4\n") == "Linha 3: Chave repetida: feet");
+    REQUIRE(errorOf("[spawn a]\nfacing = up\n") == "Linha 1: Spawn sem feet: a");
+    REQUIRE(errorOf("[spawn a]\nfeet = 1, 2\nfacing = norte\n")
+            == "Linha 3: Chave ou valor invalido: facing");
+    REQUIRE(errorOf("[spawn a]\nfeet = 1\n") == "Linha 2: Chave ou valor invalido: feet");
+    REQUIRE(errorOf("[spawn a]\nfeet = 1, 2\nbounds = 1, 2, 3, 4\n")
+            == "Linha 3: Chave ou valor invalido: bounds");
+    REQUIRE(errorOf("[spawn a]\nfeet = 1, 2\nfeet = 3, 4\n") == "Linha 3: Chave repetida: feet");
     // D12: what Room::validationIssue finds comes with the line of the block (or key) at fault.
-    assert(errorOf("[spawn a]\nfeet = 1, 2\n[spawn a]\nfeet = 3, 4\n")
-           == "Linha 3: ID de spawn invalido ou repetido");
-    assert(errorOf("[room]\n[spawn a b]\nfeet = 1, 2\n")
-           == "Linha 2: ID de spawn invalido ou repetido");
-    assert(errorOf("[spawn a]\nfacing = up\nfeet = 1300, 2\n") == "Linha 3: Spawn fora da sala: a");
-    assert(errorOf("[spawn ok]\nfeet = 1, 2\n\n[spawn b]\nfacing = up\n")
-           == "Linha 4: Spawn sem feet: b");
+    REQUIRE(errorOf("[spawn a]\nfeet = 1, 2\n[spawn a]\nfeet = 3, 4\n")
+            == "Linha 3: ID de spawn invalido ou repetido");
+    REQUIRE(errorOf("[room]\n[spawn a b]\nfeet = 1, 2\n")
+            == "Linha 2: ID de spawn invalido ou repetido");
+    REQUIRE(errorOf("[spawn a]\nfacing = up\nfeet = 1300, 2\n")
+            == "Linha 3: Spawn fora da sala: a");
+    REQUIRE(errorOf("[spawn ok]\nfeet = 1, 2\n\n[spawn b]\nfacing = up\n")
+            == "Linha 4: Spawn sem feet: b");
     // A [spawn] in the middle does not swallow the room keys after a [room] header.
     write("mixed.room", "[spawn a]\nfeet = 1, 400\n[room]\nplayer.far_speed = 99\n");
     const RoomLoadResult mixed = RoomFiles::load(rooms / "mixed.room", sharedPlayerArt());
-    assert(mixed.room && mixed.room->playerFarSpeed == 99.0F);
+    REQUIRE((mixed.room && mixed.room->playerFarSpeed == 99.0F));
 
     // change_room <sala> [<spawn>]: one or two arguments, never three.
     const auto rulesOf = [](const std::string_view statement) {
         return InteractionFiles::parse("[interact x]\n" + std::string(statement) + "\n", nullptr);
     };
     const auto plain = rulesOf("change_room hall");
-    assert(plain.interactions && plain.interactions->rules[0].effects[0].args.size() == 1);
+    REQUIRE((plain.interactions && plain.interactions->rules[0].effects[0].args.size() == 1));
     const auto spawned = rulesOf("change_room hall door_left # porta");
-    assert(spawned.interactions);
-    assert(spawned.interactions->rules[0].effects[0].args
-           == (std::vector<std::string>{"hall", "door_left"}));
-    assert(rulesOf("change_room hall door_left extra").error
-           == "Linha 2: Use change_room <sala> [<spawn>]");
-    assert(rulesOf("change_room").error == "Linha 2: Use change_room <sala> [<spawn>]");
-    assert(rulesOf("change_room hall porta!").error == "Linha 2: Identificador invalido: porta!");
+    REQUIRE(spawned.interactions);
+    REQUIRE(spawned.interactions->rules[0].effects[0].args
+            == (std::vector<std::string>{"hall", "door_left"}));
+    REQUIRE(rulesOf("change_room hall door_left extra").error
+            == "Linha 2: Use change_room <sala> [<spawn>]");
+    REQUIRE(rulesOf("change_room").error == "Linha 2: Use change_room <sala> [<spawn>]");
+    REQUIRE(rulesOf("change_room hall porta!").error == "Linha 2: Identificador invalido: porta!");
     const auto path = rooms / "spawned.rules";
-    assert(InteractionFiles::save(path, *spawned.interactions, error, nullptr));
+    REQUIRE(InteractionFiles::save(path, *spawned.interactions, error, nullptr));
     std::ifstream rulesFile(path);
     const std::string rulesText((std::istreambuf_iterator<char>(rulesFile)), {});
-    assert(rulesText.find("change_room hall door_left\n") != std::string::npos);
+    REQUIRE(rulesText.find("change_room hall door_left\n") != std::string::npos);
 
     // Content check over a bundle's transitions (rules and dialogue choices).
     RoomBundle bundle{*hall.room, *spawned.interactions, {}};
-    assert(library.transitionsError(bundle).empty());
+    REQUIRE(library.transitionsError(bundle).empty());
     bundle.interactions.rules[0].effects[0].args[1] = "window";
-    assert(library.transitionsError(bundle) == "change_room hall: spawn desconhecido window");
+    REQUIRE(library.transitionsError(bundle) == "change_room hall: spawn desconhecido window");
     bundle.interactions = *plain.interactions;
     bundle.interactions.rules[0].effects[0].args[0] = "nowhere";
-    assert(library.transitionsError(bundle).starts_with("change_room nowhere: "));
+    REQUIRE(library.transitionsError(bundle).starts_with("change_room nowhere: "));
     bundle.interactions.rules.clear();
     DialogueChoice leave{.id = "sair", .text = "Sair"};
     leave.effects = {InteractionEffect::make("change_room", {"hall", "porta"})};
     bundle.dialogues.nodes = {DialogueNode{.id = "guarda", .lines = {}, .choices = {leave}}};
-    assert(library.transitionsError(bundle) == "change_room hall: spawn desconhecido porta");
+    REQUIRE(library.transitionsError(bundle) == "change_room hall: spawn desconhecido porta");
 
     // DEBUG `load <sala>.room [spawn]` enters through the spawn; an unknown one changes nothing.
     Game game(RoomPresets::firstRoom());
     DebugEditor editor;
     editor.setLibrary(library);
-    assert(editor.onTextInput("DEBUG", game) && editor.active());
+    REQUIRE((editor.onTextInput("DEBUG", game) && editor.active()));
     command(editor, game, "load hall.room door_left");
-    assert(editor.status() == "Sala carregada: hall.room em door_left");
-    assert(game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right);
+    REQUIRE(editor.status() == "Sala carregada: hall.room em door_left");
+    REQUIRE((game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right));
     command(editor, game, "load first.room porta!");
-    assert(editor.status() == "Use: load nome.room [spawn] (sem pastas)");
+    REQUIRE(editor.status() == "Use: load nome.room [spawn] (sem pastas)");
     command(editor, game, "load hall.room window");
-    assert(editor.status() == "Spawn desconhecido na sala hall: window");
-    assert(game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right);
+    REQUIRE(editor.status() == "Spawn desconhecido na sala hall: window");
+    REQUIRE((game.scene().room().id == "hall" && game.scene().player().facing() == Facing::right));
     command(editor, game, "save hall2.room extra");
-    assert(editor.status() == "Use: save nome.room (sem pastas)");
+    REQUIRE(editor.status() == "Use: save nome.room (sem pastas)");
 
     // The shipped rooms: every change_room points at a room and spawn that exist.
     RoomLibrary assets = openLibrary(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms");
     for (const char* name : {"first.room", "gallery.room"}) {
         const RoomBundleResult shipped = assets.loadBundle(name);
-        assert(shipped.bundle && assets.transitionsError(*shipped.bundle).empty());
+        REQUIRE((shipped.bundle && assets.transitionsError(*shipped.bundle).empty()));
     }
 }
-}
-
-int main() {
-    const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
-    const auto directory = std::filesystem::temp_directory_path()
-                           / ("pointclick-editor-tests-" + std::to_string(suffix));
-    std::filesystem::create_directory(directory);
-    testEditing(directory);
-    testRoomFiles(directory);
-    testRoomObjectErrorsCarryLines(directory);
-    testDebugRendering();
-    testMultiplatformInputAndRouting();
-    testEditorPreservesSessionState(directory);
-    testInteractionRulesFilesAndValidation(directory);
-    testActionCatalogRoundtrip(directory);
-    testDialogueFiles(directory);
-    testDialogueMenuInput();
-    testDialogueMenuWrapsLongOptions();
-    testTypedTextNeverBecomesSpeech();
-    testRoomLibraryAndActors(directory);
-    testRoomSpawnFilesAndTransitions(directory);
-    std::filesystem::remove_all(directory);
 }

@@ -29,6 +29,16 @@ else()
     set(POINTCLICK_KEEP_ASSERTS -UNDEBUG)
 endif()
 
+# CI turns this on where the build is known to be clean; local builds only report.
+option(POINTCLICK_WARNINGS_AS_ERRORS "Treat the project's warnings as errors (not the dependencies')" OFF)
+if(POINTCLICK_WARNINGS_AS_ERRORS)
+    if(MSVC)
+        list(APPEND POINTCLICK_WARNINGS /WX)
+    else()
+        list(APPEND POINTCLICK_WARNINGS -Werror)
+    endif()
+endif()
+
 option(POINTCLICK_ENABLE_TOOLS "In-game DEBUG editor and its overlay (OFF for store builds)" ON)
 
 # One static library per layer, so the linker rejects a forbidden dependency:
@@ -129,6 +139,13 @@ endforeach()
 set_property(GLOBAL PROPERTY CTEST_TARGETS_ADDED 1)
 include(CTest)
 if(BUILD_TESTING)
+    # doctest: one TEST_CASE per test function, so a failure names the case and the line and the
+    # other cases still run. Its implementation and main() are compiled once, here; the library
+    # links nothing of the project, so each test executable keeps its own per-layer link.
+    pointclick_require_doctest()
+    add_library(pointclick_test_main STATIC tests/support/DoctestMain.cpp)
+    target_include_directories(pointclick_test_main PUBLIC tests)
+    target_link_libraries(pointclick_test_main PUBLIC doctest::doctest)
     # Rooms built in C++ exist only here: the shipped binary never links them.
     add_library(pointclick_test_support STATIC tests/support/RoomPresets.cpp)
     target_include_directories(pointclick_test_support PUBLIC tests)
@@ -158,8 +175,12 @@ if(BUILD_TESTING)
                 POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
         list(APPEND POINTCLICK_TEST_TARGETS pointclick_editor_tests)
     endif()
-    # The regression checks must also run in Release builds.
+    # The regression checks must also run in Release builds. doctest's REQUIRE does not look at
+    # NDEBUG; POINTCLICK_KEEP_ASSERTS stays for any plain assert() a test helper may still use.
+    # One CTest entry per executable; pick cases with the doctest command line, e.g.
+    #   build/debug/pointclick_tests --test-case="testSave*"
     foreach(test_target IN LISTS POINTCLICK_TEST_TARGETS)
+        target_link_libraries(${test_target} PRIVATE pointclick_test_main)
         target_compile_options(${test_target} PRIVATE ${POINTCLICK_WARNINGS}
                 ${POINTCLICK_KEEP_ASSERTS})
         add_test(NAME ${test_target} COMMAND ${test_target})
@@ -181,6 +202,19 @@ if(BUILD_TESTING)
     add_test(NAME pointclick_layer_includes
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerIncludes.cmake)
+endif()
+
+# Mutation fuzz of the content parsers: opt-in, built for a sanitizer run, never part of CTest.
+#   cmake --preset asan -DPOINTCLICK_ENABLE_FUZZ=ON && cmake --build --preset asan
+#   build/asan/pointclick_parser_fuzz [iterations per seed file] [seed]
+option(POINTCLICK_ENABLE_FUZZ "Build pointclick_parser_fuzz (deterministic parser fuzz)" OFF)
+if(POINTCLICK_ENABLE_FUZZ)
+    add_executable(pointclick_parser_fuzz tests/fuzz/ParserFuzz.cpp)
+    target_include_directories(pointclick_parser_fuzz PRIVATE tests)
+    target_link_libraries(pointclick_parser_fuzz PRIVATE pointclick_content)
+    target_compile_options(pointclick_parser_fuzz PRIVATE ${POINTCLICK_WARNINGS})
+    target_compile_definitions(pointclick_parser_fuzz PRIVATE
+            POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 add_custom_command(TARGET pointclick POST_BUILD

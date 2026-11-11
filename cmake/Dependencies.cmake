@@ -154,3 +154,29 @@ if(NOT TARGET SDL3_ttf::SDL3_ttf)
     unset(_pointclick_saved_shared)
     unset(_pointclick_vendor_freetype)
 endif()
+
+# doctest (só para os testes). Mesma regra do SDL3: uma versão de referência com hash fixo.
+# É um header único: o CPM só baixa o arquivo e o target abaixo aponta para ele, sem rodar o
+# CMakeLists do doctest (nada dele é compilado fora dos executáveis de teste). Chamado pelo
+# CMakeLists.txt apenas com BUILD_TESTING ligado, para a build do jogo não baixar nada a mais.
+set(POINTCLICK_DOCTEST_VERSION 2.4.12)
+set(POINTCLICK_DOCTEST_SHA256 73381c7aa4dee704bd935609668cf41880ea7f19fa0504a200e13b74999c2d70)
+
+function(pointclick_require_doctest)
+    if(TARGET doctest::doctest)
+        return()
+    endif()
+    include("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CPM.cmake")
+    CPMAddPackage(
+            NAME doctest
+            VERSION ${POINTCLICK_DOCTEST_VERSION}
+            URL https://github.com/doctest/doctest/archive/refs/tags/v${POINTCLICK_DOCTEST_VERSION}.tar.gz
+            URL_HASH SHA256=${POINTCLICK_DOCTEST_SHA256}
+            DOWNLOAD_ONLY YES
+    )
+    add_library(pointclick_doctest INTERFACE)
+    add_library(doctest::doctest ALIAS pointclick_doctest)
+    # SYSTEM: os avisos do projeto não valem para o header de terceiros.
+    target_include_directories(pointclick_doctest SYSTEM INTERFACE "${doctest_SOURCE_DIR}")
+    target_compile_features(pointclick_doctest INTERFACE cxx_std_20)
+endfunction()

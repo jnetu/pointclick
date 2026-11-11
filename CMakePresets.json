@@ -38,6 +38,26 @@
       }
     },
     {
+      "name": "asan",
+      "displayName": "PointClick Debug + ASan/UBSan (clang ou gcc)",
+      "description": "So o C++ do projeto e instrumentado: um SDL3 compilado pelo CPM e C e fica de fora.",
+      "inherits": "base",
+      "condition": { "type": "notEquals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-sanitize-recover=undefined -fno-omit-frame-pointer"
+      }
+    },
+    {
+      "name": "store",
+      "displayName": "PointClick Release sem ferramentas (loja)",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "POINTCLICK_ENABLE_TOOLS": "OFF"
+      }
+    },
+    {
       "name": "ninja-debug",
       "displayName": "PointClick Debug (Ninja)",
       "inherits": "ninja-base",
@@ -57,6 +77,8 @@
   "buildPresets": [
     { "name": "debug", "configurePreset": "debug", "configuration": "Debug" },
     { "name": "release", "configurePreset": "release", "configuration": "Release" },
+    { "name": "asan", "configurePreset": "asan", "configuration": "Debug" },
+    { "name": "store", "configurePreset": "store", "configuration": "Release" },
     { "name": "ninja-debug", "configurePreset": "ninja-debug", "configuration": "Debug" },
     { "name": "ninja-release", "configurePreset": "ninja-release", "configuration": "Release" }
   ],
@@ -68,6 +90,17 @@
     },
     { "name": "debug", "inherits": "test-base", "configurePreset": "debug", "configuration": "Debug" },
     { "name": "release", "inherits": "test-base", "configurePreset": "release", "configuration": "Release" },
+    {
+      "name": "asan",
+      "inherits": "test-base",
+      "configurePreset": "asan",
+      "configuration": "Debug",
+      "environment": {
+        "ASAN_OPTIONS": "abort_on_error=0:halt_on_error=1:strict_string_checks=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      }
+    },
+    { "name": "store", "inherits": "test-base", "configurePreset": "store", "configuration": "Release" },
     { "name": "ninja-debug", "inherits": "test-base", "configurePreset": "ninja-debug", "configuration": "Debug" },
     { "name": "ninja-release", "inherits": "test-base", "configurePreset": "ninja-release", "configuration": "Release" }
   ]

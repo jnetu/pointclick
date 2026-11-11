@@ -41,6 +41,8 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | UI de Inventário futuro | novo módulo em `src/ui/` consumindo `SessionState` / `Game::useItemOnObject` | modelo em `src/ui/DialogueMenu.*`, `ViewportUiConsumer` em `src/input/InputRouter.hpp`, desenho em `graphics/` |
 | Efeitos visuais de transição de sala | `RoomChangeRequested` / `RoomEntered` em `Application::processGameEvents` | efeito visual temporizado em `graphics/` |
 | Notificação nova para fora do domínio (áudio, autosave, legendas) | struct nova em `src/game/GameEvent.hpp` + `emit` em `src/game/Game.cpp` | consumidor em `Application::processGameEvents`, `testGameEventQueue` em `tests/GameTests.cpp` |
+| Teste novo ou caso de regressão | `TEST_CASE("testNome")` no executável da camada (`tests/*.cpp`, doctest; `REQUIRE`), com pasta própria por `tests/support/TempDirectory.hpp` | link por camada em `CMakeLists.txt` (`pointclick_tests` só `content` + `game`); o caso tem de passar sozinho (`--test-case=`); `docs/ARCHITECTURE.md`, seção "Verificação" |
+| CI, presets de verificação (`asan`, `store`), fuzz dos parsers | `.github/workflows/ci.yml`, `CMakePresets.json`, `tests/fuzz/ParserFuzz.cpp` (`POINTCLICK_ENABLE_FUZZ`, fora do `ctest`) | `README.md` (seção "Testes"), `docs/ROADMAP.md` (3.3: o que a CI ainda não provou); formato ou vocabulário novo ganha uma semente no fuzz |
 | Estado ou regra local da sala (aproximação, picking, fala na tela) | `src/game/Scene.*` | `Game` só coordena; `src/graphics/SceneRenderer.cpp` lê `const Scene&` |
 
 ## Contratos

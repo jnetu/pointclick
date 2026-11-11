@@ -1,8 +1,11 @@
 #include "content/ActorFiles.hpp"
+#include "content/ArtCheck.hpp"
+#include "content/RoomLibrary.hpp"
 #include "content/RoomFiles.hpp"
 #include "support/RoomPresets.hpp"
 #include "game/Game.hpp"
 #include "graphics/EntityRenderer.hpp"
+#include "graphics/FontLibrary.hpp"
 #include "graphics/Renderer.hpp"
 #include "graphics/SpriteLibrary.hpp"
 
@@ -15,6 +18,7 @@
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <vector>
 
 namespace {
 const AnimationSet& sharedPlayerArt() {
@@ -421,6 +425,110 @@ void testGameFrameHasNoDebugDrawing() {
     SDL_Quit();
 }
 
+// F8: art the game can run without is a warning, found before any frame. Runs after
+// testPngRendering, which leaves the 11x11 sheet.png in the folder.
+void testArtWarnings(const std::filesystem::path& directory) {
+    // The header reader agrees with a PNG that SDL wrote, and tells missing from unreadable.
+    const ArtCheck::PngHeader sheet = ArtCheck::readPngHeader(directory / "sheet.png");
+    assert(sheet.status == ArtCheck::PngStatus::ok);
+    assert(sheet.size.width == 11 && sheet.size.height == 11);
+    assert(ArtCheck::readPngHeader(directory / "nope.png").status == ArtCheck::PngStatus::missing);
+    {
+        std::ofstream(directory / "text.png", std::ios::binary)
+                << "isto nao e um PNG, nem de longe";
+    }
+    { std::ofstream(directory / "short.png", std::ios::binary) << "\x89PNG"; }
+    assert(ArtCheck::readPngHeader(directory / "text.png").status
+           == ArtCheck::PngStatus::unreadable);
+    assert(ArtCheck::readPngHeader(directory / "short.png").status
+           == ArtCheck::PngStatus::unreadable);
+
+    // The pure fit check, shared with SpriteLibrary::draw (same cases as testPngRendering).
+    const SpriteClip fits{.file = "sheet.png",
+                          .frameWidth = 4,
+                          .frameHeight = 4,
+                          .frames = 4,
+                          .columns = 2,
+                          .marginX = 1,
+                          .marginY = 1,
+                          .spacingX = 1,
+                          .spacingY = 1};
+    SpriteClip tooMany = fits;
+    tooMany.frames = 8;
+    SpriteClip derived = fits;
+    derived.columns = 0;
+    assert(clipFitsImage(fits, 11, 11) && !clipFitsImage(tooMany, 11, 11));
+    assert(spriteSheetColumns(derived, 11) == 2 && clipFitsImage(derived, 11, 11));
+    assert(clipFitsImage(fits, 10, 10) && !clipFitsImage(fits, 9, 11)
+           && !clipFitsImage(fits, 11, 9));
+    assert(!clipFitsImage(derived, 3, 11));                       // no column fits
+    assert(clipFitsImage(SpriteClip{.file = "sheet.png"}, 1, 1)); // whole image
+
+    Room room = RoomPresets::firstRoom();
+    room.playerAnimations = {
+        {"idle", fits}, {"left", fits}, {"right", fits}, {"up", fits}, {"down", fits}};
+    room.scenery[0].animations = {{"idle", fits}};
+    assert(room.validationError().empty());
+    assert(ArtCheck::warnings(room, directory).empty());
+
+    const std::string object = room.scenery[0].id;
+    room.scenery[0].animations = {{"idle", SpriteClip{.file = "future.png"}},
+                                  {"open", SpriteClip{.file = "future.png"}}, // same file: once
+                                  {"shut", tooMany},
+                                  {"torn", SpriteClip{.file = "text.png"}},
+                                  {"void", SpriteClip{}}};
+    assert(room.validationError().empty()); // none of this refuses the room
+    const std::vector<ArtWarning> found = ArtCheck::warnings(room, directory);
+    assert((found
+            == std::vector<ArtWarning>{
+                {"sprites/future.png", "PNG ausente"},
+                {"sprites/sheet.png", "Corte de " + object + ".shut nao cabe na imagem 11x11"},
+                {"sprites/text.png", "PNG ilegivel"},
+                {"sprites", "Clip " + object + ".void sem arquivo PNG"}}));
+
+    // Fonts: the list comes from FontLibrary, the files from <assets>/fonts.
+    const auto fonts = FontLibrary::files();
+    const auto assets = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets";
+    assert(ArtCheck::warnings(Room{}, {}, assets / "fonts", fonts).empty());
+    const std::vector<ArtWarning> noFonts = ArtCheck::warnings(Room{}, {}, directory, fonts);
+    assert(noFonts.size() == 2); // two files serve the four roles
+    assert(noFonts[0].message == "Fonte ausente" && noFonts[0].file.starts_with("fonts/"));
+}
+
+// F8: a room whose art is missing loads as any other and its frame shows the checkerboard.
+void testRoomWithMissingArtStillRuns() {
+    RoomLibrary library;
+    std::string error;
+    assert(library.open(std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                                / "tests/fixtures/missing_art/rooms",
+                        error));
+    RoomBundleResult loaded = library.loadBundle(RoomLibrary::startRoomFile);
+    assert(loaded.bundle && loaded.error.empty());
+    assert(ArtCheck::warnings(loaded.bundle->room, library.spritesDirectory()).size() == 2);
+
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    assert(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Missing art test", 1280, 720, SDL_WINDOW_HIDDEN);
+    assert(window);
+    Renderer renderer;
+    assert(renderer.initialize(window));
+    renderer.setSpriteRoot(library.spritesDirectory());
+    Game game(std::move(loaded.bundle->room));
+    game.tick(0.05F);
+    renderer.render(game, 1.0F);
+    SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    assert(frame && frame->w == 1280 && frame->h == 720);
+    // ghost: bounds 600,400 96x96, tiles of 12 px starting purple at its top-left corner.
+    expectColor(pixel(frame, 606, 406), 145, 0, 190);
+    expectColor(pixel(frame, 618, 406), 10, 7, 17);
+    expectColor(pixel(frame, 640, 100), 171, 62, 67); // and the rest of the scene is there
+    SDL_DestroySurface(frame);
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 // Counts pixels of the speech fill color (250, 236, 170) and of its dark outline in a frame.
 struct SpeechPixels {
     int fill = 0;
@@ -514,9 +622,11 @@ int main() {
     std::filesystem::create_directory(directory);
     testClipDefinition(directory);
     testPngRendering(directory);
+    testArtWarnings(directory);
     testEntityAnimationSelection(directory);
     testPlayerArtwork();
     testGameFrameHasNoDebugDrawing();
+    testRoomWithMissingArtStillRuns();
     testSpeechUsesTtfText();
     std::filesystem::remove_all(directory);
 }

@@ -38,7 +38,12 @@ std::string SessionSnapshot::validationError() const {
         if (!validIdentifier(object.roomId) || !validIdentifier(object.objectId)) {
             return "Objeto invalido: " + name;
         }
-        if (!object.visible && !object.solidOverride) return "Objeto sem estado: " + name;
+        if (!object.visible && !object.solidOverride && !object.animation) {
+            return "Objeto sem estado: " + name;
+        }
+        if (object.animation && !validIdentifier(*object.animation)) {
+            return "Animacao invalida em " + name + ": " + *object.animation;
+        }
         if (!objectIds.emplace(object.roomId, object.objectId).second) {
             return "Objeto repetido: " + name;
         }
@@ -66,8 +71,9 @@ SessionSnapshot SessionState::snapshot() const {
     out.items = items_;
     for (const auto& [roomId, objects] : roomOverrides_) {
         for (const auto& [objectId, state] : objects) {
-            if (!state.visible && !state.solidOverride) continue; // cleared override
-            out.objects.push_back({roomId, objectId, state.visible, state.solidOverride});
+            if (!state.visible && !state.solidOverride && !state.animation) continue; // cleared
+            out.objects.push_back(
+                    {roomId, objectId, state.visible, state.solidOverride, state.animation});
         }
     }
     std::sort(out.objects.begin(), out.objects.end(), [](const auto& a, const auto& b) {
@@ -100,6 +106,9 @@ bool SessionState::restore(const SessionSnapshot& snapshot, std::string& error) 
         if (object.visible) next.setObjectVisible(object.roomId, object.objectId, *object.visible);
         if (object.solidOverride) {
             next.setObjectSolid(object.roomId, object.objectId, *object.solidOverride);
+        }
+        if (object.animation) {
+            next.setObjectAnimation(object.roomId, object.objectId, *object.animation);
         }
     }
     for (const auto& choice : snapshot.dialogueChoices) {
@@ -217,6 +226,21 @@ bool SessionState::isObjectSolid(const std::string_view roomId,
         return *overrideValue;
     }
     return object.type == SceneObjectType::solid;
+}
+
+void SessionState::setObjectAnimation(const std::string_view roomId,
+                                      const std::string_view objectId,
+                                      const std::string_view animation) {
+    if (!validIdentifier(roomId) || !validIdentifier(objectId) || !validIdentifier(animation)) {
+        return;
+    }
+    roomOverrides_[std::string(roomId)][std::string(objectId)].animation = std::string(animation);
+}
+
+std::string_view SessionState::objectAnimation(const std::string_view roomId,
+                                               const std::string_view objectId) const {
+    const ObjectStateOverride* state = findOverride(roomId, objectId);
+    return state && state->animation ? std::string_view(*state->animation) : std::string_view();
 }
 
 namespace {

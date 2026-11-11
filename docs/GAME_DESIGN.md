@@ -128,7 +128,11 @@ A pasta do editor aparece na parte inferior do painel.
 O formato aceita comentários iniciados por `#`. Arquivos salvos em editores do Windows
 (com BOM UTF-8 no início e quebras de linha CRLF) são lidos normalmente, em todos os
 formatos (`.room`, `.rules`, `.dlg`, `.actor`). Chaves não reconhecidas,
-valores inválidos e IDs repetidos são rejeitados. Os valores numéricos omitidos
+valores inválidos e IDs repetidos são rejeitados, sempre com a linha: `Linha 12: Objeto fora
+da sala: caixa` aponta a chave que causou o erro (`bounds`, `collision`, `animation.initial`,
+`feet`) ou, se ela não está no arquivo, o cabeçalho do `[object]`/`[spawn]`; um ID inválido ou
+repetido é acusado na linha do próprio cabeçalho. Só os erros da sala como um todo (por exemplo
+`far_y deve ser menor que near_y`) vêm sem linha. Os valores numéricos omitidos
 usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.actor`
 (veja abaixo). Nenhum dado de arte vem do C++. Os objetos devem ser declarados no arquivo.
 
@@ -137,7 +141,11 @@ usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.a
 Coloque os PNGs em `assets/sprites`. Cada `*.file` é relativo a essa pasta;
 subpastas também funcionam, por exemplo `personagens/player_idle.png`. O jogo
 procura os sprites ao carregar a sala. Se o arquivo faltar ou o corte não couber
-na imagem, ele desenha um quadriculado roxo e preto no lugar.
+na imagem, ele desenha um quadriculado roxo e preto no lugar. Isso nunca é erro: a sala
+carrega e o jogo roda. O que existe é um **aviso**, antes de o problema aparecer na tela:
+ao carregar a sala o jogo registra no log, uma vez por execução, cada PNG ausente ou ilegível,
+cada corte que não cabe na imagem e cada clip sem arquivo, e o `pointclick --check` lista os
+mesmos casos (mais as fontes ausentes) com o prefixo `aviso:`, sem mudar o código de saída.
 
 ### Arte do jogador (`assets/actors/player.actor`)
 
@@ -235,7 +243,9 @@ animation.open.loop = 0
 O jogo guarda o tempo de animação de cada objeto separadamente. Uma regra
 declarativa pode usar `play_animation porta open` (ou em C++ chamar
 `Game::playObjectAnimation("porta", "open", true, error)`) para iniciar ou
-reiniciar a ação. O clip com `loop = 0` permanece no último quadro;
+reiniciar a ação; para o estado ficar (a porta continuar aberta ao voltar à sala e no save),
+use `set_animation porta open`, que toca o clip do mesmo jeito e o guarda no progresso.
+O clip com `loop = 0` permanece no último quadro;
 `AnimationPlayback::finished(clip)` informa quando terminou (um clip com `fps = 0` e
 `loop = 0` é uma imagem parada e conta como terminado desde o início). `bounds` continua
 definindo a posição, o hit-test de clique e o tamanho visual padrão; `collision`
@@ -342,7 +352,8 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
 | **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |
-| **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
+| **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto. É do momento: ao sair e voltar da sala, ou ao carregar o save, o objeto volta ao estado guardado por `set_animation` (ou a `animation.initial`) |
+| **Efeito** | `set_animation <objectId> <animName>` | Toca o clip **e o guarda no progresso** como estado do objeto (porta que fica aberta). Ao voltar à sala ou carregar o save o objeto já aparece nesse clip, no último quadro se ele não repete (`loop = 0`), sem animar de novo. Vai para o `save.slot` (versão 3) |
 | **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` e imagens paradas, com `fps = 0`, não esperam) |
 | **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
 | **Efeito** | `face <left\|right\|up\|down>` | Vira o player parado para a direção (as mesmas de `PlayerPose`/`[spawn]`); parado, usa `idle_<direção>` se existir. Outra palavra é recusada com a linha (`Direcao invalida: ...`) |
@@ -398,7 +409,7 @@ objeto visível da sala passa a ser clicável.
 ### Sequências e cutscenes
 
 Os efeitos rodam **em ordem e ao longo do tempo**. Efeitos instantâneos (flags, itens,
-visibilidade, colisão, `play_animation`, `change_room`) acontecem na hora; `say`,
+visibilidade, colisão, `play_animation`, `set_animation`, `change_room`) acontecem na hora; `say`,
 `walk_to`, `wait` e `wait_animation` seguram a sequência até terminar. Enquanto isso o
 jogo fica em **modo cutscene**: clicar no cenário não move o personagem nem dispara
 outras regras, só pula a fala atual. O último efeito nunca é esperado, então uma regra
@@ -408,7 +419,7 @@ sequência inteira termina.
 ```ini
 # Puxar a alavanca: animar -> esperar -> andar ate a porta -> falar -> trocar de sala
 [interact alavanca]
-play_animation porta open
+set_animation porta open   # fica aberta ao voltar a sala e no save
 wait_animation porta
 wait 0.5
 walk_to porta

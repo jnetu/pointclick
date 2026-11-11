@@ -29,22 +29,6 @@ std::string pathToUtf8(const std::filesystem::path& path) {
     const auto utf8 = path.u8string();
     return {reinterpret_cast<const char*>(utf8.data()), utf8.size()};
 }
-
-// The sheet slots a clip uses are row-major from firstFrame; checking the furthest column and
-// row they reach is equivalent to checking every frame, in O(1).
-bool clipFitsImage(const SpriteClip& clip, const int columns, const int imageWidth,
-                   const int imageHeight) {
-    const int strideX = clip.frameWidth + clip.spacingX;
-    const int strideY = clip.frameHeight + clip.spacingY;
-    const int firstSlot = clip.firstFrame;
-    const int lastSlot = clip.firstFrame + clip.frames - 1;
-    const int lastRow = lastSlot / columns;
-    const int furthestColumn = firstSlot / columns == lastRow
-                               ? lastSlot % columns
-                               : columns - 1;
-    return clip.marginX + furthestColumn * strideX + clip.frameWidth <= imageWidth
-           && clip.marginY + lastRow * strideY + clip.frameHeight <= imageHeight;
-}
 } // namespace
 
 void SpriteLibrary::beginRoom() {
@@ -109,21 +93,21 @@ bool SpriteLibrary::draw(const SpriteClip& clip, const SDL_FRect target,
 
     SDL_FRect source{0, 0, static_cast<float>(image.width), static_cast<float>(image.height)};
     if (clip.frameWidth > 0 && clip.frameHeight > 0) {
+        // The same pure check the content warnings use (game/SpriteClip): a cut that leaves the
+        // PNG draws the checkerboard.
+        if (!clipFitsImage(clip, image.width, image.height)) {
+            drawMissing(target);
+            return false;
+        }
         const int strideX = clip.frameWidth + clip.spacingX;
         const int strideY = clip.frameHeight + clip.spacingY;
-        const int columns = clip.columns > 0 ? clip.columns
-                            : (image.width - clip.marginX + clip.spacingX) / strideX;
-        if (columns <= 0 || strideY <= 0) { drawMissing(target); return false; }
+        const int columns = spriteSheetColumns(clip, image.width);
         const auto frameRect = [&](const int index) -> SDL_FRect {
             const int slot = clip.firstFrame + index;
             return {static_cast<float>(clip.marginX + (slot % columns) * strideX),
                     static_cast<float>(clip.marginY + (slot / columns) * strideY),
                     static_cast<float>(clip.frameWidth), static_cast<float>(clip.frameHeight)};
         };
-        if (!clipFitsImage(clip, columns, image.width, image.height)) {
-            drawMissing(target);
-            return false;
-        }
         source = frameRect(clip.frameAt(elapsedSeconds));
     }
     SDL_SetTextureScaleMode(image.texture, clip.pixelated ? SDL_SCALEMODE_NEAREST

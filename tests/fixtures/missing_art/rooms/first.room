@@ -1,0 +1,14 @@
+# Arte ausente de proposito (F8): a sala e valida e o jogo roda, desenhando o quadriculado roxo.
+# O teste pointclick_check_missing_art espera que --check avise ("aviso:") e saia com 0.
+# Esta pasta nao tem sprites/, fonts/ nem actors/: os clips do player ficam aqui.
+[room]
+id = first
+player.idle.file = player.png
+player.left.file = player.png
+player.right.file = player.png
+player.up.file = player.png
+player.down.file = player.png
+
+[object ghost]
+bounds = 600, 400, 96, 96
+animation.idle.file = ghost.png

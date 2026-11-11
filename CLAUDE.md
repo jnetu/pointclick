@@ -31,7 +31,8 @@ clang-format **21** (major fixado; `pip install "clang-format==21.*"`), aplicado
 alteradas: `cmake --build --preset debug --target format-check` (ou `format` para corrigir).
 Nunca reformate arquivos inteiros. Lógica dos alvos em `cmake/ClangFormat.cmake`.
 Para rodar com os assets da raiz: `pointclick --rooms assets/rooms`.
-Validar o conteúdo sem abrir janela (salas, `.rules`, `.dlg`, `change_room`; sai ≠ 0 com erro):
+Validar o conteúdo sem abrir janela (salas, `.rules`, `.dlg`, `change_room`; sai ≠ 0 com erro;
+arte ausente é só `aviso:` e não muda o código de saída):
 `pointclick --rooms assets/rooms --check` (também roda no `ctest`). Testar do zero sem mexer no
 save: `--new-game --no-save`; começar numa sala: `--room <sala> [spawn]` (jogo novo).
 Parsing em `src/core/CommandLine.*` (sem SDL), validação em `src/content/ContentCheck.*`.

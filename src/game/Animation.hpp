@@ -21,6 +21,9 @@ public:
     // Returns true when the active animation changed or was restarted.
     bool play(std::string_view name, bool restart = false);
     void tick(float deltaSeconds);
+    // Jumps to the end of a clip that does not repeat (last frame, finished()), as when a room
+    // is entered with the object already in that state. A looping clip is left at its start.
+    void finish(const SpriteClip& clip);
 
     [[nodiscard]] std::string_view name() const;
     [[nodiscard]] float elapsed() const;

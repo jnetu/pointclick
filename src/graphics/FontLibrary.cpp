@@ -38,6 +38,12 @@ FontLibrary::FontSpec FontLibrary::spec(const FontRole role) {
     return {"atkinson-hyperlegible/AtkinsonHyperlegible-Regular.ttf", 24.0F, 0.0F};
 }
 
+std::array<std::string_view, kFontRoleCount> FontLibrary::files() {
+    std::array<std::string_view, kFontRoleCount> list{};
+    for (const FontRole role : kRoles) list[index(role)] = spec(role).file;
+    return list;
+}
+
 FontLibrary::~FontLibrary() {
     close();
 }

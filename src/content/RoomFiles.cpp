@@ -1,6 +1,7 @@
 #include "content/RoomFiles.hpp"
 #include "content/SpriteFields.hpp"
 #include "content/TextFormat.hpp"
+#include "game/Identifier.hpp"
 #include "game/RoomParameters.hpp"
 
 #include <SDL3/SDL_stdinc.h>
@@ -8,9 +9,10 @@
 #include <algorithm>
 #include <cmath>
 #include <locale>
+#include <map>
 #include <optional>
-#include <set>
 #include <sstream>
+#include <vector>
 
 namespace {
 using TextFormat::number;
@@ -86,11 +88,16 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     // Index, not pointer: spawns is a vector that grows with each [spawn] header.
     std::optional<std::size_t> spawn;
     std::string section = "room";
-    std::set<std::string> keys;
+    // Where each key and each [spawn]/[object] header was declared: Room::validationIssue stays
+    // the single source of the rules and this only turns its answer into a line number.
+    std::map<std::string, std::size_t> keys;
+    std::vector<std::size_t> spawnLines;
+    std::vector<std::size_t> objectLines;
     std::size_t lineNumber = 0;
-    const auto fail = [&](const std::string& reason) -> RoomLoadResult {
-        return {{}, "Linha " + std::to_string(lineNumber) + ": " + reason};
+    const auto failAt = [](const std::size_t line, const std::string& reason) -> RoomLoadResult {
+        return {{}, "Linha " + std::to_string(line) + ": " + reason};
     };
+    const auto fail = [&](const std::string& reason) { return failAt(lineNumber, reason); };
     for (std::string line; std::getline(input, line);) {
         ++lineNumber;
         line = trim(line.substr(0, line.find('#')));
@@ -98,8 +105,11 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         if (line == "[room]") { object = nullptr; spawn.reset(); section = "room"; continue; }
         if (line.starts_with("[spawn ") && line.ends_with(']')) {
             const auto id = trim(line.substr(7, line.size() - 8));
+            if (!validIdentifier(id) || room.findSpawn(id))
+                return fail(std::string(Room::spawnIdError));
             object = nullptr;
             spawn = room.spawns.size();
+            spawnLines.push_back(lineNumber);
             room.spawns.push_back({id, {}, Facing::down});
             section = "spawn." + id;
             continue;
@@ -107,6 +117,9 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         if (line.starts_with("[object ") && line.ends_with(']')) {
             spawn.reset();
             const auto id = trim(line.substr(8, line.size() - 9));
+            if (!validIdentifier(id) || room.findObject(id))
+                return fail(std::string(Room::objectIdError));
+            objectLines.push_back(lineNumber);
             room.scenery.push_back({{}, {180, 180, 180, 255}, SceneObjectType::decoration,
                                     {}, id, {}, "idle"});
             object = &room.scenery.back();
@@ -119,7 +132,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         const auto value = trim(line.substr(equal + 1));
         const std::string canonicalKey = object && key.starts_with("sprite.")
                                          ? "animation.idle." + key.substr(7) : key;
-        if (!keys.insert(section + ":" + canonicalKey).second) {
+        if (!keys.emplace(section + ":" + canonicalKey, lineNumber).second) {
             return fail("Chave repetida: " + key);
         }
         bool parsed = false;
@@ -174,12 +187,25 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         if (!parsed) return fail("Chave ou valor invalido: " + key);
     }
     if (input.bad()) return {{}, "Falha de leitura"};
-    for (const RoomSpawn& entry : room.spawns) {
+    for (std::size_t index = 0; index < room.spawns.size(); ++index) {
+        const RoomSpawn& entry = room.spawns[index];
         if (!keys.contains("spawn." + entry.id + ":feet")) {
-            return {{}, "Spawn sem feet: " + entry.id};
+            return failAt(spawnLines[index], "Spawn sem feet: " + entry.id);
         }
     }
-    if (const auto error = room.validationError(); !error.empty()) return {{}, error};
+    if (const auto issue = room.validationIssue(); !issue.message.empty()) {
+        using Subject = RoomValidationIssue::Subject;
+        if (issue.subject == Subject::room) return {{}, issue.message};
+        // The key that fed the error when the file has it; the block header otherwise.
+        const bool isSpawn = issue.subject == Subject::spawn;
+        const std::string block = isSpawn ? "spawn." + room.spawns[issue.index].id
+                                          : "object." + room.scenery[issue.index].id;
+        const auto declared = keys.find(block + ":" + std::string(issue.field));
+        return failAt(declared != keys.end() ? declared->second
+                      : isSpawn              ? spawnLines[issue.index]
+                                             : objectLines[issue.index],
+                      issue.message);
+    }
     return {std::move(room), {}};
 }
 

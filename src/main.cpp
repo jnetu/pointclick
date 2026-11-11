@@ -3,6 +3,7 @@
 #include "content/ContentCheck.hpp"
 #include "core/Application.hpp"
 #include "core/CommandLine.hpp"
+#include "graphics/FontLibrary.hpp"
 
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
@@ -15,6 +16,7 @@
 
 namespace {
 // --check: no window, no SDL subsystem; errors on stderr as "<arquivo>: Linha N: ...".
+// Missing art is "aviso: <sala>: <arquivo>: ..." on stderr too: counted, never the exit code.
 int runContentCheck(std::filesystem::path roomsDirectory) {
     if (roomsDirectory.empty()) {
         const char* base = SDL_GetBasePath();
@@ -25,12 +27,16 @@ int runContentCheck(std::filesystem::path roomsDirectory) {
         const std::u8string basePath(base, base + SDL_strlen(base));
         roomsDirectory = std::filesystem::path(basePath) / "assets" / "rooms";
     }
-    const ContentCheckReport report = checkContent(roomsDirectory);
+    const auto fonts = FontLibrary::files();
+    const ContentCheckReport report = checkContent(roomsDirectory, fonts);
+    for (const ContentProblem& warning : report.warnings) {
+        std::fprintf(stderr, "aviso: %s: %s\n", warning.file.c_str(), warning.message.c_str());
+    }
     for (const ContentProblem& problem : report.problems) {
         std::fprintf(stderr, "%s: %s\n", problem.file.c_str(), problem.message.c_str());
     }
-    std::printf("%zu sala(s) verificada(s), %zu erro(s)\n", report.roomsChecked,
-                report.problems.size());
+    std::printf("%zu sala(s) verificada(s), %zu erro(s), %zu aviso(s)\n", report.roomsChecked,
+                report.problems.size(), report.warnings.size());
     return report.ok() ? 0 : 1;
 }
 } // namespace

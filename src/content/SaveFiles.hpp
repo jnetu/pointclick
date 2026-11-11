@@ -32,20 +32,23 @@ struct ResumeResult {
 };
 
 // The match progress file (SavedGame), in the `key = value` style of .room:
-//   version = 2                          first key; older versions stay readable
+//   version = 3                          first key; older versions stay readable
 //   room = gallery                       <id>.room under the rooms folder
 //   feet = 220, 460
 //   facing = left|right|up|down          since version 2, optional (default down)
 //   flag.<id> = <integer != 0>
 //   item = <id>                          repeatable, inventory order
 //   object.<room>.<object>.visible = 0|1 and .solid = 0|1 (each optional)
+//   object.<room>.<object>.animation = <clip>   since version 3, optional (set_animation)
 //   dialogue = <room>/<node>/<choice>    repeatable, `once` choices already taken
 // '#' starts a comment; unknown or repeated keys and invalid IDs are errors with the line.
 // A new key bumps currentVersion, so an older build refuses the file by version instead of a
 // confusing key error; older versions keep parsing with new fields at their defaults.
-// History: 1 = room, feet, flags, items, objects, dialogue; 2 = + facing.
+// Only stable IDs are stored: a clip (or object) the room no longer has is harmless on load.
+// History: 1 = room, feet, flags, items, objects, dialogue; 2 = + facing;
+//          3 = + object.<room>.<object>.animation.
 namespace SaveFiles {
-inline constexpr int currentVersion = 2;
+inline constexpr int currentVersion = 3;
 inline constexpr std::string_view slotName = "save.slot";
 // SDL_GetPrefPath(organization, application): the per-user writable folder on every platform.
 inline constexpr const char* organization = "pointclick";

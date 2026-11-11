@@ -57,5 +57,8 @@ std::string_view commandLineUsage() {
            "  --new-game            comeca do zero, sem retomar o save\n"
            "  --no-save             nao grava o autosave (o save existente fica intacto)\n"
            "  --room <sala> [spawn] comeca um jogo novo em <sala>.room, no [spawn] indicado\n"
-           "  --check               valida salas, .rules, .dlg e change_room; sai sem abrir janela\n";
+           "  --check               valida salas, .rules, .dlg e change_room; sai sem abrir "
+           "janela\n"
+           "                        (arte ausente: PNG, corte fora da imagem ou fonte, sai como\n"
+           "                        \"aviso:\" e nao muda o codigo de saida)\n";
 }

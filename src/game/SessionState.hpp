@@ -21,6 +21,9 @@ inline constexpr int kMaxFlagValue = 1'000'000'000;
 struct ObjectStateOverride {
     std::optional<bool> visible;
     std::optional<bool> solidOverride;
+    // The clip `set_animation` left the object in (a door that stays open). Only the name: a
+    // clip the room no longer has is ignored and the object shows its initial animation.
+    std::optional<std::string> animation;
 };
 
 // Value copy of the whole SessionState, for saves. snapshot() sorts every list (items keep the
@@ -36,6 +39,7 @@ struct SessionSnapshot {
         std::string objectId;
         std::optional<bool> visible;
         std::optional<bool> solidOverride;
+        std::optional<std::string> animation; // clip name; unknown to the room = harmless
         bool operator==(const ObjectOverride&) const = default;
     };
     struct DialogueChoice {
@@ -89,6 +93,13 @@ public:
     [[nodiscard]] std::optional<bool> objectSolidOverride(std::string_view roomId,
                                                           std::string_view objectId) const;
     [[nodiscard]] bool isObjectSolid(std::string_view roomId, const SceneObject& object) const;
+
+    // The clip an object keeps across room changes and saves (set_animation); empty = none,
+    // the object starts at its initialAnimation.
+    void setObjectAnimation(std::string_view roomId, std::string_view objectId,
+                            std::string_view animation);
+    [[nodiscard]] std::string_view objectAnimation(std::string_view roomId,
+                                                   std::string_view objectId) const;
 
     // Dialogue progress: which `once` choices were already taken, per room + node + choice.
     void markDialogueChoice(std::string_view roomId, std::string_view nodeId,

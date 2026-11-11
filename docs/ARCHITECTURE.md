@@ -18,7 +18,8 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `tests/support/RoomPresets` | Sala, sprites e regras de exemplo em C++ **só para testes** (target `pointclick_test_support`; nem o jogo nem o leitor de salas os linkam) |
 | `content/ActorFiles` | Leitura de `assets/actors/<id>.actor`: clips de um ator compartilhados por todas as salas |
 | `content/RoomLibrary` | Layout dos assets (`rooms/`, `actors/`, `sprites/`) e carga de sala + `.rules` + `.dlg` validados juntos; usado pelo jogo e pelo editor |
-| `content/ContentCheck` | `pointclick --check`: lista a pasta (só desktop), carrega cada sala por `RoomLibrary::loadBundle` + `transitionsError` e devolve os erros por arquivo e linha |
+| `content/ContentCheck` | `pointclick --check`: lista a pasta (só desktop), carrega cada sala por `RoomLibrary::loadBundle` + `transitionsError` e devolve os erros por arquivo e linha, mais os avisos de arte (`ArtCheck`), que nunca reprovam |
+| `content/ArtCheck` | Avisos de arte que o jogo consegue substituir: PNG ausente/ilegível (só o cabeçalho, via `SDL_IOStream`), corte que não cabe (`clipFitsImage`, de `game/SpriteClip`), clip sem arquivo e fonte ausente (lista de fontes injetada). Usado pelo `--check` e por `Application` ao carregar cada sala; nunca recusa nada |
 | `core/CommandLine` | Opções `--rooms`, `--new-game`, `--no-save`, `--room <sala> [spawn]`, `--check`, lidas sem SDL (`pointclick_cli`, testável) |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
@@ -140,6 +141,10 @@ evitando abrir o teclado virtual no boot mobile/console. Enquanto ativo, o edito
 consome texto e teclas de edição. As alterações passam por `Game::applyRoom`;
 ele valida os dados e prepara uma nova navegação (já considerando os overrides de
 visibilidade e `solidOverride` do `SessionState`) antes de substituir o estado.
+Quem lê um `.room` recebe os erros de `Room::validationIssue` já com `Linha N:`:
+`RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]` e de cada chave e só
+traduz o achado (`RoomValidationIssue`: sujeito, posição, campo) para a linha; as regras
+continuam em `Room`, sem cópia no loader.
 Uma edição rejeitada não altera sala, regras, posição ou rota. Uma edição aceita
 interrompe a rota e preserva os pés e todo o `SessionState`.
 
@@ -373,7 +378,7 @@ O save guarda só o progresso, nunca definições nem simulação:
   inválidos (`validIdentifier`) recusados.
 
   ```text
-  version = 2                        # primeira chave; a leitura aceita 1..atual, a gravação usa a atual
+  version = 3                        # primeira chave; a leitura aceita 1..atual, a gravação usa a atual
   room = gallery                     # <id>.room
   feet = 220, 460
   facing = left                      # desde a versão 2, opcional (padrão down)
@@ -381,6 +386,7 @@ O save guarda só o progresso, nunca definições nem simulação:
   item = chave                       # repetível, em ordem
   object.first.red_box.visible = 0   # cada campo opcional
   object.first.red_box.solid = 0
+  object.first.red_box.animation = open  # desde a versão 3, opcional (set_animation)
   dialogue = gallery/mesa/gavetas    # repetível
   ```
 
@@ -388,9 +394,11 @@ O save guarda só o progresso, nunca definições nem simulação:
   incrementa `SaveFiles::currentVersion`** e a leitura das versões anteriores continua (campo
   novo no padrão); como o leitor recusa chaves desconhecidas, um build antigo recusa o arquivo
   pela versão, com mensagem clara. Histórico: 1 = sala, pés, flags, itens, objetos, diálogo;
-  2 = + `facing`. O save guarda só dados com ID estável e coordenadas da sala, nunca índices,
+  2 = + `facing`; 3 = + `object.<sala>.<objeto>.animation` (o clip que `set_animation` deixou no
+  objeto; num arquivo de versão 1 ou 2 essa chave é recusada). O save guarda só dados com ID estável e coordenadas da sala, nunca índices,
   o spawn de entrada ou estado de simulação: mudanças de geometria caem em `placePlayerNear`, e
-  overrides/flags de IDs que deixaram de existir são inofensivos (ficam sem efeito).
+  overrides/flags de IDs que deixaram de existir são inofensivos (ficam sem efeito), inclusive o
+  clip salvo de um objeto: se o objeto não tem mais esse clip, ele mostra `animation.initial`.
 - **Caminho**: `SDL_GetPrefPath(SaveFiles::organization, SaveFiles::application)` +
   `save.slot` (`SaveFiles::defaultSlot`, string liberada com `SDL_free`). Tudo recebe o
   caminho do arquivo, então os testes usam uma pasta temporária. Sem pasta gravável, o jogo
@@ -429,7 +437,15 @@ Fora do escopo: vários slots, menu de save/load e nuvem.
 Os cinco nomes de locomoção do jogador (`idle`, `left`, `right`, `up`, `down`)
 são escolhidos em `Player.cpp`. Para animações de objetos acionadas por puzzles,
 use o efeito declarativo `play_animation <objeto> <clip>` no `.rules` ou
-`Game::playObjectAnimation` em C++; a conclusão de um clip sem repetição pode ser
+`Game::playObjectAnimation` em C++. Os dois são estado de simulação e somem ao trocar de sala.
+Quando o clip é **progresso** (porta que fica aberta), use `set_animation <objeto> <clip>`: ele
+grava o nome do clip em `ObjectStateOverride::animation` (`SessionState::setObjectAnimation`) e
+toca o clip; `ObjectAnimations::rebuild` (chamado por `Scene::apply`) parte desse clip ao entrar
+na sala ou carregar o save, já no último quadro se ele não repete (`AnimationPlayback::finish`).
+Foi escolhido um efeito novo em vez de fazer `play_animation` de clip sem loop persistir: é
+explícito, não muda o que as regras existentes fazem e custou uma entrada no catálogo, sem
+método novo no `ScriptHost`. Uma edição ao vivo da mesma sala (`resetPlayer = false`) mantém o
+que estava tocando; a conclusão de um clip sem repetição pode ser
 consultada com `AnimationPlayback::finished`. Não use um novo valor de
 `SceneObjectType` para cada animação: esse enum expressa apenas se a base autoral
 do objeto bloqueia o caminho por padrão.

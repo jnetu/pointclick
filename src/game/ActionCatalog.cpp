@@ -26,26 +26,37 @@ constexpr float kMaxNumberArgument = 3600.0F;
 
 const EffectDescriptor kEffects[]{
     // Blocks until the line expires or a click skips it.
-    {"say", "Exibe a fala/observacao; espera o tempo de leitura ou um clique", {text}, nullptr,
+    {"say",
+     "Exibe a fala/observacao; espera o tempo de leitura ou um clique",
+     {text},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.say(args[0]);
          return kRunning;
      },
      [](ActionArgs, ActionContext& context) { return context.host.speaking() ? kRunning : kDone; }},
-    {"set_flag", "Ativa uma flag na sessao", {flagId}, nullptr,
+    {"set_flag",
+     "Ativa uma flag na sessao",
+     {flagId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().setFlag(args[0]);
          return kDone;
      },
      nullptr},
-    {"clear_flag", "Limpa uma flag na sessao", {flagId}, nullptr,
+    {"clear_flag",
+     "Limpa uma flag na sessao",
+     {flagId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().clearFlag(args[0]);
          return kDone;
      },
      nullptr},
-    {"add_flag", "Soma <n> (pode ser negativo) ao contador da flag; ausente conta como 0",
-     {flagId, integer}, nullptr,
+    {"add_flag",
+     "Soma <n> (pode ser negativo) ao contador da flag; ausente conta como 0",
+     {flagId, integer},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          int delta = 0;
          (void)parseIntegerArgument(args[1], delta);
@@ -53,61 +64,100 @@ const EffectDescriptor kEffects[]{
          return kDone;
      },
      nullptr},
-    {"give_item", "Adiciona um item ao inventario", {itemId}, nullptr,
+    {"give_item",
+     "Adiciona um item ao inventario",
+     {itemId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().addItem(args[0]);
          return kDone;
      },
      nullptr},
-    {"take_item", "Remove um item do inventario", {itemId}, nullptr,
+    {"take_item",
+     "Remove um item do inventario",
+     {itemId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().removeItem(args[0]);
          return kDone;
      },
      nullptr},
-    {"hide_object", "Esconde um objeto da sala", {objectId}, nullptr,
+    {"hide_object",
+     "Esconde um objeto da sala",
+     {objectId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().setObjectVisible(context.host.roomId(), args[0], false);
          context.host.invalidateNavigation();
          return kDone;
      },
      nullptr},
-    {"show_object", "Revela um objeto da sala", {objectId}, nullptr,
+    {"show_object",
+     "Revela um objeto da sala",
+     {objectId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().setObjectVisible(context.host.roomId(), args[0], true);
          context.host.invalidateNavigation();
          return kDone;
      },
      nullptr},
-    {"set_solid", "Liga (1) ou desliga (0) a colisao e reconstroi a navegacao",
-     {objectId, boolean}, nullptr,
+    {"set_solid",
+     "Liga (1) ou desliga (0) a colisao e reconstroi a navegacao",
+     {objectId, boolean},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().setObjectSolid(context.host.roomId(), args[0], args[1] == "1");
          context.host.invalidateNavigation();
          return kDone;
      },
      nullptr},
-    {"play_animation", "Toca/reinicia um clip configurado no objeto", {objectId, animation},
+    {"play_animation",
+     "Toca/reinicia um clip configurado no objeto",
+     {objectId, animation},
      validateObjectAnimation,
      [](const ActionArgs args, ActionContext& context) {
          context.host.playAnimation(args[0], args[1]);
          return kDone;
      },
      nullptr},
+    // play_animation is of the moment; this one is progress: the clip goes to the session, so
+    // the object is back in it (on its last frame if it does not repeat) when the room is
+    // entered again or the save is loaded.
+    {"set_animation",
+     "Toca o clip e o guarda como estado do objeto: ele continua nesse clip ao voltar a sala "
+     "ou carregar o save",
+     {objectId, animation},
+     validateObjectAnimation,
+     [](const ActionArgs args, ActionContext& context) {
+         context.host.session().setObjectAnimation(context.host.roomId(), args[0], args[1]);
+         context.host.playAnimation(args[0], args[1]);
+         return kDone;
+     },
+     nullptr},
     // Clips with loop = true never end, so waiting on them returns at once.
-    {"wait_animation", "Espera o clip atual do objeto terminar", {objectId}, nullptr,
+    {"wait_animation",
+     "Espera o clip atual do objeto terminar",
+     {objectId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          return context.host.animationFinished(args[0]) ? kDone : kRunning;
      },
      [](const ActionArgs args, ActionContext& context) {
          return context.host.animationFinished(args[0]) ? kDone : kRunning;
      }},
-    {"walk_to", "Anda ate o ponto de aproximacao do objeto e espera chegar", {objectId}, nullptr,
+    {"walk_to",
+     "Anda ate o ponto de aproximacao do objeto e espera chegar",
+     {objectId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          return context.host.walkToObject(args[0]) ? kRunning : kDone;
      },
      [](ActionArgs, ActionContext& context) { return context.host.walking() ? kRunning : kDone; }},
-    {"face", "Vira o player parado para left, right, up ou down", {facing}, nullptr,
+    {"face",
+     "Vira o player parado para left, right, up ou down",
+     {facing},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          if (const std::optional<Facing> facing = parseFacing(args[0])) {
              context.host.facePlayer(*facing);
@@ -115,7 +165,10 @@ const EffectDescriptor kEffects[]{
          return kDone;
      },
      nullptr},
-    {"wait", "Espera alguns segundos", {number}, nullptr,
+    {"wait",
+     "Espera alguns segundos",
+     {number},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          (void)parseNumberArgument(args[0], context.step.value);
          return context.step.value > 0.0F ? kRunning : kDone;
@@ -124,8 +177,10 @@ const EffectDescriptor kEffects[]{
          return context.step.elapsed >= context.step.value ? kDone : kRunning;
      }},
     // Blocks until the conversation ends; the dialogue's own steps run on top of this one.
-    {"start_dialogue", "Abre um no de dialogo da sala e espera a conversa terminar",
-     {dialogueId}, nullptr,
+    {"start_dialogue",
+     "Abre um no de dialogo da sala e espera a conversa terminar",
+     {dialogueId},
+     nullptr,
      [](const ActionArgs args, ActionContext& context) {
          return context.host.startDialogue(args[0]) ? kRunning : kDone;
      },

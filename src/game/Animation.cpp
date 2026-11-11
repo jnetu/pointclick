@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <utility>
 
 const SpriteClip* findAnimation(const AnimationSet& animations,
@@ -23,6 +24,17 @@ bool AnimationPlayback::play(const std::string_view name, const bool restart) {
 void AnimationPlayback::tick(const float deltaSeconds) {
     previousElapsed_ = elapsed_;
     elapsed_ += std::max(deltaSeconds, 0.0F);
+}
+
+void AnimationPlayback::finish(const SpriteClip& clip) {
+    if (clip.loop || clip.fps <= 0.0F) return;
+    float end = static_cast<float>(clip.frames) / clip.fps;
+    // The division may round down: step up until finished() agrees.
+    while (end * clip.fps < static_cast<float>(clip.frames)) {
+        end = std::nextafter(end, std::numeric_limits<float>::infinity());
+    }
+    previousElapsed_ = end; // nothing to interpolate: it was never seen moving
+    elapsed_ = end;
 }
 
 std::string_view AnimationPlayback::name() const { return name_; }

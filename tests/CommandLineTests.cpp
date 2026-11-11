@@ -85,6 +85,28 @@ void testCheckShippedAssets() {
     const ContentCheckReport report = checkContent(rooms);
     assert(report.ok());
     assert(report.roomsChecked == 2);
+    assert(report.warnings.empty()); // every PNG exists and every cut fits it
+
+    // F8: a font the game would open and the folder lacks is a warning, never an error.
+    const std::string_view fonts[]{"lora/Lora-Regular.ttf", "nope/Missing.ttf", "nope/Missing.ttf"};
+    const ContentCheckReport withFonts = checkContent(rooms, fonts);
+    assert(withFonts.ok() && withFonts.warnings.size() == 1);
+    assert(withFonts.warnings[0].file == "assets");
+    assert(withFonts.warnings[0].message == "fonts/nope/Missing.ttf: Fonte ausente");
+}
+
+// F8: missing art is reported and counted, and the folder still passes (exit code 0).
+void testCheckWarnsAboutMissingArt() {
+    const auto rooms = std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                       / "tests/fixtures/missing_art/rooms";
+    const ContentCheckReport report = checkContent(rooms);
+    assert(report.ok() && report.problems.empty());
+    assert(report.roomsChecked == 1);
+    // One warning per file, however many clips use it.
+    assert(report.warnings.size() == 2);
+    assert(report.warnings[0].file == "first.room");
+    assert(report.warnings[0].message == "sprites/player.png: PNG ausente");
+    assert(report.warnings[1].message == "sprites/ghost.png: PNG ausente");
 }
 
 void testCheckReportsErrorsByFileAndLine(const std::filesystem::path& directory) {
@@ -124,6 +146,7 @@ void testCheckReportsErrorsByFileAndLine(const std::filesystem::path& directory)
 int main() {
     testParseCommandLine();
     testCheckShippedAssets();
+    testCheckWarnsAboutMissingArt();
 
     const auto suffix = std::chrono::steady_clock::now().time_since_epoch().count();
     const auto directory = std::filesystem::temp_directory_path()

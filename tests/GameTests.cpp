@@ -1380,7 +1380,7 @@ void testSaveRoundTrip(const std::filesystem::path& directory) {
     assert(SaveFiles::save(path, saved, error));
     assert(!std::filesystem::exists(directory / "save.slot.tmp"));
     const std::string firstWrite = readAll(path);
-    assert(firstWrite.find("version = 2\n") != std::string::npos);
+    assert(firstWrite.find("version = 3\n") != std::string::npos);
     assert(firstWrite.find("facing = down\n") != std::string::npos);
     assert(firstWrite.find("object.first.red_box.visible = 0\n") != std::string::npos);
     assert(firstWrite.find("dialogue = gallery/mesa/gavetas\n") != std::string::npos);
@@ -1418,6 +1418,153 @@ void testSaveRoundTrip(const std::filesystem::path& directory) {
     // No file is no save and no error.
     const SaveLoadResult missing = SaveFiles::load(directory / "nenhum.slot");
     assert(!missing.save && missing.error.empty());
+}
+
+// C4: the clip `set_animation` leaves an object in is progress. It survives leaving the room
+// and the save (version 3), and comes back on its last frame instead of playing again.
+void testObjectAnimationPersists(const std::filesystem::path& directory) {
+    Room room = RoomPresets::firstRoom();
+    room.id = "hall";
+    const SpriteClip closed{.file = "door_closed.png"};
+    const SpriteClip open{.file = "door_open.png",
+                          .frameWidth = 8,
+                          .frameHeight = 8,
+                          .frames = 3,
+                          .fps = 7.0F,
+                          .loop = false};
+    const SpriteClip sway{.file = "door_sway.png",
+                          .frameWidth = 8,
+                          .frameHeight = 8,
+                          .frames = 2,
+                          .fps = 4.0F,
+                          .loop = false};
+    SceneObject& door = room.scenery[1]; // red_box
+    const std::string doorId = door.id;
+    door.animations = {{"idle", closed}, {"open", open}, {"sway", sway}};
+    SceneObject& lamp = room.scenery[0];
+    const std::string lampId = lamp.id;
+    lamp.animations = {{"idle", closed}, {"sway", sway}};
+    Room elsewhere = RoomPresets::firstRoom();
+    elsewhere.id = "elsewhere";
+
+    const RoomInteractions rules{{
+        {.trigger = InteractionTrigger::interact(doorId),
+         .conditions = {InteractionCondition::make("flag_not_set", {"door_open"})},
+         .effects = {InteractionEffect::make("set_flag", {"door_open"}),
+                     InteractionEffect::make("set_solid", {doorId, "0"}),
+                     InteractionEffect::make("set_animation", {doorId, "open"}),
+                     InteractionEffect::make("play_animation", {lampId, "sway"}),
+                     InteractionEffect::make("wait_animation", {doorId})}},
+        // Afterwards: a passing play_animation over the saved state.
+        {.trigger = InteractionTrigger::interact(doorId),
+         .effects = {InteractionEffect::make("play_animation", {doorId, "sway"})}},
+    }};
+    const auto clickDoor = [&](Game& game) {
+        const SDL_FRect bounds = game.scene().room().findObject(doorId)->bounds;
+        game.onClick({bounds.x + bounds.w * 0.5F, bounds.y + bounds.h * 0.5F});
+        for (int i = 0; i < 300; ++i) game.tick(0.05F);
+        assert(!game.inCutscene());
+    };
+    const auto shownOpen = [&](const Game& game) {
+        const AnimationPlayback* playback = game.scene().objectAnimation(doorId);
+        // Already over: last frame on the very first render, nothing for a script to wait on.
+        return playback && playback->name() == "open" && playback->finished(open)
+               && open.frameAt(playback->interpolatedElapsed(0.0F)) == open.frames - 1
+               && game.scene().animationFinished(doorId);
+    };
+
+    Game game(room);
+    game.setInteractions(rules);
+    assert(game.scene().objectAnimation(doorId)->name() == "idle");
+    clickDoor(game);
+    assert(game.session().hasFlag("door_open") && shownOpen(game));
+    assert(game.session().objectAnimation("hall", doorId) == "open");
+    assert(game.session().objectAnimation("hall", lampId).empty()); // play_animation: not saved
+    assert(game.scene().objectAnimation(lampId)->name() == "sway");
+
+    // Leaving and coming back: the door is open at once; the lamp is back at its initial clip.
+    game.loadRoom(elsewhere);
+    assert(game.session().objectAnimation("hall", doorId) == "open");
+    game.loadRoom(room);
+    assert(shownOpen(game));
+    assert(game.scene().objectAnimation(lampId)->name() == "idle");
+    assert(!game.scene().isObjectSolid(*game.scene().room().findObject(doorId)));
+
+    // play_animation stays of the moment: it shows now and is gone on the next visit.
+    game.setInteractions(rules);
+    clickDoor(game);
+    assert(game.scene().objectAnimation(doorId)->name() == "sway");
+    assert(game.session().objectAnimation("hall", doorId) == "open");
+    game.loadRoom(elsewhere);
+    game.loadRoom(room);
+    assert(shownOpen(game));
+
+    // A live edit of the same room (DebugEditor) keeps what is playing, as before.
+    std::string error;
+    assert(game.playObjectAnimation(doorId, "sway", true, error));
+    assert(game.applyRoom(room, false, error));
+    assert(game.scene().objectAnimation(doorId)->name() == "sway");
+
+    // Save version 3: deterministic round-trip of the new key.
+    const SavedGame saved = game.savedGame();
+    const std::string text = SaveFiles::serialize(saved);
+    assert(text.find("version = 3\n") != std::string::npos);
+    assert(text.find("object.hall." + doorId + ".solid = 0\nobject.hall." + doorId
+                     + ".animation = open\n")
+           != std::string::npos);
+    const SaveLoadResult parsed = SaveFiles::parse(text);
+    assert(parsed.save && *parsed.save == saved);
+    assert(SaveFiles::serialize(*parsed.save) == text);
+    const auto path = directory / "animation.slot";
+    assert(SaveFiles::save(path, saved, error));
+    const SaveLoadResult loaded = SaveFiles::load(path);
+    assert(loaded.save && *loaded.save == saved && readAll(path) == text);
+    // An override with nothing but the clip is a state of its own.
+    SessionState onlyClip;
+    onlyClip.setObjectAnimation("hall", "window", "open");
+    const SessionSnapshot clipSnapshot = onlyClip.snapshot();
+    assert(clipSnapshot.objects.size() == 1 && clipSnapshot.validationError().empty());
+    assert(clipSnapshot.objects[0].animation == std::optional<std::string>("open"));
+    assert(SaveFiles::parse(SaveFiles::serialize({"hall", {1.0F, 2.0F}, clipSnapshot}))
+                   .save->session
+           == clipSnapshot);
+
+    // Loading the save: the door shows open from the first frame, without animating again.
+    SessionState restored;
+    assert(restored.restore(loaded.save->session, error));
+    Game resumed(room, std::move(restored));
+    assert(shownOpen(resumed) && resumed.session().hasFlag("door_open"));
+    assert(resumed.savedGame().session == saved.session);
+
+    // Version 2 files still load (no animation); the new key is refused in them by version.
+    const std::string v2 = "version = 2\nroom = hall\nfeet = 10, 20\nfacing = up\n"
+                           "flag.door_open = 1\nobject.hall."
+                           + doorId + ".solid = 0\n";
+    const SaveLoadResult older = SaveFiles::parse(v2);
+    assert(older.save && older.save->facing == Facing::up);
+    assert(older.save->session.objects.size() == 1);
+    assert(!older.save->session.objects[0].animation);
+    assert(older.save->session.objects[0].solidOverride == std::optional<bool>(false));
+    assert(SaveFiles::parse(v2 + "object.hall." + doorId + ".animation = open\n").error
+           == "Linha 7: Chave ou valor invalido: object.hall." + doorId + ".animation");
+    const std::string v3 = "version = 3\nroom = hall\nfeet = 10, 20\n";
+    assert(SaveFiles::parse(v3 + "object.hall.door.animation = a b\n").error
+           == "Linha 4: Chave ou valor invalido: object.hall.door.animation");
+    assert(SaveFiles::parse(v3 + "object.hall.door.animation = open\n").save);
+
+    // A clip (or object) the room no longer has is harmless: the initial animation shows.
+    SessionState stale;
+    stale.setObjectAnimation("hall", doorId, "melted");
+    stale.setObjectAnimation("hall", "removed_object", "open");
+    stale.setObjectAnimation("hall", lampId, "not valid"); // refused: not an identifier
+    assert(stale.objectAnimation("hall", lampId).empty());
+    Game tolerant(room, std::move(stale));
+    assert(tolerant.scene().objectAnimation(doorId)->name() == "idle");
+    assert(tolerant.scene().objectAnimation(lampId)->name() == "idle");
+    SessionSnapshot invalid = tolerant.session().snapshot();
+    invalid.objects[0].animation = "a b";
+    SessionState untouched;
+    assert(!untouched.restore(invalid, error) && error.starts_with("Animacao invalida em hall."));
 }
 
 void testSaveRestoresPuzzleProgress(const std::filesystem::path& directory) {
@@ -1478,7 +1625,7 @@ void testSaveFacingAndOlderVersions(const std::filesystem::path& directory) {
     SavedGame saved{"gallery", {300.0F, 500.0F}, {}};
     saved.facing = Facing::left;
     const std::string text = SaveFiles::serialize(saved);
-    assert(text.find("version = 2\nroom = gallery\nfeet = 300, 500\nfacing = left\n")
+    assert(text.find("version = 3\nroom = gallery\nfeet = 300, 500\nfacing = left\n")
            != std::string::npos);
     const SaveLoadResult parsed = SaveFiles::parse(text);
     assert(parsed.save && *parsed.save == saved);
@@ -1573,7 +1720,7 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(SaveFiles::parse(header + "# ok\nflag.a = -2\n").save);
     assert(errorOf("") == "Save vazio ou sem version");
     assert(errorOf("# so comentario\n") == "Save vazio ou sem version");
-    assert(errorOf("version = 3\nroom = first\n") == "Linha 1: Versao de save desconhecida: 3");
+    assert(errorOf("version = 4\nroom = first\n") == "Linha 1: Versao de save desconhecida: 4");
     assert(errorOf("version = 0\n") == "Linha 1: Versao de save desconhecida: 0");
     assert(errorOf("room = first\nversion = 1\n") == "Linha 1: A primeira chave deve ser version");
     assert(errorOf(header + "camera = 1, 2\n") == "Linha 4: Chave desconhecida: camera");
@@ -1811,6 +1958,7 @@ int main() {
                            / ("pointclick-save-tests-" + std::to_string(suffix));
     std::filesystem::create_directory(directory);
     testSaveRoundTrip(directory);
+    testObjectAnimationPersists(directory);
     testSaveRestoresPuzzleProgress(directory);
     testSaveFacingAndOlderVersions(directory);
     testShortestNumbersInSave();

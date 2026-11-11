@@ -16,6 +16,8 @@
 #endif
 
 #include <memory>
+#include <string>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -36,6 +38,9 @@ private:
     // the room is applied and the feet go back where they were. Nothing changes on false.
     // spawnId places a new game at a `[spawn]` of that room (empty = playerStart).
     bool startGameplay(RoomBundle bundle, const SavedGame* save, std::string_view spawnId = {});
+    // Missing art never blocks a room: each warning goes to the log once per execution, when
+    // the room is loaded and before the checkerboard shows up in a frame.
+    void logArtWarnings(const Room& room);
     // The save in the pref path, if there is a valid one; otherwise false and a new game.
     bool resumeSavedGame();
     // Routes the domain's notifications: room changes and the autosave's stable points.
@@ -69,6 +74,7 @@ private:
     std::filesystem::path savePath_; // empty = no writable folder, saves disabled
     AutosavePolicy autosave_;
     bool autosaveErrorLogged_ = false;
+    std::unordered_set<std::string> artWarningsLogged_;
     bool lifecycleWatchInstalled_ = false;
     std::vector<GameEvent> gameEvents_; // reused drain buffer
     Renderer renderer_;

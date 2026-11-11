@@ -48,7 +48,7 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 | `--new-game` | Começa do zero, sem retomar o `save.slot` |
 | `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`). Um save recusado (corrompido ou de versão desconhecida) também fica onde está, sem virar `save.slot.bad`: o jogo avisa no log e começa do zero |
 | `--room <sala> [spawn]` | Começa um jogo **novo** em `<sala>.room`, no `[spawn]` indicado (sem ele: `player.start`). Não retoma o save; combine com `--no-save` para não sobrescrevê-lo |
-| `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Só aceita `--rooms` |
+| `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Arte ausente (PNG, corte que não cabe na imagem, fonte) sai como aviso e não muda o código de saída. Só aceita `--rooms` |
 
 ```sh
 ./build/debug/pointclick --rooms assets/rooms --check
@@ -58,6 +58,13 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 O `--check` imprime cada erro como `<arquivo>: Linha N: <motivo>` na saída de erro, um resumo
 na saída padrão, e sai com `0` (tudo válido) ou `1` (algum erro); serve a CI. Opção inválida
 sai com `2` e mostra o uso.
+
+Arte que o jogo consegue substituir não é erro: PNG ausente ou ilegível, corte de spritesheet
+que não cabe na imagem, clip sem arquivo e fonte ausente saem como
+`aviso: <sala>: <arquivo>: <motivo>` na saída de erro, entram na contagem do resumo
+(`N sala(s) verificada(s), N erro(s), N aviso(s)`) e **não** mudam o código de saída. O jogo
+roda do mesmo jeito (quadriculado roxo no lugar do sprite, fonte de debug no lugar da TTF) e
+registra os mesmos avisos no log ao carregar cada sala, uma vez por execução.
 
 - [Guia para game design](docs/GAME_DESIGN.md): parâmetros, controles, colisões e novas salas.
 - [Arquitetura e novas mecânicas](docs/ARCHITECTURE.md): responsabilidades e pontos de extensão.

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <set>
+#include <utility>
 
 float Room::depthAt(const float feetY) const {
     const float range = std::max(nearDepthY - farDepthY, 1.0F);
@@ -57,52 +58,57 @@ std::optional<RoomSpawn> Room::entryPoint(const std::string_view spawnId) const 
     return std::nullopt;
 }
 
-std::string Room::validationError() const {
-    if (!validIdentifier(id)) return "ID da sala invalido (use letras, numeros, _ ou -)";
+RoomValidationIssue Room::validationIssue() const {
+    using Subject = RoomValidationIssue::Subject;
+    const auto issue = [](std::string message) { return RoomValidationIssue{std::move(message)}; };
+    if (!validIdentifier(id)) return issue("ID da sala invalido (use letras, numeros, _ ou -)");
     for (const auto& parameter : roomParameters()) {
         const float value = parameter.read(*this);
         if (!std::isfinite(value) || value < parameter.minimum || value > parameter.maximum) {
-            return "Fora do intervalo: " + std::string(parameter.key);
+            return issue("Fora do intervalo: " + std::string(parameter.key));
         }
     }
-    if (farDepthY >= nearDepthY) return "far_y deve ser menor que near_y";
-    if (nearDepthY > height) return "near_y nao pode ultrapassar a altura da sala";
-    if (wallBottomY > walkableTopY) return "walkable_y deve ficar abaixo da parede";
+    if (farDepthY >= nearDepthY) return issue("far_y deve ser menor que near_y");
+    if (nearDepthY > height) return issue("near_y nao pode ultrapassar a altura da sala");
+    if (wallBottomY > walkableTopY) return issue("walkable_y deve ficar abaixo da parede");
     if (wallBottomY > height - 2.0F || walkableTopY > height - 1.0F) {
-        return "Parede e chao caminhavel devem caber na altura da sala";
+        return issue("Parede e chao caminhavel devem caber na altura da sala");
     }
     if (vanishingPointX < 0.0F || vanishingPointX > width) {
-        return "vanishing_x fora da largura da sala";
+        return issue("vanishing_x fora da largura da sala");
     }
     if (playerStart.x < 0.0F || playerStart.x >= width
         || playerStart.y < 0.0F || playerStart.y >= height) {
-        return "Posicao inicial do player fora da sala";
+        return issue("Posicao inicial do player fora da sala");
     }
     std::set<std::string_view> spawnIds;
-    for (const RoomSpawn& spawn : spawns) {
+    for (std::size_t index = 0; index < spawns.size(); ++index) {
+        const RoomSpawn& spawn = spawns[index];
         if (!validIdentifier(spawn.id) || !spawnIds.insert(spawn.id).second) {
-            return "ID de spawn invalido ou repetido";
+            return {std::string(spawnIdError), Subject::spawn, index, {}};
         }
         if (!std::isfinite(spawn.feet.x) || !std::isfinite(spawn.feet.y) || spawn.feet.x < 0.0F
             || spawn.feet.x >= width || spawn.feet.y < 0.0F || spawn.feet.y >= height) {
-            return "Spawn fora da sala: " + spawn.id;
+            return {"Spawn fora da sala: " + spawn.id, Subject::spawn, index, "feet"};
         }
     }
     const float largestScale = std::max(farScale, nearScale);
     if (playerBaseSize.x * largestScale >= World::width
         || playerBaseSize.y * largestScale >= World::height) {
-        return "O tamanho escalado do player deve caber na tela";
+        return issue("O tamanho escalado do player deve caber na tela");
     }
     for (const float fraction : floorGuideFractions) {
-        if (!std::isfinite(fraction) || fraction < 0 || fraction > 1) return "Linhas do chao: use 0 a 1";
+        if (!std::isfinite(fraction) || fraction < 0 || fraction > 1)
+            return issue("Linhas do chao: use 0 a 1");
     }
     for (const std::string_view name : playerLocomotionAnimations) {
-        if (!findAnimation(playerAnimations, name)) return "Animacao obrigatoria do player: " + std::string(name);
+        if (!findAnimation(playerAnimations, name))
+            return issue("Animacao obrigatoria do player: " + std::string(name));
     }
     for (const auto& [name, clip] : playerAnimations) {
-        if (!validIdentifier(name)) return "Nome de animacao do player invalido: " + name;
+        if (!validIdentifier(name)) return issue("Nome de animacao do player invalido: " + name);
         if (const auto problem = clip.validationError(); !problem.empty()) {
-            return "Animacao do player " + name + ": " + problem;
+            return issue("Animacao do player " + name + ": " + problem);
         }
     }
     const auto validRect = [](const SDL_FRect r) {
@@ -110,32 +116,47 @@ std::string Room::validationError() const {
                && std::isfinite(r.h) && r.w > 0 && r.h > 0;
     };
     std::set<std::string> ids;
-    for (const auto& object : scenery) {
+    for (std::size_t index = 0; index < scenery.size(); ++index) {
+        const SceneObject& object = scenery[index];
+        const auto objectIssue = [&](std::string message, const std::string_view field = {}) {
+            return RoomValidationIssue{std::move(message), Subject::object, index, field};
+        };
         if (!validIdentifier(object.id) || !ids.insert(object.id).second) {
-            return "ID de objeto invalido ou repetido";
+            return objectIssue(std::string(objectIdError));
         }
         if (!validRect(object.bounds) || object.bounds.x < 0 || object.bounds.y < 0
             || object.bounds.x + object.bounds.w > width
-            || object.bounds.y + object.bounds.h > height) return "Objeto fora da sala: " + object.id;
-        if (!validIdentifier(object.initialAnimation)) return "Animacao inicial invalida: " + object.id;
+            || object.bounds.y + object.bounds.h > height) {
+            return objectIssue("Objeto fora da sala: " + object.id, "bounds");
+        }
+        if (!validIdentifier(object.initialAnimation)) {
+            return objectIssue("Animacao inicial invalida: " + object.id, "animation.initial");
+        }
         if (!object.animations.empty() && !findAnimation(object.animations, object.initialAnimation)) {
-            return "Animacao inicial ausente: " + object.id;
+            return objectIssue("Animacao inicial ausente: " + object.id, "animation.initial");
         }
         for (const auto& [name, clip] : object.animations) {
-            if (!validIdentifier(name)) return "Nome de animacao invalido: " + object.id;
+            if (!validIdentifier(name))
+                return objectIssue("Nome de animacao invalido: " + object.id);
             if (const auto problem = clip.validationError(); !problem.empty()) {
-                return "Animacao de " + object.id + " (" + name + "): " + problem;
+                return objectIssue("Animacao de " + object.id + " (" + name + "): " + problem);
             }
         }
         const auto base = object.collisionFootprint;
         if (!std::isfinite(base.x) || !std::isfinite(base.y) || !std::isfinite(base.w)
-            || !std::isfinite(base.h)) return "Base de colisao invalida: " + object.id;
+            || !std::isfinite(base.h)) {
+            return objectIssue("Base de colisao invalida: " + object.id, "collision");
+        }
         if (object.type == SceneObjectType::solid || base.w != 0 || base.h != 0) {
             if (!validRect(base) || base.x < 0 || base.y < 0
                 || base.x + base.w > object.bounds.w || base.y + base.h > object.bounds.h) {
-                return "Base de colisao invalida: " + object.id;
+                return objectIssue("Base de colisao invalida: " + object.id, "collision");
             }
         }
     }
     return {};
+}
+
+std::string Room::validationError() const {
+    return validationIssue().message;
 }

@@ -1,15 +1,22 @@
 #include "game/ObjectAnimations.hpp"
 
 #include "game/Room.hpp"
+#include "game/SessionState.hpp"
 
 #include <algorithm>
 #include <utility>
 
-void ObjectAnimations::rebuild(const Room& room, const ObjectAnimations* previous) {
+void ObjectAnimations::rebuild(const Room& room, const SessionState& session,
+                               const ObjectAnimations* previous) {
     StringMap<AnimationPlayback> next;
     for (const SceneObject& object : room.scenery) {
         if (object.animations.empty()) continue;
         AnimationPlayback playback(object.initialAnimation);
+        const std::string_view saved = session.objectAnimation(room.id, object.id);
+        if (const SpriteClip* clip = findAnimation(object.animations, saved)) {
+            playback.play(saved, true);
+            playback.finish(*clip);
+        }
         if (previous) {
             if (const AnimationPlayback* old = previous->find(object.id);
                 old && findAnimation(object.animations, old->name())) {

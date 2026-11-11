@@ -8,6 +8,8 @@
 #include <SDL3/SDL_rect.h>
 
 #include <array>
+#include <cstddef>
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -24,6 +26,20 @@ struct RoomSpawn {
         return id == other.id && feet.x == other.feet.x && feet.y == other.feet.y
                && facing == other.facing;
     }
+};
+
+// What Room::validationIssue found and where: the loader maps it to the line that declared it.
+struct RoomValidationIssue {
+    enum class Subject : std::uint8_t { room, spawn, object };
+
+    std::string message; // empty = valid
+    Subject subject = Subject::room;
+    // Position in Room::spawns / Room::scenery. Only says where the entry was declared (two
+    // entries may share a bad ID); never use it to address an object.
+    std::size_t index = 0;
+    // The member at fault, by its .room key ("feet", "bounds", "collision",
+    // "animation.initial"); empty when the whole block is to blame.
+    std::string_view field{};
 };
 
 // Room definition only. Content supplies player art defaults when loading files.
@@ -75,7 +91,13 @@ struct Room {
     // The entry for change_room: empty id = playerStart facing down; unknown id = nullopt.
     [[nodiscard]] std::optional<RoomSpawn> entryPoint(std::string_view spawnId) const;
 
-    // Empty means valid. Invalid designer data must never enter the simulation.
+    // Shared with loaders that refuse a bad ID on the header line itself.
+    static constexpr std::string_view spawnIdError = "ID de spawn invalido ou repetido";
+    static constexpr std::string_view objectIdError = "ID de objeto invalido ou repetido";
+
+    // The single source of the room rules. Empty message means valid. Invalid designer data
+    // must never enter the simulation.
+    [[nodiscard]] RoomValidationIssue validationIssue() const;
     [[nodiscard]] std::string validationError() const;
 
 private:

@@ -74,7 +74,7 @@ bool Scene::apply(Room room, const bool resetPlayer, std::string& error,
         feet = *nearest;
     }
     ObjectAnimations animations;
-    animations.rebuild(room, resetPlayer ? nullptr : &objectAnimations_);
+    animations.rebuild(room, session_, resetPlayer ? nullptr : &objectAnimations_);
     room_ = std::move(room);
     std::swap(navigation_, scratchNavigation_);
     player_ = Player(feet, facing);

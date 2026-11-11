@@ -22,6 +22,8 @@ public:
         float outline;         // logical pixels of dark outline; 0 = none
     };
     [[nodiscard]] static FontSpec spec(FontRole role);
+    // The file of every role (repeats included), for the content check of missing fonts.
+    [[nodiscard]] static std::array<std::string_view, kFontRoleCount> files();
 
     FontLibrary() = default;
     ~FontLibrary();

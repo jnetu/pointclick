@@ -8,6 +8,12 @@ os citam.
 **Atualização de 11/11/2026:** C13, D9, D10 e D11 foram concluídos (mudanças feitas sobre
 `65bf916`) e passaram para a seção 3.1. O resto do documento continua sendo a revisão de 10/11.
 
+**Segunda atualização de 11/11/2026:** D12 (erros de sala com linha), F8 (aviso de arte ausente)
+e C4 (animação de objeto que persiste, save versão 3) foram concluídos sobre `f1af9f1` e passaram
+para a seção 3.1. Com eles o `ctest` tem 10 testes (9 na build sem ferramentas): debug 10/10,
+ASan + UBSan 10/10 sem relatório, Release com `-DPOINTCLICK_ENABLE_TOOLS=OFF` 9/9, nenhum aviso
+do compilador. A tabela da seção 1 continua registrando os números da revisão de 10/11.
+
 Este projeto é a **engine**; história, personagens e música ficam nos jogos construídos sobre
 ela. Aqui só entram mecânicas e *playgrounds* pequenos para testá-las. As listas abaixo seguem
 esse recorte.
@@ -55,13 +61,11 @@ desvios pequenos listados abaixo.
 `ActionCatalog` (mais um `ArgType` e, no `face`, um método do `ScriptHost`), sem tocar no parser
 nem no serializador.
 
-**Desvios encontrados** (pequenos, viraram itens). Dois já foram corrigidos (seção 3.1): a
-base de colisão vermelha que `EntityRenderer::drawObject` pintava também na build de loja (D10)
-e o `ARCHITECTURE.md` atrás do catálogo e da ordem das regras curinga (D9). Resta um, na seção
-4.2:
-
-- Os erros de `Room::validationError` chegam ao designer sem número de linha, ao contrário de
-  `.rules` e `.dlg` (item D12).
+**Desvios encontrados** (pequenos, viraram itens). Os três já foram corrigidos (seção 3.1): a
+base de colisão vermelha que `EntityRenderer::drawObject` pintava também na build de loja (D10),
+o `ARCHITECTURE.md` atrás do catálogo e da ordem das regras curinga (D9) e os erros de
+`Room::validationError`, que chegavam ao designer sem número de linha, ao contrário de `.rules`
+e `.dlg` (D12).
 
 **Onde uma feature nova ainda espalha edições** (o que mais importa para o objetivo de "entrar sem
 mexer em tantos arquivos"; nada disso mudou desde a revisão anterior):
@@ -69,7 +73,7 @@ mexer em tantos arquivos"; nada disso mudou desde a revisão anterior):
 | Ponto | Hoje exige tocar | Proposta |
 | --- | --- | --- |
 | Gatilho novo (`look`, `talk`, `on_enter`) | enum `InteractionTriggerKind`, `InteractionTrigger::matches`/`wildcardLevel`, `if/else` em `InteractionFiles::parse` ([linhas 62-78](../src/content/InteractionFiles.cpp)) e em `save`, método novo em `Game` | `TriggerCatalog` no modelo do `ActionCatalog` (palavra-chave + assinatura tipada) |
-| Campo novo de objeto (`name`, `approach`, `baseline`) | cadeia de `if` em `RoomFiles::load` ([linhas 135-151](../src/content/RoomFiles.cpp)), escrita manual em `RoomFiles::save`, `Room::validationError`, editor | `ObjectFieldCatalog` (chave, leitura, escrita, validação), como `RoomParameters` |
+| Campo novo de objeto (`name`, `approach`, `baseline`) | cadeia de `if` em `RoomFiles::load` ([linhas 147-162](../src/content/RoomFiles.cpp)), escrita manual em `RoomFiles::save`, `Room::validationError`, editor | `ObjectFieldCatalog` (chave, leitura, escrita, validação), como `RoomParameters` |
 | Campo novo de clip (foi o caso do `flip_x`) | `SpriteClip`, cadeia de `if` em `SpriteFields::parse`, lista manual em `SpriteFields::write`, tabela do `GAME_DESIGN.md` | mesma tabela de campos, compartilhada com o catálogo de objeto |
 | Comando novo do editor | cadeia de `if` em `DebugEditor::submit` ([linhas 150-244](../src/debug/DebugEditor.cpp)) + texto de ajuda fixo em `DebugOverlay.cpp` | `CommandCatalog` (nome, uso, função); `help` e a ajuda do painel saem dele |
 | UI de gameplay nova (inventário, menu) | `Renderer::render(..., const DialogueMenu*)` ganha um parâmetro por UI, mais `Application` | registro de desenhistas de UI no `Renderer` (como `RenderOverlay`), ordenados por camada |
@@ -156,6 +160,7 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 | C11 | Player "ajeitava" os pés antes de interagir já ao alcance | `Scene::approach` resolve na hora abaixo de uma célula | `GameTests.cpp` |
 | C12 | Uso de item sem regra não dava resposta | resolvido pelo F4 (regras curinga) | `testWildcardRules` |
 | C13 | Overflow de contador: `add_flag` somava em `int` sem limite e o save aceitava qualquer `int` (`flag.x = 2147483647` + `add_flag x 1` era overflow com sinal) | `kMaxFlagValue` (±1.000.000.000) em `game/SessionState.hpp`; `incrementFlag` soma em 64 bits e satura, `setFlag` também não guarda valor fora do limite; `SessionSnapshot::validationError` recusa flag fora dele, o que cobre `SaveFiles::parse`/`save` e `SessionState::restore`. Sem chave nova: o save continua na versão 2 | `testFlagCounterLimits` em `GameTests.cpp` (saturação nos dois sentidos por `add_flag`, extremos de `int`, snapshot e `save.slot` recusados com `Flag fora do limite de +-1000000000: x = 2147483647`); suíte limpa sob UBSan |
+| C4 | Estado visual de objeto não persistia: `play_animation porta open` voltava ao clip inicial ao sair e voltar da sala e ao carregar o save | Efeito novo `set_animation <obj> <clip>` (uma entrada no `ActionCatalog`, sem método novo no `ScriptHost`): grava o clip em `ObjectStateOverride::animation` (`SessionState::setObjectAnimation`/`objectAnimation`, `SessionSnapshot::ObjectOverride::animation`) e toca. `ObjectAnimations::rebuild(room, session, previous)` parte do clip salvo, já no último quadro se ele não repete (`AnimationPlayback::finish`). `play_animation` não mudou (continua do momento). Save: chave `object.<sala>.<objeto>.animation`, `SaveFiles::currentVersion` = 3, versões 1 e 2 continuam lidas; clip que deixou de existir é ignorado | `testObjectAnimationPersists` em `GameTests.cpp` (ida e volta entre salas, `play_animation` passageiro, edição ao vivo, round-trip determinístico do save v3, leitura de v2, chave recusada em v2, clip e objeto inexistentes, snapshot inválido); round-trip do catálogo em `EditorTests.cpp` |
 | D1 | Desenho de debug em produção | rota, destino, painel técnico e dica em `debug/`, atrás de `DebugViews` (`show <visão> <0\|1>`) | `testGameFrameHasNoDebugDrawing`, `EditorTests.cpp`; o resto saiu no D10 |
 | D2 | Sem VSync | `SDL_SetRenderVSync`, limitador como reserva, sem render com a janela oculta | executável headless |
 | D3 | `Game::session()` mutável | só leitura; `Game::changeSession(função)` reconstrói a navegação | `testSessionCommandKeepsNavigation` |
@@ -167,18 +172,20 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 | D9 | Documentação defasada (de novo) | `ARCHITECTURE.md`: gatilho com curingas, condições e efeitos por família com exemplos e ponteiro para a tabela do `GAME_DESIGN.md` e para `game/ActionCatalog.cpp` (o catálogo não é mais copiado), `ArgType` descrito por referência ao header, ordem das regras por especificidade (`wildcardLevel`, `findMatchingRule`); `README.md` apresenta a engine em vez de "protótipo" | — (documentação) |
 | D10 | Base de colisão desenhada em produção | `EntityRenderer::drawObject` perdeu o preenchimento vermelho e o parâmetro `solidOverride`; o placeholder (retângulo na cor do objeto + contorno) fica até o M2, e a base só aparece no contorno do `DebugOverlay`, com o editor ativo | `testGameFrameHasNoDebugDrawing` (objeto sólido sem sprite: a cor da base não aparece no frame e o centro da base tem a cor do objeto) |
 | D11 | `--no-save` ainda mexia no disco (save recusado virava `.bad`) | `SaveFiles::resume` recebe `RefusedSave` (`quarantine` ou `keep`), sem valor padrão; `Application::resumeSavedGame` passa `keep` com `--no-save` e usa o mesmo valor na quarentena que ele próprio faz; o log diz o que aconteceu com o arquivo | `testBadSaveFiles` em `GameTests.cpp` (os dois modos: arquivo intacto byte a byte e sem `.bad` com `keep`; renomeado com `quarantine`); executável headless nos dois modos |
+| D12 | Erros de sala sem linha (`Room::validationError` só era conferido no fim de `RoomFiles::load`) | `Room::validationIssue` devolve `RoomValidationIssue` (mensagem, sujeito sala/spawn/objeto, posição, campo) e continua sendo a única fonte das regras; `validationError()` é a mensagem dela. `RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]` e de cada chave e prefixa `Linha N:` com a chave que alimentou o erro (`bounds`, `collision`, `animation.initial`, `feet`) ou, sem ela, o cabeçalho; ID inválido ou repetido é recusado no próprio cabeçalho; `Spawn sem feet` também ganhou a linha. Textos iguais, sem chave nova. Erros da sala como um todo continuam sem linha | `testRoomObjectErrorsCarryLines` e os casos de `[spawn]` em `testRoomSpawnFilesAndTransitions` (`EditorTests.cpp`) |
 | F1 | Opções `--new-game`, `--no-save`, `--room <id> [spawn]`, `--check` | `core/CommandLine` (sem SDL) + `content/ContentCheck` | `CommandLineTests.cpp`, `pointclick_check_*` |
 | F4 | Regras curinga (`[interact *]`, `[use_item * obj]`, `[use_item item *]`, `[use_item * *]`) | ordem fixa por especificidade em `findMatchingRule` | `testWildcardRules`, round-trip em `EditorTests.cpp` |
 | F5 | Contadores: `add_flag`, `flag_at_least`, `flag_equals` | três entradas no catálogo + `ArgType::integer` | `testFlagCounters`; limite no C13 |
 | F6 | `face <direção>` | `ScriptHost::facePlayer` + `ArgType::facing` | `testFaceDirection` |
 | F7 | `flip_x` nos clips | campo em `SpriteClip`/`SpriteFields`, XOR com o chamador | pixels em `SpriteTests.cpp`, round-trip |
+| F8 | Arte ausente só aparecia em jogo (quadriculado roxo, fonte de debug) | Continua não sendo erro: a sala carrega e o jogo roda. `clipFitsImage`/`spriteSheetColumns` viraram funções puras em `game/SpriteClip` (o `SpriteLibrary` usa as mesmas). `content/ArtCheck` lê só o cabeçalho do PNG por `SDL_IOStream` (cache por arquivo na chamada) e devolve avisos: PNG ausente ou ilegível, corte que não cabe, clip sem arquivo, fonte ausente (lista vinda de `FontLibrary::files`, injetada). `Application::logArtWarnings` registra cada aviso uma vez por execução ao carregar a sala; `--check` imprime `aviso: <sala>: <arquivo>: <motivo>`, conta no resumo e **não** muda o código de saída | `testArtWarnings` e `testRoomWithMissingArtStillRuns` (`SpriteTests.cpp`, frame headless com o quadriculado), `testCheckWarnsAboutMissingArt` (`CommandLineTests.cpp`), `pointclick_check_missing_art` (sai 0) e `pointclick_check_missing_art_report` no `ctest`, fixture `tests/fixtures/missing_art` |
 | M1 | Texto de verdade (parcial) | SDL3_ttf, `FontLibrary`, `TextRenderer`, `ui/TextLayout`, `ui/SpeechLayout`, `DialogueMenu` medindo o texto real | `TextLayoutTests.cpp`, `SpriteTests.cpp`; resto na seção 5 |
 
 ### 3.2 Estado dos testes
 
-1.229 `assert` em 57 funções de teste, cinco executáveis (`pointclick_tests`,
+1.319 `assert` em 62 funções de teste, cinco executáveis (`pointclick_tests`,
 `pointclick_sprite_tests`, `pointclick_text_tests`, `pointclick_cli_tests`,
-`pointclick_editor_tests`), mais três testes de linha de comando/camadas no `ctest`. A primeira
+`pointclick_editor_tests`), mais cinco testes de linha de comando/camadas no `ctest`. A primeira
 falha ainda aborta o executável sem nomear o caso (M17). Nenhum teste **joga** os assets reais:
 `pointclick_check_assets` só prova que eles carregam (F3).
 
@@ -191,6 +198,11 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
 - **MSVC** (D5): `/W4 /permissive-` nunca foi compilado.
 - **`--room <sala> <spawn>`** (F1) com um spawn válido: os assets não têm `[spawn]`.
 - **Autosave de saída com `--no-save`** (F1): o SIGINT não encerra o jogo com o driver `dummy`.
+- **Avisos de arte** (F8) no Android: a leitura do cabeçalho do PNG usa `SDL_IOStream`, mas só
+  foi exercitada no desktop; o log de `Application::logArtWarnings` não tem teste (só a função
+  de `content/` que ele chama).
+- **`set_animation`** (C4) numa janela real e num playground com porta: os assets ainda não têm
+  objeto com clip (F3).
 - **Fuzz dos parsers** com o vocabulário novo (inteiros com sinal, direções, curingas, `flip_x`).
 
 ---
@@ -199,17 +211,11 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
 
 ### 4.1 Bugs confirmados
 
-| # | Problema | Evidência | Onde / correção | Esforço |
-| --- | --- | --- | --- | --- |
-| C4 | **Estado visual de objeto não persiste:** `play_animation porta open` volta ao clip inicial ao sair e voltar da sala e ao carregar o save, enquanto flag e colisão continuam "aberta". | Sonda de 09/11: `anim=idle`, `flag=1`, `solid=0`; `ObjectStateOverride` continua só com `visible` e `solidOverride`. | Campo `animation` em `ObjectStateOverride` + efeito persistente (`set_animation <obj> <clip>`, ou `play_animation` de clip sem loop passa a persistir); `ObjectAnimations::rebuild` parte do clip salvo já no último quadro. Toca `SessionState`, `SaveFiles` (versão 3), `ActionCatalog`, `Scene::apply`, docs, testes. | 1–2 dias |
+Nenhum em aberto (C4 foi concluído; seção 3.1).
 
 ### 4.2 Dívidas e higiene
 
-- **D12 — Erros de sala sem linha.** O que `Room::validationError` acusa (objeto fora da sala,
-  ID repetido ou inválido em `[object]`/`[spawn]`, animação inicial ausente, base de colisão)
-  chega sem número de linha, porque só é conferido no fim de `RoomFiles::load`; `.rules` e
-  `.dlg` sempre dão a linha. Validar o ID no cabeçalho e guardar a linha de cada seção para
-  prefixar o erro. Sai de graça se for feito junto com o `ObjectFieldCatalog`. *1–2 h.*
+Nenhuma em aberto (D12 foi concluído; seção 3.1).
 
 ### 4.3 Features pequenas de alto valor
 
@@ -225,19 +231,13 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
   contadores, `face` e `flip_x`. Criar salas pequenas (seção 8) e um teste headless que carrega
   os assets e joga cada sala com uma lista de cliques até um estado esperado. Fecha também
   metade da lista 3.3. *2–3 dias.*
-- **F8 — `--check` confere a arte (novo):** hoje PNG ausente, corte que não cabe na imagem e
-  fonte faltando só aparecem em jogo (quadriculado roxo, fonte de debug); o `--check` passa.
-  Mover `clipFitsImage` de `SpriteLibrary.cpp` para `game/SpriteClip` (função pura, o renderer
-  continua usando) e fazer o `ContentCheck` abrir cada PNG referenciado com `SDL_LoadPNG` (sem
-  janela) e conferir as fontes de `FontLibrary::spec`. Toca `SpriteClip`, `SpriteLibrary.cpp`,
-  `ContentCheck.cpp`, `tests/CommandLineTests.cpp`, uma fixture. *½ dia.*
 
 ### 4.4 Ordem sugerida
 
 1. F2 com o `CommandCatalog`, porque destrava testar à mão o que já existe.
-2. F3 (com F8 no caminho), para as mecânicas prontas terem prova em jogo real e CI.
-3. C4, que muda o save (versão 3) e é pré-requisito de qualquer porta com animação.
-4. Daí em diante, M2 e M3 (seção 5).
+2. F3, para as mecânicas prontas terem prova em jogo real e CI (F8 já avisa da arte ausente e
+   C4 já dá à sala `door` o estado persistente, com o save na versão 3).
+3. Daí em diante, M2 e M3 (seção 5).
 
 ---
 
@@ -370,8 +370,8 @@ M1 texto ✅ ────────────────┬─► M3 hover/
 D1 flags de debug ✅ ───────┤                 └─► M13 localização
 M2 fundo/camadas/hotspots ──┘
 D3 ✅ + F2 (comandos de sessão) ─► F3 playgrounds + teste de percurso ─► M17 CI
-F8 (--check da arte) ───────────────────────────────────────────────────┘
-C4 (estado persistente de objeto) ─► M15 save
+F8 (aviso de arte no --check) ✅ ───────────────────────────────────────┘
+C4 (estado persistente de objeto) ✅ ─► M15 save
 C13 (limite dos contadores) ✅ ─► add_flag em laço já não estoura o contador
 M5 gatilhos ─► M6 scripts ─► M7 atores ─► orador do M1
 M10 manifesto ─► L1 engine reutilizável ─► L2 plataformas ─► L3 I/O
@@ -385,7 +385,7 @@ Uma sala pequena por mecânica, com as regras mínimas, coberta pelo teste de pe
 | --- | --- |
 | `first` ↔ `gallery` ligadas por uma porta | `change_room`, `[spawn]`, `facing`, autosave em `RoomEntered`, `--room <sala> <spawn>` |
 | `wide` (2560 de largura) | câmera suave e *clamp*, clique convertido com a câmera deslocada |
-| `door` | objeto com sprites, `play_animation`, `wait_animation`, `flip_x`, estado persistente (C4) |
+| `door` | objeto com sprites, `play_animation`, `wait_animation`, `flip_x`, estado persistente com `set_animation` (C4 ✅) |
 | `lever` | sequência longa: `walk_to`, `face`, `wait`, `say`, modo cutscene, pular fala |
 | `maze` | obstáculos densos, destino inalcançável, custo de rota (M14) |
 | `talk` | diálogo com `once`, `goto`, condições, `change_room` dentro da conversa |

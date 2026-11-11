@@ -31,3 +31,10 @@ struct SpriteClip {
     [[nodiscard]] SDL_FRect targetRect(SDL_FPoint feet, float baseWidth,
                                         float baseHeight, float scale = 1.0F) const;
 };
+
+// Pure sheet arithmetic shared by the renderer and the content check (no PNG is opened here).
+// Columns of a sheet imageWidth wide: the clip's own `columns`, or as many frames as fit.
+[[nodiscard]] int spriteSheetColumns(const SpriteClip& clip, int imageWidth);
+// True when every frame the clip uses lies inside an imageWidth x imageHeight PNG. A clip
+// without frame dimensions is the whole image and always fits.
+[[nodiscard]] bool clipFitsImage(const SpriteClip& clip, int imageWidth, int imageHeight);

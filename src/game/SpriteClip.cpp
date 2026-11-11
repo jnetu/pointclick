@@ -47,3 +47,25 @@ SDL_FRect SpriteClip::targetRect(const SDL_FPoint feet, const float baseWidth,
     return {feet.x + offsetX * scale - width * 0.5F,
             feet.y + offsetY * scale - height, width, height};
 }
+
+int spriteSheetColumns(const SpriteClip& clip, const int imageWidth) {
+    if (clip.columns > 0) return clip.columns;
+    const int strideX = clip.frameWidth + clip.spacingX;
+    return strideX > 0 ? (imageWidth - clip.marginX + clip.spacingX) / strideX : 0;
+}
+
+bool clipFitsImage(const SpriteClip& clip, const int imageWidth, const int imageHeight) {
+    if (clip.frameWidth <= 0 || clip.frameHeight <= 0) return true;
+    const int columns = spriteSheetColumns(clip, imageWidth);
+    if (columns <= 0) return false;
+    // The sheet slots a clip uses are row-major from firstFrame; checking the furthest column
+    // and row they reach is equivalent to checking every frame, in O(1).
+    const int strideX = clip.frameWidth + clip.spacingX;
+    const int strideY = clip.frameHeight + clip.spacingY;
+    const int firstSlot = clip.firstFrame;
+    const int lastSlot = clip.firstFrame + clip.frames - 1;
+    const int lastRow = lastSlot / columns;
+    const int furthestColumn = firstSlot / columns == lastRow ? lastSlot % columns : columns - 1;
+    return clip.marginX + furthestColumn * strideX + clip.frameWidth <= imageWidth
+           && clip.marginY + lastRow * strideY + clip.frameHeight <= imageHeight;
+}

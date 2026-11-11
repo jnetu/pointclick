@@ -19,6 +19,9 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Camadas e composição | `src/graphics/SceneRenderer.cpp` | âncoras em `SceneObject` e `SpriteClip` |
 | Comandos DEBUG e área do painel | `src/debug/DebugEditor.*` (opcional, `POINTCLICK_ENABLE_TOOLS`) | `src/debug/DebugOverlay.cpp`, `tests/EditorTests.cpp`; o que o editor pede ao app (recarregar PNGs) entra por callback ligado em `Application` (`setArtReloader`) |
 | Desenho de diagnóstico (rota, painel técnico, nova visão de debug) | `DebugViews` + `kViewSwitches` em `src/debug/DebugEditor.*` (comando `show <visão> <0\|1>`) | desenho em `src/debug/DebugOverlay.cpp` / `src/debug/DiagnosticsOverlay.*`; `tests/EditorTests.cpp`; nunca em `graphics/` (`testGameFrameHasNoDebugDrawing` em `tests/SpriteTests.cpp`) |
+| Erro de sala com linha (`Linha N:` em `[object]`/`[spawn]`) | regra em `Room::validationIssue` (`RoomValidationIssue`: sujeito, posição, campo) | `RoomFiles::load` só traduz para a linha do cabeçalho ou da chave; `testRoomObjectErrorsCarryLines` em `tests/EditorTests.cpp` |
+| Aviso de arte ausente (PNG, corte, fonte; nunca erro) | `src/content/ArtCheck.*`; conta pura do corte em `clipFitsImage` (`src/game/SpriteClip.*`, a mesma do `SpriteLibrary`) | `checkContent` (`aviso:` no `--check`, sem mudar o código de saída), `Application::logArtWarnings`, `FontLibrary::files`; `tests/SpriteTests.cpp`, `tests/CommandLineTests.cpp`, `tests/fixtures/missing_art` |
+| Estado visual de objeto que persiste (`set_animation`) | `ObjectStateOverride::animation` em `src/game/SessionState.*`, entrada em `src/game/ActionCatalog.cpp` | `ObjectAnimations::rebuild`, `AnimationPlayback::finish`, `src/content/SaveFiles.cpp` (versão 3), `testObjectAnimationPersists` em `tests/GameTests.cpp` |
 | Carregar/salvar salas, layout dos assets | `src/content/RoomLibrary.*` | `core/Application.cpp` e `DebugEditor` usam a mesma biblioteca |
 | Dependência entre camadas, targets CMake, avisos do compilador | `CMakeLists.txt` (um target por pasta; `POINTCLICK_WARNINGS` vale para todos) | `cmake/CheckLayerIncludes.cmake` (camadas e definições de `game/` sem incluir simulação/sessão), `docs/ARCHITECTURE.md` |
 | Entrada multiplataforma e roteamento UI | `src/input/InputSystem.*`, `src/input/InputRouter.*` | `src/core/Application.cpp`, `src/graphics/Renderer.cpp`, `tests/EditorTests.cpp` |
@@ -47,7 +50,8 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   coletados, flags ou tempo corrente.
 - `SessionState` guarda o progresso persistente da sessão (flags/contadores,
   itens de inventário, overrides por `roomId + objectId` de visibilidade e
-  colisão `solidOverride`, e as escolhas `once` de diálogo já feitas). É o que vai para o
+  colisão `solidOverride` e do clip `animation` deixado por `set_animation`, e as escolhas `once`
+  de diálogo já feitas). É o que vai para o
   save (`SessionSnapshot`), junto com a sala atual e os pés; nada além disso. Editar a sala em tempo real no `DebugEditor`
   (`Game::applyRoom(room, false, error)`) ou trocar de sala **nunca** apaga o
   `SessionState`.
@@ -68,6 +72,10 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   (`Ciclo de Vida → ToolInputConsumer opcional → ViewportUiConsumer → Game`) sem depender
   de `graphics/`, `ui/` ou `debug/`. A ferramenta de debug é opcional no build
   (`POINTCLICK_ENABLE_TOOLS`) e entra como consumidor e como `RenderOverlay`.
+- Arte ausente nunca recusa uma sala nem para o jogo: sprite que falta ou corte que não cabe
+  desenha o quadriculado roxo e fonte que falta cai na fonte de debug. O que existe é aviso
+  (`content/ArtCheck`): no log ao carregar a sala e como `aviso:` no `--check`, que continua
+  saindo com 0.
 - `graphics/` lê o estado do jogo (`const Scene&` para a cena, `const Game&` só para o
   estado de diálogo e ferramentas, respeitando `Scene::isObjectVisible`) e desenha. A
   colisão (`Scene::isObjectSolid`) não muda o desenho do jogo. Não decide resultados de interação,

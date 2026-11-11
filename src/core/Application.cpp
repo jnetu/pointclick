@@ -1,4 +1,5 @@
 #include "core/Application.hpp"
+#include "content/ArtCheck.hpp"
 #include "content/TextFormat.hpp"
 #include "game/Identifier.hpp"
 
@@ -56,6 +57,7 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename,
         return false;
     }
     if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr, spawnId);
+    logArtWarnings(loaded.bundle->room);
     std::string error;
     Game& game = gameplay_->game;
     if (!game.applyRoom(std::move(loaded.bundle->room), true, error, spawnId)
@@ -67,8 +69,19 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename,
     return true;
 }
 
+void Application::logArtWarnings(const Room& room) {
+    // Fonts are not repeated here: FontLibrary::open already logs a missing one at startup.
+    for (const ArtWarning& warning : ArtCheck::warnings(room, library_.spritesDirectory())) {
+        const std::string text = warning.text();
+        if (artWarningsLogged_.insert(text).second) {
+            SDL_Log("Art warning (room %s): %s", room.id.c_str(), text.c_str());
+        }
+    }
+}
+
 bool Application::startGameplay(RoomBundle bundle, const SavedGame* save,
                                 const std::string_view spawnId) {
+    logArtWarnings(bundle.room);
     std::string error;
     const std::optional<RoomSpawn> entry = bundle.room.entryPoint(spawnId);
     if (!entry) {

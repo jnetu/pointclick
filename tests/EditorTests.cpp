@@ -258,6 +258,49 @@ void testRoomFiles(const std::filesystem::path& directory) {
     assert(RoomFiles::load(path).room->playerNearSpeed == validSpeed);
 }
 
+// D12: every [object] error of Room::validationIssue reaches the designer as "Linha N: ...",
+// N being the key that fed it or, when the file has no such key, the block header.
+void testRoomObjectErrorsCarryLines(const std::filesystem::path& directory) {
+    const auto errorOf = [&](const std::string& text) {
+        {
+            std::ofstream bad(directory / "bad_object.room", std::ios::binary);
+            bad << text;
+        }
+        const auto result = RoomFiles::load(directory / "bad_object.room", sharedPlayerArt());
+        assert(!result.room);
+        return result.error;
+    };
+    const std::string box = "# caixa\n[object box]\nbounds = 10, 300, 40, 40\n";
+    // Invalid or repeated ID: refused on the header itself.
+    assert(errorOf("[room]\n[object caixa azul]\nbounds = 10, 300, 40, 40\n")
+           == "Linha 2: ID de objeto invalido ou repetido");
+    assert(errorOf(box + "\n[object box]\nbounds = 90, 300, 40, 40\n")
+           == "Linha 5: ID de objeto invalido ou repetido");
+    // Object outside the room: the bounds line, or the header when bounds is missing.
+    assert(errorOf(box + "[object far]\ncolor = 1, 2, 3, 255\nbounds = 1270, 300, 40, 40\n")
+           == "Linha 6: Objeto fora da sala: far");
+    assert(errorOf(box + "[object empty]\ncolor = 1, 2, 3, 255\n")
+           == "Linha 4: Objeto fora da sala: empty");
+    // Initial animation that no clip declares.
+    assert(errorOf(box + "animation.open.file = door.png\nanimation.initial = closed\n")
+           == "Linha 5: Animacao inicial ausente: box");
+    assert(errorOf(box + "animation.open.file = door.png\n")
+           == "Linha 2: Animacao inicial ausente: box");
+    // Collision footprint that does not fit the bounds (or a solid without one).
+    assert(errorOf(box + "collision = 0, 30, 80, 10\n")
+           == "Linha 4: Base de colisao invalida: box");
+    assert(errorOf(box + "type = solid\n") == "Linha 2: Base de colisao invalida: box");
+    // Errors of the room as a whole keep their text, with no line to point at.
+    assert(errorOf(box + "[room]\nperspective.far_y = 500\nperspective.near_y = 500\n")
+           == "far_y deve ser menor que near_y");
+    // The same blocks, valid, still load.
+    {
+        std::ofstream good(directory / "good_object.room", std::ios::binary);
+        good << box << "type = solid\ncollision = 0, 30, 40, 10\n";
+    }
+    assert(RoomFiles::load(directory / "good_object.room", sharedPlayerArt()).room);
+}
+
 // step 1 finds one-pixel lines and text; the default samples large areas quickly.
 bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target, const int step = 8) {
     for (int y = 0; y < surface->h; y += step) {
@@ -1682,16 +1725,21 @@ void testRoomSpawnFilesAndTransitions(const std::filesystem::path& directory) {
         assert(!result.room);
         return result.error;
     };
-    assert(errorOf("[spawn a]\nfacing = up\n") == "Spawn sem feet: a");
+    assert(errorOf("[spawn a]\nfacing = up\n") == "Linha 1: Spawn sem feet: a");
     assert(errorOf("[spawn a]\nfeet = 1, 2\nfacing = norte\n")
            == "Linha 3: Chave ou valor invalido: facing");
     assert(errorOf("[spawn a]\nfeet = 1\n") == "Linha 2: Chave ou valor invalido: feet");
     assert(errorOf("[spawn a]\nfeet = 1, 2\nbounds = 1, 2, 3, 4\n")
            == "Linha 3: Chave ou valor invalido: bounds");
+    assert(errorOf("[spawn a]\nfeet = 1, 2\nfeet = 3, 4\n") == "Linha 3: Chave repetida: feet");
+    // D12: what Room::validationIssue finds comes with the line of the block (or key) at fault.
     assert(errorOf("[spawn a]\nfeet = 1, 2\n[spawn a]\nfeet = 3, 4\n")
-           == "Linha 4: Chave repetida: feet");
-    assert(errorOf("[spawn a b]\nfeet = 1, 2\n") == "ID de spawn invalido ou repetido");
-    assert(errorOf("[spawn a]\nfeet = 1300, 2\n") == "Spawn fora da sala: a");
+           == "Linha 3: ID de spawn invalido ou repetido");
+    assert(errorOf("[room]\n[spawn a b]\nfeet = 1, 2\n")
+           == "Linha 2: ID de spawn invalido ou repetido");
+    assert(errorOf("[spawn a]\nfacing = up\nfeet = 1300, 2\n") == "Linha 3: Spawn fora da sala: a");
+    assert(errorOf("[spawn ok]\nfeet = 1, 2\n\n[spawn b]\nfacing = up\n")
+           == "Linha 4: Spawn sem feet: b");
     // A [spawn] in the middle does not swallow the room keys after a [room] header.
     write("mixed.room", "[spawn a]\nfeet = 1, 400\n[room]\nplayer.far_speed = 99\n");
     const RoomLoadResult mixed = RoomFiles::load(rooms / "mixed.room", sharedPlayerArt());
@@ -1763,6 +1811,7 @@ int main() {
     std::filesystem::create_directory(directory);
     testEditing(directory);
     testRoomFiles(directory);
+    testRoomObjectErrorsCarryLines(directory);
     testDebugRendering();
     testMultiplatformInputAndRouting();
     testEditorPreservesSessionState(directory);

@@ -131,13 +131,19 @@ SaveLoadResult SaveFiles::parse(const std::string_view text) {
             std::string objectId;
             std::string_view field;
             bool flagValue = false;
-            if (splitObjectKey(key, roomId, objectId, field) && parseBoolean(value, flagValue)
-                && (field == "visible" || field == "solid")) {
-                auto& entry = objects[{roomId, objectId}];
-                entry.roomId = roomId;
-                entry.objectId = objectId;
-                (field == "visible" ? entry.visible : entry.solidOverride) = flagValue;
-                parsed = true;
+            if (splitObjectKey(key, roomId, objectId, field)) {
+                const bool isFlag = field == "visible" || field == "solid";
+                // Version 3; an older file with the key is refused like any unknown field.
+                const bool isClip = field == "animation" && *version >= 3;
+                if ((isFlag && parseBoolean(value, flagValue))
+                    || (isClip && validIdentifier(value))) {
+                    auto& entry = objects[{roomId, objectId}];
+                    entry.roomId = roomId;
+                    entry.objectId = objectId;
+                    if (isClip) entry.animation = value;
+                    else (field == "visible" ? entry.visible : entry.solidOverride) = flagValue;
+                    parsed = true;
+                }
             }
         } else if (key == "dialogue") {
             SessionSnapshot::DialogueChoice choice;
@@ -204,6 +210,7 @@ std::string SaveFiles::serialize(const SavedGame& save) {
         if (object.solidOverride) {
             out << prefix << ".solid = " << (*object.solidOverride ? 1 : 0) << '\n';
         }
+        if (object.animation) out << prefix << ".animation = " << *object.animation << '\n';
     }
     for (const auto& choice : session.dialogueChoices) {
         out << "dialogue = " << choice.roomId << '/' << choice.nodeId << '/' << choice.choiceId

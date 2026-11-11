@@ -60,6 +60,7 @@ target_link_libraries(pointclick_game PUBLIC SDL3::SDL3)
 # Content files <-> validated definitions, asset layout.
 add_library(pointclick_content STATIC
         src/content/ActorFiles.cpp
+        src/content/ArtCheck.cpp
         src/content/ContentCheck.cpp
         src/content/DialogueFiles.cpp
         src/content/InteractionFiles.cpp
@@ -169,6 +170,14 @@ if(BUILD_TESTING)
     add_test(NAME pointclick_check_broken_rooms
             COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/broken_rooms --check)
     set_tests_properties(pointclick_check_broken_rooms PROPERTIES WILL_FAIL TRUE)
+    # Missing art is a warning: the folder is reported ("aviso:") and --check still exits 0.
+    add_test(NAME pointclick_check_missing_art
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/missing_art/rooms --check)
+    # A second run for the text: with PASS_REGULAR_EXPRESSION, CTest ignores the exit code.
+    add_test(NAME pointclick_check_missing_art_report
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/missing_art/rooms --check)
+    set_tests_properties(pointclick_check_missing_art_report PROPERTIES
+            PASS_REGULAR_EXPRESSION "aviso: first.room: sprites/ghost.png: PNG ausente")
     add_test(NAME pointclick_layer_includes
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerIncludes.cmake)

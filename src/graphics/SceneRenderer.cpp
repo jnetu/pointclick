@@ -35,7 +35,7 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
             const SceneObject& object = scenery[static_cast<std::size_t>(item.objectIndex)];
             EntityRenderer::drawObject(renderer, sprites, object,
                                        scene.objectAnimation(object.id), cameraOffset,
-                                       scene.isObjectSolid(object), interpolation);
+                                       interpolation);
         }
     }
 }

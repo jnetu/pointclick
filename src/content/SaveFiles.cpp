@@ -260,7 +260,7 @@ std::filesystem::path SaveFiles::defaultSlot(std::string& error) {
 }
 
 ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibrary& library,
-                               const std::string_view fallbackRoom) {
+                               const RefusedSave refused, const std::string_view fallbackRoom) {
     ResumeResult out;
     SaveLoadResult loaded = load(path);
     if (loaded.save) {
@@ -288,6 +288,7 @@ ResumeResult SaveFiles::resume(const std::filesystem::path& path, const RoomLibr
     } else {
         out.error = std::move(loaded.error);
     }
+    if (refused == RefusedSave::keep) return out; // the file stays exactly as it is
     if (std::string renameError; !quarantine(path, renameError)) {
         out.error += " (" + renameError + ")";
     }

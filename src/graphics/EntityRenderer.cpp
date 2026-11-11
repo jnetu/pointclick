@@ -1,6 +1,5 @@
 #include "graphics/EntityRenderer.hpp"
 
-#include "game/Interaction.hpp"
 #include "game/Player.hpp"
 #include "game/Room.hpp"
 #include "graphics/SpriteLibrary.hpp"
@@ -11,7 +10,6 @@ void EntityRenderer::drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                                 const SceneObject& object,
                                 const AnimationPlayback* playback,
                                 const SDL_FPoint cameraOffset,
-                                const std::optional<bool> solidOverride,
                                 const float interpolation) {
     if (playback) {
         const SpriteClip* clip = findAnimation(object.animations, playback->name());
@@ -27,14 +25,6 @@ void EntityRenderer::drawObject(SDL_Renderer* renderer, SpriteLibrary& sprites,
                            object.bounds.w, object.bounds.h};
     SDL_SetRenderDrawColor(renderer, object.color.r, object.color.g, object.color.b, 255);
     SDL_RenderFillRect(renderer, &bounds);
-    const bool solid = solidOverride.value_or(object.type == SceneObjectType::solid);
-    if (solid) {
-        SDL_FRect base = effectiveCollisionFootprint(object);
-        base.x -= cameraOffset.x;
-        base.y -= cameraOffset.y;
-        SDL_SetRenderDrawColor(renderer, 130, 42, 39, 255);
-        SDL_RenderFillRect(renderer, &base);
-    }
     SDL_SetRenderDrawColor(renderer, 210, 218, 231, 255);
     SDL_RenderRect(renderer, &bounds);
 }

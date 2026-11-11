@@ -13,6 +13,11 @@
 
 struct SceneObject;
 
+// A flag/counter always stays inside [-kMaxFlagValue, kMaxFlagValue]: setFlag and incrementFlag
+// saturate there and a snapshot (so a save) outside it is refused. Well inside int, so no sum of
+// a stored value with an `add_flag` amount can overflow.
+inline constexpr int kMaxFlagValue = 1'000'000'000;
+
 struct ObjectStateOverride {
     std::optional<bool> visible;
     std::optional<bool> solidOverride;
@@ -45,7 +50,8 @@ struct SessionSnapshot {
     std::vector<ObjectOverride> objects;   // by room, then object; at least one value each
     std::vector<DialogueChoice> dialogueChoices; // by room, node, choice
 
-    // Identifiers, duplicates and empty overrides. Empty means it can be restored.
+    // Identifiers, duplicates, flag values (never 0, inside +-kMaxFlagValue) and empty
+    // overrides. Empty means it can be restored.
     [[nodiscard]] std::string validationError() const;
     bool operator==(const SessionSnapshot&) const = default;
 };
@@ -60,7 +66,8 @@ public:
     // Replaces the whole progress. Validates first: on false nothing changed.
     bool restore(const SessionSnapshot& snapshot, std::string& error);
 
-    // Boolean flags and integer counters (0 / absent means cleared).
+    // Boolean flags and integer counters (0 / absent means cleared). Values saturate at
+    // +-kMaxFlagValue; incrementFlag returns the value that was stored.
     void setFlag(std::string_view id, int value = 1);
     void clearFlag(std::string_view id);
     [[nodiscard]] bool hasFlag(std::string_view id) const;

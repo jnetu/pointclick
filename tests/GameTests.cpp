@@ -891,6 +891,78 @@ void testFlagCounters() {
     assert(knock() == "Muitos" && game.session().flagValue("knocks") == 5);
 }
 
+// C13: a counter saturates at +-kMaxFlagValue instead of overflowing int, and a snapshot or save
+// outside the limit is refused (INT_MAX in save.slot followed by `add_flag x 1` was signed
+// overflow).
+void testFlagCounterLimits() {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomInteractions{{
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {},
+         .effects = {InteractionEffect::make("add_flag", {"up", "1000000"}),
+                     InteractionEffect::make("add_flag", {"down", "-1000000"}),
+                     InteractionEffect::make("add_flag", {"mid", "-3"}),
+                     InteractionEffect::make("set_flag", {"done"})}},
+    }});
+    const auto use = [&game]() {
+        game.changeSession([](SessionState& session) { session.clearFlag("done"); });
+        game.onClick({430.0F, 410.0F});
+        for (int i = 0; i < 400 && !game.session().hasFlag("done"); ++i) game.tick(0.05F);
+        assert(game.session().hasFlag("done"));
+    };
+    game.changeSession([](SessionState& session) {
+        session.setFlag("up", kMaxFlagValue - 1);
+        session.setFlag("down", -kMaxFlagValue + 1);
+        session.setFlag("mid", 2);
+    });
+    use();
+    assert(game.session().flagValue("up") == kMaxFlagValue);
+    assert(game.session().flagValue("down") == -kMaxFlagValue);
+    assert(game.session().flagValue("mid") == -1); // inside the limit nothing changes
+    use(); // already at the limit: stays there
+    assert(game.session().flagValue("up") == kMaxFlagValue);
+    assert(game.session().flagValue("down") == -kMaxFlagValue);
+    assert(game.session().flagValue("mid") == -4);
+    assert(game.session().snapshot().validationError().empty());
+
+    // The same limit outside a script, including the extremes of int.
+    SessionState session;
+    session.setFlag("a", std::numeric_limits<int>::max());
+    session.setFlag("b", std::numeric_limits<int>::min());
+    assert(session.flagValue("a") == kMaxFlagValue && session.flagValue("b") == -kMaxFlagValue);
+    assert(session.incrementFlag("a", std::numeric_limits<int>::max()) == kMaxFlagValue);
+    assert(session.incrementFlag("b", std::numeric_limits<int>::min()) == -kMaxFlagValue);
+    assert(session.incrementFlag("a", std::numeric_limits<int>::min()) == -kMaxFlagValue);
+    assert(session.incrementFlag("c", std::numeric_limits<int>::max()) == kMaxFlagValue);
+    assert(session.incrementFlag("c", -kMaxFlagValue) == 0 && !session.hasFlag("c"));
+
+    // A snapshot outside the limit is refused whole; the limit itself is a valid value.
+    SessionSnapshot snapshot;
+    snapshot.flags = {{"x", kMaxFlagValue + 1}};
+    std::string error;
+    assert(!session.restore(snapshot, error));
+    assert(error == "Flag fora do limite de +-1000000000: x = 1000000001");
+    assert(session.flagValue("a") == -kMaxFlagValue); // nothing changed
+    snapshot.flags = {{"x", -kMaxFlagValue}, {"y", kMaxFlagValue}};
+    assert(session.restore(snapshot, error) && session.flagValue("x") == -kMaxFlagValue);
+
+    // save.slot: the limit round-trips, one past it (or the old INT_MAX) is refused by name.
+    const std::string header = "version = 2\nroom = first\nfeet = 10, 20\n";
+    const SaveLoadResult edge =
+            SaveFiles::parse(header + "flag.x = 1000000000\nflag.y = -1000000000\n");
+    assert(edge.save && edge.save->session.flags.size() == 2);
+    assert(SaveFiles::parse(SaveFiles::serialize(*edge.save)).save == edge.save);
+    const SaveLoadResult intMax = SaveFiles::parse(header + "flag.x = 2147483647\n");
+    assert(!intMax.save);
+    assert(intMax.error == "Flag fora do limite de +-1000000000: x = 2147483647");
+    const SaveLoadResult below = SaveFiles::parse(header + "flag.ok = 7\nflag.x = -1000000001\n");
+    assert(!below.save);
+    assert(below.error == "Flag fora do limite de +-1000000000: x = -1000000001");
+    // Past int itself the number does not even parse.
+    assert(SaveFiles::parse(header + "flag.x = 99999999999\n").error
+           == "Linha 4: Chave ou valor invalido: flag.x");
+}
+
 // F6: `face` turns the standing player; idle_<facing> is the clip drawn afterwards.
 void testFaceDirection() {
     Room room = RoomPresets::firstRoom();
@@ -1531,20 +1603,24 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(!session.restore(invalid, error) && error == "Item invalido: nao ok");
     assert(session.hasItem("chave") && !session.hasItem("ok"));
 
-    // Boot: missing = new game quietly; refused = new game, the file kept as .bad; a room that
-    // no longer loads keeps the progress in the start room.
+    // Boot: missing = new game quietly; refused = new game, the file kept as .bad (or left
+    // alone under --no-save); a room that no longer loads keeps the progress in the start room.
     const auto rooms = directory / "save-rooms";
     std::filesystem::create_directories(rooms);
     assert(RoomFiles::save(rooms / "first.room", RoomPresets::firstRoom(), error));
     RoomLibrary library;
     assert(library.open(rooms, error));
     const auto slot = directory / "boot.slot";
-    ResumeResult none = SaveFiles::resume(slot, library);
-    assert(!none.save && none.error.empty());
+    const auto bad = directory / "boot.slot.bad";
+    for (const RefusedSave mode : {RefusedSave::quarantine, RefusedSave::keep}) {
+        ResumeResult none = SaveFiles::resume(slot, library, mode);
+        assert(!none.save && none.error.empty());
+        assert(!std::filesystem::exists(slot) && !std::filesystem::exists(bad));
+    }
 
     std::ofstream(slot) << "version = 2\nroom = sumida\nfeet = 10, 20\nfacing = up\n"
                            "flag.porta = 1\nitem = chave\nobject.sumida.cofre.visible = 0\n";
-    ResumeResult moved = SaveFiles::resume(slot, library);
+    ResumeResult moved = SaveFiles::resume(slot, library, RefusedSave::quarantine);
     assert(moved.save && moved.bundle && moved.error.empty());
     assert(moved.warning.starts_with("Sala sumida: "));
     assert(moved.bundle->room.id == "first" && moved.save->roomId == "first");
@@ -1553,27 +1629,48 @@ void testBadSaveFiles(const std::filesystem::path& directory) {
     assert(moved.save->facing == Facing::down);
     assert(moved.save->session.items == std::vector<std::string>{"chave"});
     assert(moved.save->session.flags.size() == 1 && moved.save->session.objects.size() == 1);
-    assert(std::filesystem::exists(slot) && !std::filesystem::exists(directory / "boot.slot.bad"));
+    assert(std::filesystem::exists(slot) && !std::filesystem::exists(bad));
+
+    // D11: with RefusedSave::keep (--no-save) a refused save is reported the same way and stays
+    // on disk byte for byte, with no .bad beside it; both ways of being refused.
+    const std::string lostRoom = "version = 1\nroom = sumida\nfeet = 10, 20\n";
+    std::ofstream(slot) << lostRoom;
+    ResumeResult keptRoom = SaveFiles::resume(slot, library, RefusedSave::keep, "inexistente.room");
+    assert(!keptRoom.save && !keptRoom.bundle && keptRoom.error.starts_with("Sala sumida: "));
+    assert(readAll(slot) == lostRoom && !std::filesystem::exists(bad));
+    const std::string corrupt = "version = 9\n# nao mexa\n";
+    std::ofstream(slot) << corrupt;
+    ResumeResult kept = SaveFiles::resume(slot, library, RefusedSave::keep);
+    assert(!kept.save && !kept.bundle && kept.warning.empty());
+    assert(kept.error == "Linha 1: Versao de save desconhecida: 9");
+    assert(readAll(slot) == corrupt && !std::filesystem::exists(bad));
+    assert(!std::filesystem::exists(directory / "boot.slot.tmp"));
 
     // Refused only when the start room does not load either.
-    std::ofstream(slot) << "version = 1\nroom = sumida\nfeet = 10, 20\n";
-    ResumeResult gone = SaveFiles::resume(slot, library, "inexistente.room");
+    std::ofstream(slot) << lostRoom;
+    ResumeResult gone =
+            SaveFiles::resume(slot, library, RefusedSave::quarantine, "inexistente.room");
     assert(!gone.save && !gone.bundle && gone.warning.empty());
     assert(gone.error.starts_with("Sala sumida: ") && gone.error.find("; inexistente.room: ")
                                                       != std::string::npos);
     assert(!std::filesystem::exists(slot));
-    assert(readAll(directory / "boot.slot.bad").find("room = sumida") != std::string::npos);
+    assert(readAll(bad).find("room = sumida") != std::string::npos);
 
     std::ofstream(slot) << "version = 9\n";
-    ResumeResult future = SaveFiles::resume(slot, library);
+    ResumeResult future = SaveFiles::resume(slot, library, RefusedSave::quarantine);
     assert(!future.save && future.error == "Linha 1: Versao de save desconhecida: 9");
-    assert(readAll(directory / "boot.slot.bad") == "version = 9\n"); // the newest refused one
+    assert(!std::filesystem::exists(slot));
+    assert(readAll(bad) == "version = 9\n"); // the newest refused one
 
-    std::ofstream(slot) << "version = 1\nroom = first\nfeet = 300, 600\nitem = chave\n";
-    ResumeResult ok = SaveFiles::resume(slot, library);
-    assert(ok.save && ok.bundle && ok.error.empty());
-    assert(ok.bundle->room.id == "first" && ok.save->session.items.size() == 1);
-    assert(std::filesystem::exists(slot));
+    // A good save is never touched, in either mode (the older .bad stays too).
+    const std::string good = "version = 1\nroom = first\nfeet = 300, 600\nitem = chave\n";
+    std::ofstream(slot) << good;
+    for (const RefusedSave mode : {RefusedSave::quarantine, RefusedSave::keep}) {
+        ResumeResult ok = SaveFiles::resume(slot, library, mode);
+        assert(ok.save && ok.bundle && ok.error.empty());
+        assert(ok.bundle->room.id == "first" && ok.save->session.items.size() == 1);
+        assert(readAll(slot) == good && readAll(bad) == "version = 9\n");
+    }
 }
 
 void testAtomicSaveFailureKeepsPrevious(const std::filesystem::path& directory) {
@@ -1687,6 +1784,7 @@ int main() {
     testConditionalNpcPuzzleAndRoomPersistence();
     testScriptedSequenceAndCutscene();
     testFlagCounters();
+    testFlagCounterLimits();
     testFaceDirection();
     testWildcardRules();
     testDialogueWithChoices();

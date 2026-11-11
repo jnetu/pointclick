@@ -105,23 +105,29 @@ bool Application::startGameplay(RoomBundle bundle, const SavedGame* save,
 
 bool Application::resumeSavedGame() {
     if (savePath_.empty()) return false;
-    ResumeResult resumed = SaveFiles::resume(savePath_, library_);
+    // --no-save leaves the save file as it is, even one that is refused; otherwise a refused
+    // save is set aside as .bad before the autosave of the new game can replace it.
+    const RefusedSave refused = options_.noSave ? RefusedSave::keep : RefusedSave::quarantine;
+    const std::string file = TextFormat::pathToUtf8(savePath_.filename());
+    const std::string fate = options_.noSave ? "--no-save: " + file + " left untouched"
+                                             : "kept as " + file + ".bad";
+    ResumeResult resumed = SaveFiles::resume(savePath_, library_, refused);
     if (!resumed.warning.empty()) {
         SDL_Log("The saved room did not load, resuming the progress in %s: %s",
                 resumed.bundle->room.id.c_str(), resumed.warning.c_str());
     }
     if (!resumed.save) {
         if (!resumed.error.empty()) {
-            SDL_Log("Ignoring the save (kept as %s.bad), starting a new game: %s",
-                    TextFormat::pathToUtf8(savePath_.filename()).c_str(), resumed.error.c_str());
+            SDL_Log("Ignoring the save (%s), starting a new game: %s", fate.c_str(),
+                    resumed.error.c_str());
         }
         return false;
     }
     if (startGameplay(std::move(*resumed.bundle), &*resumed.save)) return true;
+    // Read and cross-checked, but the game refused to apply it: same fate as a refused file.
     std::string renameError;
-    if (!options_.noSave) (void)SaveFiles::quarantine(savePath_, renameError);
-    SDL_Log("Ignoring the save (kept as %s.bad), starting a new game",
-            TextFormat::pathToUtf8(savePath_.filename()).c_str());
+    if (refused == RefusedSave::quarantine) (void)SaveFiles::quarantine(savePath_, renameError);
+    SDL_Log("Ignoring the save (%s), starting a new game", fate.c_str());
     return false;
 }
 

@@ -4,6 +4,7 @@
 #include "game/SceneObject.hpp"
 
 #include <algorithm>
+#include <cstdint>
 #include <set>
 #include <tuple>
 #include <utility>
@@ -20,6 +21,10 @@ std::string SessionSnapshot::validationError() const {
     for (const Flag& flag : flags) {
         if (!validIdentifier(flag.id)) return "Flag invalida: " + flag.id;
         if (flag.value == 0) return "Flag com valor 0 (ausente): " + flag.id;
+        if (flag.value < -kMaxFlagValue || flag.value > kMaxFlagValue) {
+            return "Flag fora do limite de +-" + std::to_string(kMaxFlagValue) + ": " + flag.id
+                   + " = " + std::to_string(flag.value);
+        }
         if (!flagIds.insert(flag.id).second) return "Flag repetida: " + flag.id;
     }
     std::set<std::string_view> itemIds;
@@ -110,10 +115,11 @@ void SessionState::setFlag(const std::string_view id, const int value) {
         clearFlag(id);
         return;
     }
+    const int stored = std::clamp(value, -kMaxFlagValue, kMaxFlagValue);
     if (const auto found = flags_.find(id); found != flags_.end()) {
-        found->second = value;
+        found->second = stored;
     } else {
-        flags_.emplace(std::string(id), value);
+        flags_.emplace(std::string(id), stored);
     }
 }
 
@@ -134,7 +140,10 @@ int SessionState::flagValue(const std::string_view id) const {
 
 int SessionState::incrementFlag(const std::string_view id, const int delta) {
     if (!validIdentifier(id)) return 0;
-    const int next = flagValue(id) + delta;
+    // 64 bits: any int + int fits, then it saturates at the limit instead of overflowing.
+    const std::int64_t sum = std::int64_t{flagValue(id)} + delta;
+    const int next = static_cast<int>(
+            std::clamp<std::int64_t>(sum, -kMaxFlagValue, kMaxFlagValue));
     setFlag(id, next);
     return next;
 }

@@ -371,7 +371,8 @@ void testPlayerArtwork() {
 }
 
 // graphics/ alone (a build without tools) draws the game and nothing else: no route, destination
-// cross, technical readout or editor hint. Those live in debug/, behind the editor.
+// cross, technical readout, editor hint or collision base of a solid object. Those live in
+// debug/, behind the editor.
 void testGameFrameHasNoDebugDrawing() {
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
@@ -385,10 +386,15 @@ void testGameFrameHasNoDebugDrawing() {
     game.onClick({900.0F, 600.0F});
     game.tick(0.05F);
     assert(game.scene().player().moving());
+    // red_box: solid, with a collision base and no sprite, so it is drawn as a placeholder.
+    const SceneObject& solid = game.scene().room().scenery[1];
+    assert(game.scene().isObjectSolid(solid) && !game.scene().objectAnimation(solid.id));
+    assert(solid.collisionFootprint.w > 0.0F && solid.collisionFootprint.h > 0.0F);
     renderer.render(game, 1.0F);
     SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     assert(frame && frame->w == 1280 && frame->h == 720);
     const SDL_Color debugColors[]{
+        {130, 42, 39, 255},   // collision base of a solid object (D10)
         {237, 224, 157, 255}, // route
         {246, 206, 124, 255}, // destination cross
         {9, 12, 19, 255},     // readout panel
@@ -404,6 +410,11 @@ void testGameFrameHasNoDebugDrawing() {
         }
     }
     expectColor(pixel(frame, 640, 100), 171, 62, 67); // the wall: the scene itself was drawn
+    // The placeholder is one flat rectangle: where the base sits it has the object's own color.
+    const SDL_FRect base = solid.worldCollisionFootprint();
+    expectColor(pixel(frame, static_cast<int>(base.x + base.w * 0.5F),
+                      static_cast<int>(base.y + base.h * 0.5F)),
+                solid.color.r, solid.color.g, solid.color.b);
     SDL_DestroySurface(frame);
     renderer.shutdown();
     SDL_DestroyWindow(window);

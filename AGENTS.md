@@ -69,8 +69,8 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
   de `graphics/`, `ui/` ou `debug/`. A ferramenta de debug é opcional no build
   (`POINTCLICK_ENABLE_TOOLS`) e entra como consumidor e como `RenderOverlay`.
 - `graphics/` lê o estado do jogo (`const Scene&` para a cena, `const Game&` só para o
-  estado de diálogo e ferramentas, respeitando `Scene::isObjectVisible` e
-  `Scene::isObjectSolid`) e desenha. Não decide resultados de interação,
+  estado de diálogo e ferramentas, respeitando `Scene::isObjectVisible`) e desenha. A
+  colisão (`Scene::isObjectSolid`) não muda o desenho do jogo. Não decide resultados de interação,
   hit-test de UI, colisão, diálogo ou transição de sala.
 - `content/` traduz arquivos `.room` (estética/espaço) e arquivos companheiros
   opcionais `.rules` (regras declarativas de interação) e `.dlg` (diálogos) em
@@ -84,7 +84,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 - `debug/` altera a definição da sala para teste e define sua própria geometria de
   captura na viewport (`DebugEditor::panelRect`), preservando `SessionState`.
   Não é o sistema de gameplay. Todo desenho de diagnóstico (rota, destino, painel técnico,
-  guias) mora aqui, atrás do editor e de `DebugViews`: `graphics/` desenha só o jogo, e uma
+  base de colisão, guias) mora aqui, atrás do editor e de `DebugViews`: `graphics/` desenha só o jogo, e uma
   build sem ferramentas não tem nenhum desses desenhos.
 - IDs de objetos, itens, flags e nomes de animação são estáveis, com letras,
   números, `_` e `-`. Use esses nomes nas regras, sem depender da posição no vetor da sala.

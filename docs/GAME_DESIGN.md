@@ -316,8 +316,10 @@ Quando o jogador clica em um objeto visível que possui regras:
 2. O personagem caminha até o ponto alcançável mais próximo da base do objeto
    (*Walk-to-Interact*). Clicar no chão vazio durante o trajeto cancela a ação.
 3. Ao chegar (ou imediatamente, se já estiver parado junto ao objeto), as regras
-   daquele objeto são avaliadas **de cima para baixo**: a **primeira** regra cujas
-   condições forem todas verdadeiras executa seus efeitos em ordem.
+   daquele objeto são avaliadas **da mais específica para a mais ampla** (regras exatas antes
+   das curinga, ver [Regras curinga](#regras-curinga-e-resposta-padrão)) e, dentro de um mesmo
+   nível, **de cima para baixo**: a **primeira** regra cujas condições forem todas verdadeiras
+   executa seus efeitos em ordem.
 
 ### Formato do arquivo `.rules`
 
@@ -336,7 +338,7 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
 | **Efeito** | `say "<texto>"` | Exibe a fala/observação e espera o tempo de leitura ou um clique. Texto UTF-8 com acentos. Aceita `\"` e `\n` (quebra de linha forçada); o resto quebra sozinho por palavras (até ~820 px de largura), centralizado acima da cabeça do player e sempre dentro da tela |
 | **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
-| **Efeito** | `add_flag <flag> <n>` | Soma o inteiro `<n>` ao contador da flag (`-1` decrementa); chegar a `0` limpa a flag |
+| **Efeito** | `add_flag <flag> <n>` | Soma o inteiro `<n>` ao contador da flag (`-1` decrementa); chegar a `0` limpa a flag. O contador para em ±1.000.000.000: somar além disso mantém o limite, e um `save.slot` com valor fora dele é recusado |
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
 | **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |

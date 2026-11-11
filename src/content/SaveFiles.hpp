@@ -3,6 +3,7 @@
 #include "content/RoomLibrary.hpp"
 #include "game/SavedGame.hpp"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -13,11 +14,17 @@ struct SaveLoadResult {
     std::string error; // empty without a save = there is no save file
 };
 
+// What SaveFiles::resume does with a save it refuses.
+enum class RefusedSave : std::uint8_t {
+    quarantine, // renamed to <file>.bad, so the autosave of the new game never overwrites it
+    keep,       // left exactly as it is (--no-save: nothing on disk changes)
+};
+
 // A save the boot can resume: the progress plus its room, loaded and cross-checked.
 struct ResumeResult {
     std::optional<SavedGame> save;
     std::optional<RoomBundle> bundle;
-    std::string error;   // why a present save was refused (it was renamed to <file>.bad)
+    std::string error;   // why a present save was refused (see RefusedSave for what became of it)
     std::string warning; // set when the saved room did not load and the start room took its place
 };
 
@@ -58,8 +65,10 @@ bool quarantine(const std::filesystem::path& path, std::string& error);
 [[nodiscard]] std::filesystem::path defaultSlot(std::string& error);
 
 // Loads the save and its room. Missing: nothing, no error. Refused (corrupt, unknown version):
-// renamed to .bad, reason in error. A saved room that no longer loads costs no progress: it
-// resumes in fallbackRoom at playerStart (reason in warning); refused only if that fails too.
+// reason in error, and the file is renamed to .bad or left alone, as `refused` says; this is the
+// only write resume ever does. A saved room that no longer loads costs no progress: it resumes
+// in fallbackRoom at playerStart (reason in warning); refused only if that fails too.
 [[nodiscard]] ResumeResult resume(const std::filesystem::path& path, const RoomLibrary& library,
+                                  RefusedSave refused,
                                   std::string_view fallbackRoom = RoomLibrary::startRoomFile);
 } // namespace SaveFiles

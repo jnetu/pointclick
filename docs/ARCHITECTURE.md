@@ -238,7 +238,8 @@ O projeto separa estritamente três categorias de estado:
    Estado volátil da sala atual, agrupado em `Scene`, avançado por `Game::tick(dt)` e lido
    em `graphics/` (`SceneRenderer` recebe só `const Scene&`).
 3. **Estado de Sessão (`SessionState`)**:
-   Armazena flags/contadores (`setFlag`, `clearFlag`, `hasFlag`), itens ordenados do
+   Armazena flags/contadores (`setFlag`, `clearFlag`, `hasFlag`, `incrementFlag`; o valor
+   satura em ±`kMaxFlagValue`, e um snapshot fora disso é recusado), itens ordenados do
    inventário (`addItem`, `removeItem`, `hasItem`, `items`) e overrides de objetos por
    `roomId + objectId` (`setObjectVisible` / `isObjectVisible` e `setObjectSolid` /
    `isObjectSolid`). O `roomId` é o nome do arquivo `<id>.room`: `RoomLibrary` recusa
@@ -253,18 +254,27 @@ O projeto separa estritamente três categorias de estado:
 Em `Interaction` / `InteractionFiles`, cada `InteractionRule` possui:
 - **Gatilho (`InteractionTrigger`)**: `interact <objectId>` (clique direto) ou
   `use_item <itemId> <objectId>` (acionável via `Game::useItemOnObject` / `Game::useItemAt`,
-  pronto para a UI de inventário).
-- **Condições (`InteractionCondition`)**: `flag_set`, `flag_not_set`, `has_item`,
-  `lacks_item`, `object_visible`, `object_hidden`.
-- **Efeitos (`InteractionEffect`)**: `say "<texto>"`, `set_flag`, `clear_flag`,
-  `give_item`, `take_item`, `hide_object`, `show_object`, `set_solid <objectId> <0|1>`
-  (reconstrói `Navigation` automaticamente), `play_animation <objectId> <anim>` e
-  `change_room <roomId>`.
+  pronto para a UI de inventário). `*` no lugar do objeto ou do item faz uma **regra curinga**
+  (`[interact *]`, `[use_item * <objectId>]`, `[use_item <itemId> *]`, `[use_item * *]`): a
+  resposta padrão quando nenhuma regra mais específica se aplica.
+- **Condições (`InteractionCondition`)**: consultas ao `SessionState`, sem efeito colateral:
+  flags e contadores (`flag_set`, `flag_at_least`, `flag_equals`...), inventário (`has_item`...)
+  e visibilidade de objeto (`object_visible`...).
+- **Efeitos (`InteractionEffect`)**: instantâneos (`set_flag`, `add_flag`, `give_item`,
+  `hide_object`, `set_solid`, que reconstrói `Navigation` automaticamente, `play_animation`,
+  `face`...), bloqueantes (`say`, `walk_to`, `wait`, `wait_animation`, `start_dialogue`) e
+  `change_room <roomId> [<spawn>]`, adiado até o fim da sequência.
+
+Os nomes acima são exemplos, não a lista. O vocabulário completo, com sintaxe e descrição, é a
+tabela de "Formato do arquivo `.rules`" em `docs/GAME_DESIGN.md`; a fonte é o vetor de entradas
+de `src/game/ActionCatalog.cpp`, e é só lá (e nessa tabela) que uma palavra nova entra.
 
 Condições e efeitos vêm do **catálogo de ações** (`game/ActionCatalog`), no mesmo
 modelo de `RoomParameters`. Cada entrada declara palavra-chave, descrição, assinatura
-tipada (`ArgType`: `objectId`, `itemId`, `flagId`, `roomId`, `animation`, `text`,
-`boolean`), uma validação extra opcional e a função que executa (ou avalia). Uma
+tipada (os valores de `ArgType`, enumerados e comentados em `src/game/ActionCatalog.hpp`:
+IDs de objeto, item, flag, sala, nó de diálogo e spawn, nome de animação, texto, booleano,
+número decimal, inteiro com sinal e direção), uma validação extra opcional e a função que
+executa (ou avalia). Uma
 `InteractionCondition`/`InteractionEffect` guarda só o ponteiro para a entrada e os
 argumentos em texto. O parser, o serializador, a validação por `ArgType` (inclusive
 "o objeto existe na sala?"), a mensagem `Use <palavra> <args>` e a execução saem
@@ -321,8 +331,13 @@ espera a conversa e a regra que a abriu terminarem. Escolhas `once` ficam regist
 conversa e descarta os diálogos da sala antiga; `Game::setDialogues` também encerra a conversa
 em andamento, porque o `DialoguePlayer` aponta para a definição.
 
-As regras são avaliadas na ordem declarada: a primeira regra cujas condições forem
-todas verdadeiras executa seus efeitos em sequência e encerra a avaliação. Objetos
+As regras são avaliadas **por especificidade, não pela ordem do arquivo**:
+`RoomInteractions::findMatchingRule` percorre os níveis de `InteractionTrigger::wildcardLevel`
+da regra exata até `[use_item * *]`, e a primeira regra do nível cujas condições forem todas
+verdadeiras executa seus efeitos em sequência e encerra a avaliação. A ordem declarada só
+desempata dentro de um mesmo nível; se nenhuma regra do nível passar, a avaliação desce para o
+seguinte. Os níveis e exemplos estão em "Regras curinga e resposta padrão" do
+`docs/GAME_DESIGN.md`. Objetos
 ocultos (`!isObjectVisible`) deixam imediatamente de ser desenhados em `SceneRenderer`,
 deixam de bloquear `Navigation` e são ignorados no clique (`pickInteractiveObject`).
 
@@ -390,7 +405,11 @@ O save guarda só o progresso, nunca definições nem simulação:
   atualização, arquivo quebrado) = o progresso é mantido e a partida retoma em `first.room`, no
   `playerStart` (`ResumeResult::warning`, log uma vez); o arquivo fica e o autosave da entrada na sala o
   regrava. Corrompido, de versão desconhecida, ou sala do save e `first.room` sem carregar =
-  log uma vez, o arquivo vira `save.slot.bad` (nunca apagado) e novo jogo.
+  log uma vez, o arquivo vira `save.slot.bad` (nunca apagado) e novo jogo. Quem decide o destino
+  do arquivo recusado é o parâmetro `RefusedSave` de `SaveFiles::resume`: `quarantine` renomeia
+  para `.bad`; `keep` não toca em nada. `Application` passa `keep` com `--no-save` (log, novo
+  jogo, `save.slot` intacto e nenhum `.bad` criado) e usa o mesmo valor no caso em que o save
+  foi lido mas o `Game` recusou aplicá-lo.
 - **Quando grava**: `AutosavePolicy` guarda o último snapshot **estável**, capturado em
   `RoomEntered` e `CutsceneEnded` (consumidos em `Application::processGameEvents`) e no momento
   do autosave se não houver cutscene/diálogo. No meio de uma sequência vale o snapshot anterior

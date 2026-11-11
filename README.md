@@ -1,8 +1,11 @@
 # Point & Click
 
-Protótipo em C++20 e SDL3: movimento por clique, perspectiva por profundidade,
-objetos com bases sólidas, rotas com A*, sprites PNG e viewport lógica de
-1280 × 720.
+Engine de jogos point & click 2D em C++20 e SDL3, com um playground de salas de teste:
+movimento por clique com rotas A*, perspectiva por profundidade, objetos com bases sólidas,
+sprites PNG animados, regras de interação e diálogos declarativos (`.rules`, `.dlg`), texto
+UTF-8 com SDL3_ttf, autosave e viewport lógica de 1280 × 720. O alvo é PC, celular e tablet;
+hoje só o desktop foi testado (o estado e as pendências estão em
+[docs/ROADMAP.md](docs/ROADMAP.md)).
 
 ```sh
 cmake --preset debug
@@ -43,7 +46,7 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 | --- | --- |
 | `--rooms <pasta>` | Pasta das salas (padrão: `assets/rooms` junto do executável) |
 | `--new-game` | Começa do zero, sem retomar o `save.slot` |
-| `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`) |
+| `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`). Um save recusado (corrompido ou de versão desconhecida) também fica onde está, sem virar `save.slot.bad`: o jogo avisa no log e começa do zero |
 | `--room <sala> [spawn]` | Começa um jogo **novo** em `<sala>.room`, no `[spawn]` indicado (sem ele: `player.start`). Não retoma o save; combine com `--no-save` para não sobrescrevê-lo |
 | `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Só aceita `--rooms` |
 

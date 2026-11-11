@@ -132,7 +132,7 @@ regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, teste
 | C9 ✅ | **Sem driver de áudio (CI, contêiner Linux) o jogo não abre** (*por leitura*); o áudio nem é usado ainda. | [Application.cpp:179](../src/core/Application.cpp). | Tirar `SDL_INIT_AUDIO` até existir `audio/`; depois, iniciar o subsistema à parte e seguir sem som se falhar. | 10 min |
 | C10 ✅ | **Progresso perdido em crash:** o autosave só é gravado ao ir para background ou sair. | Leitura de `processGameEvents`. | Gravar também em `RoomEntered` (a política já pula escrita sem mudança). | 30 min |
 | C11 ✅ | **Clique num objeto já ao alcance faz o player "ajeitar"** até o centro da célula antes de interagir. | Sonda: a 10 px do ponto, anda de (889,629) para (880,624). | `Scene::approach`: se já está ao alcance e a rota é menor que uma célula, resolver na hora. | 1 h |
-| C12 | **Uso de item sem regra não dá resposta:** o player anda até o objeto e nada acontece. | Sonda: `useItemOnObject` devolve `true`, sem fala nem evento. | Ver F4 (regras curinga). | — |
+| C12 ✅ | **Uso de item sem regra não dá resposta:** o player anda até o objeto e nada acontece. | Sonda: `useItemOnObject` devolve `true`, sem fala nem evento. | Resolvido pelo F4: com `[use_item * <obj>]`, `[use_item <item> *]` ou `[use_item * *]` a sala responde ("Isso não funciona."); sem curinga, nada muda (os dois casos em `testWildcardRules`, `GameTests.cpp`). | — |
 
 ### 3.2 Dívidas e higiene
 
@@ -168,7 +168,17 @@ regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, teste
 
 ### 3.3 Features pequenas de alto valor
 
-- **F1 — Opções de linha de comando para teste:** `--new-game` (ignora o save), `--no-save`,
+- ✅ **F1 — Opções de linha de comando para teste:** feito em 10/11/2026. Parsing sem SDL em
+  `core/CommandLine` (`pointclick_cli`), validação em `content/ContentCheck`; `--room` também
+  começa jogo novo e passou a respeitar o `[spawn]` na primeira sala. Testado em
+  `tests/CommandLineTests.cpp` (parser; `--check` em `assets/rooms` e numa cópia com erros) e
+  pelo executável no `ctest` (`pointclick_check_assets` passa, `pointclick_check_broken_rooms`
+  falha de propósito). `--no-save`, `--room` e os erros de `--room` foram conferidos rodando o
+  executável headless (hash do `save.slot` inalterado); o autosave de saída com `--no-save` não
+  (o SIGINT não encerra o jogo com o driver `dummy`), nem `--room <sala> <spawn>` com spawn válido
+  (os assets não têm `[spawn]`). Limite: com `--no-save`, um save corrompido ainda é renomeado
+  para `.bad` dentro de `SaveFiles::resume` (fora do escopo deste lote).
+  Pedido original: `--new-game` (ignora o save), `--no-save`,
   `--room <id> [spawn]` e `--check` (valida todas as salas, `.rules`, `.dlg` e
   `transitionsError`, sai com código de erro; serve a CI). Hoje toda execução retoma o
   `save.slot` da pasta do usuário, o que atrapalha testar mecânicas do zero. Toca `main.cpp`,
@@ -183,14 +193,25 @@ regra nova em `cmake/CheckLayerIncludes.cmake`), D7 (`TextFormat::number`, teste
   de objeto, `walk_to`, `wait` nem `wait_animation`. Criar salas pequenas (ver seção 7) e um
   teste headless que carrega os assets e joga cada sala com uma lista de cliques até um estado
   esperado. *2–3 dias.*
-- **F4 — Regras curinga:** `[use_item * <obj>]`, `[use_item <item> *]` e `[interact *]` como
+- ✅ **F4 — Regras curinga:** feito em 10/11/2026, também com `[use_item * *]`. Ordem fixa por
+  especificidade (exata → `* obj`/`interact *` → `item *` → `* *`), ordem do arquivo só no
+  empate, e condição falsa desce de nível; documentada em `GAME_DESIGN.md`. Testes:
+  `testWildcardRules` (`GameTests.cpp`) e parser/round-trip em `EditorTests.cpp`.
+  Pedido original: `[use_item * <obj>]`, `[use_item <item> *]` e `[interact *]` como
   resposta padrão ("Isso não funciona."). Toca `InteractionTrigger::matches`, parser, docs,
   testes. *½ dia.*
-- **F5 — Contadores nas regras:** `add_flag <flag> <n>`, `flag_at_least <flag> <n>`,
+- ✅ **F5 — Contadores nas regras:** feito em 10/11/2026 com `ArgType::integer` (aceita `-`,
+  `add_flag x -1` decrementa). Testes: `testFlagCounters` (`GameTests.cpp`), round-trip do
+  catálogo e erros por linha em `EditorTests.cpp`. Pedido original: `add_flag <flag> <n>`, `flag_at_least <flag> <n>`,
   `flag_equals <flag> <n>`. `SessionState::incrementFlag` já existe; são três entradas no
   catálogo. *2 h.*
-- **F6 — `face <direção>`:** um método em `ScriptHost` + uma entrada no catálogo. *2 h.*
-- **F7 — `flip_x` nos clips:** `SpriteLibrary::draw` já aceita `flipHorizontally`; falta o campo
+- ✅ **F6 — `face <direção>`:** feito em 10/11/2026 (`ScriptHost::facePlayer`, `ArgType::facing`
+  com as direções de `Facing`, que são as de `PlayerPose` sem `idle`). Testes: `testFaceDirection`
+  (`GameTests.cpp`) e direção inválida recusada com a linha em `EditorTests.cpp`. Pedido original: um método em `ScriptHost` + uma entrada no catálogo. *2 h.*
+- ✅ **F7 — `flip_x` nos clips:** feito em 10/11/2026; gravado só quando `1` e combinado por XOR
+  com o `flipHorizontally` do chamador. Testes: pixels espelhados em `SpriteTests.cpp`,
+  round-trip (ausente continua ausente) em `EditorTests.cpp`. Não conferido numa janela com GPU
+  real. Pedido original: `SpriteLibrary::draw` já aceita `flipHorizontally`; falta o campo
   em `SpriteClip`/`SpriteFields` para reaproveitar a folha `right` como `left`. *2 h.*
 
 ---

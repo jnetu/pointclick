@@ -28,6 +28,10 @@ Os presets `debug`/`release` usam o gerador padrão da plataforma (ou `CMAKE_GEN
 SDL3: uma versão de referência (`POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`)
 vale para o pacote do sistema (mínimo) e para o CPM. Estilo: `.clang-format` só nos trechos tocados.
 Para rodar com os assets da raiz: `pointclick --rooms assets/rooms`.
+Validar o conteúdo sem abrir janela (salas, `.rules`, `.dlg`, `change_room`; sai ≠ 0 com erro):
+`pointclick --rooms assets/rooms --check` (também roda no `ctest`). Testar do zero sem mexer no
+save: `--new-game --no-save`; começar numa sala: `--room <sala> [spawn]` (jogo novo).
+Parsing em `src/core/CommandLine.*` (sem SDL), validação em `src/content/ContentCheck.*`.
 Build sem o editor (como numa loja): `-DPOINTCLICK_ENABLE_TOOLS=OFF`.
 
 Antes de concluir: checklist da skill (seção 12) e todos os testes passando.

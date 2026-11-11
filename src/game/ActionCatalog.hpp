@@ -26,7 +26,11 @@ enum class ArgType : std::uint8_t {
     number,    // seconds or other non-negative decimal, '.' separator
     dialogueId, // node of the room's .dlg; cross-checked by dialogueReferencesError
     spawnId,    // `[spawn]` of another room; checked when that room is entered
+    integer,    // whole number with optional '-', |n| <= kMaxIntegerArgument (counters)
+    facing,     // left, right, up or down (game/Facing.hpp)
 };
+
+inline constexpr int kMaxIntegerArgument = 1'000'000;
 
 [[nodiscard]] std::string_view argPlaceholder(ArgType type);
 
@@ -94,6 +98,7 @@ struct ConditionDescriptor {
 [[nodiscard]] const EffectDescriptor* findEffect(std::string_view keyword);
 [[nodiscard]] const ConditionDescriptor* findCondition(std::string_view keyword);
 [[nodiscard]] bool parseNumberArgument(std::string_view text, float& value);
+[[nodiscard]] bool parseIntegerArgument(std::string_view text, int& value);
 
 // "Use set_solid <objeto> <0|1>" or "Use change_room <sala> [<spawn>]", from the signature.
 [[nodiscard]] std::string actionUsage(std::string_view keyword, const ArgSignature& signature);

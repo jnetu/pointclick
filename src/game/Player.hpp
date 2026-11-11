@@ -32,6 +32,8 @@ public:
     [[nodiscard]] PlayerPose pose() const;
     // Set by the spawn and by every step; standing still keeps the last one.
     [[nodiscard]] Facing facing() const;
+    // Turns in place (scripted `face`); the next step of a walk sets it again.
+    void face(Facing facing);
     [[nodiscard]] std::string_view animationName() const;
     [[nodiscard]] float animationTime() const;
     [[nodiscard]] float interpolatedAnimationTime(float alpha) const;

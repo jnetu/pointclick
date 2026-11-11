@@ -21,9 +21,12 @@ bool number(const std::string& value, float& result) {
 bool SpriteFields::parse(SpriteClip& clip, const std::string_view field,
                          const std::string& value) {
     if (field == "file") { clip.file = value; return true; }
-    if (field == "loop" || field == "pixelated") {
+    if (field == "loop" || field == "pixelated" || field == "flip_x") {
         if (value != "0" && value != "1") return false;
-        (field == "loop" ? clip.loop : clip.pixelated) = value == "1";
+        bool& target = field == "loop" ? clip.loop
+                       : field == "pixelated" ? clip.pixelated
+                                              : clip.flipX;
+        target = value == "1";
         return true;
     }
     float parsed = 0.0F;
@@ -65,6 +68,8 @@ void SpriteFields::write(std::ostream& out, const std::string_view prefix,
     out << prefix << "fps = " << TextFormat::number(clip.fps) << '\n';
     out << prefix << "loop = " << (clip.loop ? 1 : 0) << '\n';
     out << prefix << "pixelated = " << (clip.pixelated ? 1 : 0) << '\n';
+    // Written only when set, so files authored before flip_x existed save unchanged.
+    if (clip.flipX) out << prefix << "flip_x = 1\n";
     out << prefix << "display_width = " << TextFormat::number(clip.displayWidth) << '\n';
     out << prefix << "display_height = " << TextFormat::number(clip.displayHeight) << '\n';
     out << prefix << "offset_x = " << TextFormat::number(clip.offsetX) << '\n';

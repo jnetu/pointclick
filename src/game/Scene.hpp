@@ -50,6 +50,7 @@ public:
     // Scripted walk_to: false when already there, hidden or unreachable.
     bool walkToObject(std::string_view objectId);
     void walkToFloor(SDL_FPoint position);
+    void facePlayer(Facing facing) { player_.face(facing); }
     // Stops the walk and drops any pending interaction.
     void stopPlayer();
     [[nodiscard]] const SceneObject* pick(SDL_FPoint worldPoint) const;

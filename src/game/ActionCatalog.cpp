@@ -1,8 +1,11 @@
 #include "game/ActionCatalog.hpp"
 
+#include "game/Facing.hpp"
 #include "game/Identifier.hpp"
 #include "game/Room.hpp"
 #include "game/SessionState.hpp"
+
+#include <optional>
 
 namespace {
 using enum ArgType;
@@ -38,6 +41,15 @@ const EffectDescriptor kEffects[]{
     {"clear_flag", "Limpa uma flag na sessao", {flagId}, nullptr,
      [](const ActionArgs args, ActionContext& context) {
          context.host.session().clearFlag(args[0]);
+         return kDone;
+     },
+     nullptr},
+    {"add_flag", "Soma <n> (pode ser negativo) ao contador da flag; ausente conta como 0",
+     {flagId, integer}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         int delta = 0;
+         (void)parseIntegerArgument(args[1], delta);
+         (void)context.host.session().incrementFlag(args[0], delta);
          return kDone;
      },
      nullptr},
@@ -95,6 +107,14 @@ const EffectDescriptor kEffects[]{
          return context.host.walkToObject(args[0]) ? kRunning : kDone;
      },
      [](ActionArgs, ActionContext& context) { return context.host.walking() ? kRunning : kDone; }},
+    {"face", "Vira o player parado para left, right, up ou down", {facing}, nullptr,
+     [](const ActionArgs args, ActionContext& context) {
+         if (const std::optional<Facing> facing = parseFacing(args[0])) {
+             context.host.facePlayer(*facing);
+         }
+         return kDone;
+     },
+     nullptr},
     {"wait", "Espera alguns segundos", {number}, nullptr,
      [](const ActionArgs args, ActionContext& context) {
          (void)parseNumberArgument(args[0], context.step.value);
@@ -132,6 +152,16 @@ const ConditionDescriptor kConditions[]{
     {"flag_not_set", "A flag nao esta ativa", {flagId},
      [](const ActionArgs args, const SessionState& session, std::string_view) {
          return !session.hasFlag(args[0]);
+     }},
+    {"flag_at_least", "O contador da flag e maior ou igual a <n>", {flagId, integer},
+     [](const ActionArgs args, const SessionState& session, std::string_view) {
+         int minimum = 0;
+         return parseIntegerArgument(args[1], minimum) && session.flagValue(args[0]) >= minimum;
+     }},
+    {"flag_equals", "O contador da flag e igual a <n> (ausente = 0)", {flagId, integer},
+     [](const ActionArgs args, const SessionState& session, std::string_view) {
+         int expected = 0;
+         return parseIntegerArgument(args[1], expected) && session.flagValue(args[0]) == expected;
      }},
     {"has_item", "O item esta no inventario", {itemId},
      [](const ActionArgs args, const SessionState& session, std::string_view) {
@@ -173,6 +203,8 @@ std::string_view argPlaceholder(const ArgType type) {
     case number: return "<segundos>";
     case dialogueId: return "<dialogo>";
     case spawnId: return "<spawn>";
+    case integer: return "<n>";
+    case facing: return "<left|right|up|down>";
     }
     return "<?>";
 }
@@ -215,6 +247,22 @@ bool parseNumberArgument(const std::string_view text, float& value) {
     return true;
 }
 
+bool parseIntegerArgument(const std::string_view text, int& value) {
+    // Locale-independent: optional '-', then digits only; no '+', spaces or fraction.
+    std::string_view digits = text;
+    const bool negative = digits.starts_with('-');
+    if (negative) digits.remove_prefix(1);
+    if (digits.empty() || digits.size() > 7) return false;
+    int result = 0;
+    for (const char ch : digits) {
+        if (ch < '0' || ch > '9') return false;
+        result = result * 10 + (ch - '0');
+    }
+    if (result > kMaxIntegerArgument) return false;
+    value = negative ? -result : result;
+    return true;
+}
+
 std::string actionUsage(const std::string_view keyword, const ArgSignature& signature) {
     std::string usage = "Use ";
     usage += keyword;
@@ -248,6 +296,16 @@ std::string argumentsError(const std::string_view keyword, const ArgSignature& s
             if (!parseNumberArgument(value, parsed)) return "Numero invalido: " + value;
             break;
         }
+        case integer: {
+            int parsed = 0;
+            if (!parseIntegerArgument(value, parsed)) return "Inteiro invalido: " + value;
+            break;
+        }
+        case facing:
+            if (!parseFacing(value)) {
+                return "Direcao invalida: " + value + " (use left, right, up ou down)";
+            }
+            break;
         case objectId:
             if (!validIdentifier(value)) return "Identificador invalido: " + value;
             if (room && !room->findObject(value)) return "Objeto desconhecido na sala: " + value;

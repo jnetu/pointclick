@@ -128,8 +128,10 @@ bool SpriteLibrary::draw(const SpriteClip& clip, const SDL_FRect target,
     }
     SDL_SetTextureScaleMode(image.texture, clip.pixelated ? SDL_SCALEMODE_NEAREST
                                                   : SDL_SCALEMODE_LINEAR);
+    // The clip's own flip_x and the caller's request compose: both together cancel out.
+    const bool mirrored = flipHorizontally != clip.flipX;
     if (!SDL_RenderTextureRotated(renderer_, image.texture, &source, &target, 0.0,
-                                  nullptr, flipHorizontally ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE)) {
+                                  nullptr, mirrored ? SDL_FLIP_HORIZONTAL : SDL_FLIP_NONE)) {
         drawMissing(target);
         return false;
     }

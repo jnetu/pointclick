@@ -1,0 +1,4 @@
+# Sala propositalmente invalida: o teste pointclick_check_broken_rooms espera que --check falhe.
+[room]
+id = first
+typo = 40

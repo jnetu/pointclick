@@ -1,5 +1,7 @@
 #pragma once
 
+#include "game/Facing.hpp"
+
 #include <string_view>
 
 class SessionState;
@@ -25,6 +27,8 @@ public:
     // False when the player cannot move closer (already there, hidden or unreachable).
     virtual bool walkToObject(std::string_view objectId) = 0;
     [[nodiscard]] virtual bool walking() const = 0;
+    // Turns the player in place; standing, it picks idle_<facing> when the set has it.
+    virtual void facePlayer(Facing facing) = 0;
 
     // Opens a dialogue node; false when the room has no such node. The host runs the node's
     // steps on top of the current sequence once the calling action returns.

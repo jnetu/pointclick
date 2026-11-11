@@ -170,6 +170,7 @@ Sufixos de um clip (no `.actor` sem prefixo, na sala com `player.` ou `animation
 | `.fps` | Quadros por segundo; 0 mantém o primeiro quadro |
 | `.loop` | `1` repete a animação; `0` para no último quadro |
 | `.pixelated` | `1` usa pixels nítidos; `0` suaviza a ampliação |
+| `.flip_x` | `1` espelha o clip na horizontal (ex.: `left` reaproveitando a folha de `right`); padrão `0`. Só é gravado quando vale `1`, então arquivos antigos salvam iguais |
 | `.display_width`, `.display_height` | Tamanho visual base; 0 usa `player.width/height` ou `bounds` do objeto |
 | `.offset_x`, `.offset_y` | Ajuste visual da imagem em relação ao centro dos pés, antes da perspectiva |
 
@@ -327,17 +328,22 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 | --- | --- | --- |
 | **Gatilho** | `[interact <objectId>]` | Clique direto no objeto da sala |
 | **Gatilho** | `[use_item <itemId> <objectId>]` | Uso de um item do inventário sobre o objeto |
+| **Gatilho curinga** | `[interact *]` | Clique em qualquer objeto da sala sem regra `interact` que se aplique (torna todo objeto visível clicável) |
+| **Gatilho curinga** | `[use_item * <objectId>]` / `[use_item <itemId> *]` / `[use_item * *]` | Uso de qualquer item no objeto / do item em qualquer objeto / de qualquer item em qualquer objeto, quando nenhuma regra mais específica se aplica |
 | **Condição** | `flag_set <flag>` / `flag_not_set <flag>` | Testa se uma flag de progresso está ativa ou não |
+| **Condição** | `flag_at_least <flag> <n>` / `flag_equals <flag> <n>` | Compara o contador da flag com o inteiro `<n>` (flag ausente vale `0`; `set_flag` vale `1`) |
 | **Condição** | `has_item <itemId>` / `lacks_item <itemId>` | Testa se o jogador possui (ou não) o item no inventário |
 | **Condição** | `object_visible <objectId>` / `object_hidden <objectId>` | Testa se um objeto da sala está visível ou oculto |
 | **Efeito** | `say "<texto>"` | Exibe a fala/observação e espera o tempo de leitura ou um clique. Texto UTF-8 com acentos. Aceita `\"` e `\n` (quebra de linha forçada); o resto quebra sozinho por palavras (até ~820 px de largura), centralizado acima da cabeça do player e sempre dentro da tela |
 | **Efeito** | `set_flag <flag>` / `clear_flag <flag>` | Ativa ou limpa uma flag na sessão |
+| **Efeito** | `add_flag <flag> <n>` | Soma o inteiro `<n>` ao contador da flag (`-1` decrementa); chegar a `0` limpa a flag |
 | **Efeito** | `give_item <itemId>` / `take_item <itemId>` | Adiciona ou remove um item do inventário |
 | **Efeito** | `hide_object <objectId>` / `show_object <objectId>` | Esconde (ex: item pego) ou revela um objeto na sala |
 | **Efeito** | `set_solid <objectId> <0\|1>` | Desativa (`0`) ou ativa (`1`) a colisão e reconstrói a navegação |
 | **Efeito** | `play_animation <objectId> <animName>` | Toca/reinicia um clip configurado no objeto |
 | **Efeito** | `wait_animation <objectId>` | Espera o clip atual do objeto terminar (clips com `loop` e imagens paradas, com `fps = 0`, não esperam) |
 | **Efeito** | `walk_to <objectId>` | Anda até o ponto de aproximação do objeto e espera chegar |
+| **Efeito** | `face <left\|right\|up\|down>` | Vira o player parado para a direção (as mesmas de `PlayerPose`/`[spawn]`); parado, usa `idle_<direção>` se existir. Outra palavra é recusada com a linha (`Direcao invalida: ...`) |
 | **Efeito** | `wait <segundos>` | Espera um tempo (ex.: `wait 1.5`, sempre com ponto) |
 | **Efeito** | `start_dialogue <no>` | Abre um nó do `<sala>.dlg` e espera a conversa terminar |
 | **Efeito** | `change_room <roomId> [<spawn>]` | Troca para `<roomId>.room` quando a sequência terminar; entra pelo `[spawn]` indicado (sem ele: `player.start_*`) |
@@ -345,9 +351,47 @@ gatilho entre colchetes, seguido por zero ou mais condições e um ou mais efeit
 A tabela acima espelha o catálogo de ações em `src/game/ActionCatalog.cpp`. Os
 argumentos são validados pelo tipo: identificadores só aceitam letras, números, `_`
 e `-`; `<objeto>` precisa existir na sala; `<animacao>` precisa existir no objeto;
-`"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`. Argumentos entre colchetes
+`"texto"` não pode ser vazio; booleanos aceitam só `0` ou `1`; `<n>` é um inteiro com `-`
+opcional (sem `+`, sem fração), de `-1000000` a `1000000`. Argumentos entre colchetes
 na tabela são opcionais e só podem faltar no fim. Um erro aponta a linha
 e a forma esperada (por exemplo, `Linha 4: Use set_solid <objeto> <0|1>`).
+
+### Regras curinga e resposta padrão
+
+`*` no lugar do objeto ou do item vale para qualquer um. Serve para a resposta padrão, sem
+escrever uma regra por combinação:
+
+```ini
+[use_item brass_key red_box]   # a combinação certa
+take_item brass_key
+say "Abriu!"
+
+[use_item * red_box]           # qualquer outro item na caixa
+say "A caixa não abre com isso."
+
+[use_item * *]                 # qualquer item em qualquer objeto da sala
+say "Isso não funciona."
+
+[interact *]                   # clique em objeto sem regra própria
+say "Nada de interessante."
+```
+
+A escolha da regra é determinística e vai **da mais específica para a mais ampla**, nesta
+ordem fixa:
+
+1. exata: `[interact <obj>]` ou `[use_item <item> <obj>]`;
+2. `[interact *]` e `[use_item * <obj>]` (a resposta do próprio objeto);
+3. `[use_item <item> *]` (a resposta do item em qualquer objeto);
+4. `[use_item * *]`.
+
+Dentro de um mesmo nível vale a ordem do arquivo (a primeira regra cujas condições passarem).
+A posição no arquivo **não** muda o nível: uma curinga escrita antes da regra exata continua
+perdendo para ela. Se as condições de todas as regras de um nível falharem, a avaliação desce
+para o próximo; por isso `[use_item * porta]` também responde quando a regra exata da chave
+já não vale (por exemplo, com a porta aberta). Sem nenhuma curinga, um item sem regra continua
+sem resposta, como antes. Um gatilho com `*` no lugar do objeto (`[interact *]`,
+`[use_item <item> *]`, `[use_item * *]`) conta como regra de todos os objetos: com ele, todo
+objeto visível da sala passa a ser clicável.
 
 ### Sequências e cutscenes
 

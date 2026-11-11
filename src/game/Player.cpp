@@ -89,6 +89,8 @@ PlayerPose Player::pose() const { return pose_; }
 
 Facing Player::facing() const { return facing_; }
 
+void Player::face(const Facing facing) { facing_ = facing; }
+
 std::string_view Player::animationName() const { return animation_.name(); }
 
 float Player::animationTime() const { return animation_.elapsed(); }

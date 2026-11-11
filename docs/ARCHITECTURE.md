@@ -18,6 +18,8 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `tests/support/RoomPresets` | Sala, sprites e regras de exemplo em C++ **só para testes** (target `pointclick_test_support`; nem o jogo nem o leitor de salas os linkam) |
 | `content/ActorFiles` | Leitura de `assets/actors/<id>.actor`: clips de um ator compartilhados por todas as salas |
 | `content/RoomLibrary` | Layout dos assets (`rooms/`, `actors/`, `sprites/`) e carga de sala + `.rules` + `.dlg` validados juntos; usado pelo jogo e pelo editor |
+| `content/ContentCheck` | `pointclick --check`: lista a pasta (só desktop), carrega cada sala por `RoomLibrary::loadBundle` + `transitionsError` e devolve os erros por arquivo e linha |
+| `core/CommandLine` | Opções `--rooms`, `--new-game`, `--no-save`, `--room <sala> [spawn]`, `--check`, lidas sem SDL (`pointclick_cli`, testável) |
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
@@ -69,6 +71,7 @@ Cada camada é uma biblioteca estática, e o linker recusa dependências proibid
 | `pointclick_ui` | `src/ui/` | `input`, `game` |
 | `pointclick_graphics` | `src/graphics/` | `ui`, `input`, `game`, SDL3_ttf (privado) |
 | `pointclick_tools` (opcional) | `src/debug/` | `content`, `graphics` |
+| `pointclick_cli` | `src/core/CommandLine.cpp` | `game` (só `Identifier.hpp`) |
 | `pointclick` | `src/core/`, `main.cpp` | todos; `pointclick_tools` só com `POINTCLICK_ENABLE_TOOLS=ON` |
 
 `POINTCLICK_ENABLE_TOOLS` (padrão `ON`) liga o editor; com `OFF`, como numa build de
@@ -150,7 +153,8 @@ uma sequência com `change_room <roomId> [<spawn>]` termina), com os pés no `[s
 (`Room::entryPoint`; vazio = `playerStart`). `Scene::apply` resolve o spawn antes de mexer em
 qualquer estado: spawn desconhecido recusa a carga inteira. Spawns de outras salas não são
 conferidos a cada troca (exigiria ler as vizinhas); `RoomLibrary::transitionsError` faz essa
-checagem cruzada como verificação de conteúdo (testes; um futuro manifesto no boot).
+checagem cruzada como verificação de conteúdo (`pointclick --check`, testes; um futuro
+manifesto no boot).
 
 A leitura de `.room` e `.rules` usa `SDL_IOFromFile` e `SDL_LoadFile_IO` do SDL3
 (versão de referência `POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`), com caminhos UTF-8 e o tamanho explícito dos dados. O stream permanece aberto

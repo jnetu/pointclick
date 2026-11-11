@@ -203,6 +203,21 @@ void testPngRendering(const std::filesystem::path& directory) {
     expectColor(pixel(output, 2, 20), 20, 240, 20);
     expectColor(pixel(output, 37, 20), 255, 255, 255);
 
+    // flip_x on the clip mirrors the same way; with the caller's flip they cancel out.
+    SpriteClip mirrored = clip;
+    mirrored.flipX = true;
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    assert(sprites.draw(mirrored, {0, 0, 40, 40}, 0.5F));
+    SDL_RenderPresent(renderer);
+    expectColor(pixel(output, 2, 20), 20, 240, 20);
+    expectColor(pixel(output, 37, 20), 255, 255, 255);
+    SDL_RenderClear(renderer);
+    assert(sprites.draw(mirrored, {0, 0, 40, 40}, 0.5F, true));
+    SDL_RenderPresent(renderer);
+    expectColor(pixel(output, 2, 20), 255, 255, 255);
+    expectColor(pixel(output, 37, 20), 20, 240, 20);
+
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
     SDL_RenderClear(renderer);
     SpriteClip staticImage{.file = "sheet.png"};

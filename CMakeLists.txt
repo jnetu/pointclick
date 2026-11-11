@@ -58,6 +58,7 @@ target_link_libraries(pointclick_game PUBLIC SDL3::SDL3)
 # Content files <-> validated definitions, asset layout.
 add_library(pointclick_content STATIC
         src/content/ActorFiles.cpp
+        src/content/ContentCheck.cpp
         src/content/DialogueFiles.cpp
         src/content/InteractionFiles.cpp
         src/content/RoomFiles.cpp
@@ -106,14 +107,19 @@ if(POINTCLICK_ENABLE_TOOLS)
     list(APPEND POINTCLICK_LAYER_TARGETS pointclick_tools)
 endif()
 
+# Command-line parsing without SDL, so tests can link it apart from Application.
+add_library(pointclick_cli STATIC src/core/CommandLine.cpp)
+target_link_libraries(pointclick_cli PUBLIC pointclick_game)
+
 add_executable(pointclick src/main.cpp src/core/Application.cpp)
+target_link_libraries(pointclick PRIVATE pointclick_cli)
 if(POINTCLICK_ENABLE_TOOLS)
     target_link_libraries(pointclick PRIVATE pointclick_tools) # brings content + graphics
 else()
     target_link_libraries(pointclick PRIVATE pointclick_content pointclick_graphics)
 endif()
 
-foreach(target ${POINTCLICK_LAYER_TARGETS} pointclick)
+foreach(target ${POINTCLICK_LAYER_TARGETS} pointclick_cli pointclick)
     target_compile_options(${target} PRIVATE ${POINTCLICK_WARNINGS})
 endforeach()
 
@@ -136,7 +142,12 @@ if(BUILD_TESTING)
     # Text layout links ui/ only: wrapping is tested with fake metrics, no window or GPU.
     add_executable(pointclick_text_tests tests/TextLayoutTests.cpp)
     target_link_libraries(pointclick_text_tests PRIVATE pointclick_ui)
-    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests pointclick_text_tests)
+    add_executable(pointclick_cli_tests tests/CommandLineTests.cpp)
+    target_link_libraries(pointclick_cli_tests PRIVATE pointclick_cli pointclick_content)
+    target_compile_definitions(pointclick_cli_tests PRIVATE
+            POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests pointclick_text_tests
+            pointclick_cli_tests)
     if(POINTCLICK_ENABLE_TOOLS)
         add_executable(pointclick_editor_tests tests/EditorTests.cpp)
         target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools pointclick_test_support)
@@ -150,6 +161,12 @@ if(BUILD_TESTING)
                 ${POINTCLICK_KEEP_ASSERTS})
         add_test(NAME ${test_target} COMMAND ${test_target})
     endforeach()
+    # The real executable: --check exits 0 on the shipped rooms and non-zero on a broken folder.
+    add_test(NAME pointclick_check_assets
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms --check)
+    add_test(NAME pointclick_check_broken_rooms
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/broken_rooms --check)
+    set_tests_properties(pointclick_check_broken_rooms PROPERTIES WILL_FAIL TRUE)
     add_test(NAME pointclick_layer_includes
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerIncludes.cmake)

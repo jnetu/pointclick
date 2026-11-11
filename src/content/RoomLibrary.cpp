@@ -52,19 +52,27 @@ RoomLoadResult RoomLibrary::loadRoom(const std::string_view filename) const {
 
 RoomBundleResult RoomLibrary::loadBundle(const std::string_view filename) const {
     const auto roomPath = roomsDirectory_ / std::filesystem::path(filename);
+    const auto nameOf = [](const std::filesystem::path& path) {
+        return TextFormat::pathToUtf8(path.filename());
+    };
     RoomLoadResult room = loadRoom(filename);
-    if (!room.room) return {std::nullopt, std::move(room.error)};
+    if (!room.room) return {std::nullopt, std::move(room.error), nameOf(roomPath)};
+    const auto rulesPath = InteractionFiles::companionPath(roomPath);
     InteractionLoadResult rules = InteractionFiles::loadOptionalForRoom(roomPath, &*room.room);
-    if (!rules.interactions) return {std::nullopt, std::move(rules.error)};
+    if (!rules.interactions) return {std::nullopt, std::move(rules.error), nameOf(rulesPath)};
     DialogueLoadResult dialogues = DialogueFiles::loadOptionalForRoom(roomPath, &*room.room);
-    if (!dialogues.dialogues) return {std::nullopt, std::move(dialogues.error)};
+    if (!dialogues.dialogues) {
+        return {std::nullopt, std::move(dialogues.error),
+                nameOf(DialogueFiles::companionPath(roomPath))};
+    }
+    // start_dialogue lives in the .rules; the node it names is missing from the .dlg.
     if (std::string missing = dialogueReferencesError(*rules.interactions, *dialogues.dialogues);
         !missing.empty()) {
-        return {std::nullopt, std::move(missing)};
+        return {std::nullopt, std::move(missing), nameOf(rulesPath)};
     }
     return {RoomBundle{std::move(*room.room), std::move(*rules.interactions),
                        std::move(*dialogues.dialogues)},
-            {}};
+            {}, {}};
 }
 
 std::string RoomLibrary::transitionsError(const RoomBundle& bundle) const {

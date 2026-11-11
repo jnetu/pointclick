@@ -22,6 +22,7 @@ struct RoomBundle {
 struct RoomBundleResult {
     std::optional<RoomBundle> bundle;
     std::string error;
+    std::string errorFile; // the file the error is about ("first.rules"); empty on success
 };
 
 // The asset layout in one place:

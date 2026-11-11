@@ -6,6 +6,7 @@
 #include "game/RoomParameters.hpp"
 #include "content/ActorFiles.hpp"
 #include "content/RoomLibrary.hpp"
+#include "content/TextFormat.hpp"
 #include "debug/DebugEditor.hpp"
 #include "debug/DebugOverlay.hpp"
 #include "game/Game.hpp"
@@ -210,9 +211,18 @@ void testRoomFiles(const std::filesystem::path& directory) {
     room.scenery[1].type = SceneObjectType::decoration;
     std::string error;
     const auto path = directory / "roundtrip.room";
+    // flip_x (F7): absent stays absent on save; set survives the round-trip.
+    room.scenery[1].animations["idle"] = SpriteClip{.file = "red_idle.png"};
+    room.scenery[1].animations["walk"] = SpriteClip{.file = "red_walk.png"};
     assert(RoomFiles::save(path, room, error));
+    assert(TextFormat::readFile(path).text->find("flip_x") == std::string::npos);
+    room.scenery[1].animations["walk"].flipX = true;
+    assert(RoomFiles::save(path, room, error));
+    assert(TextFormat::readFile(path).text->find("animation.walk.flip_x = 1")
+           != std::string::npos);
     const auto restored = RoomFiles::load(path);
     assert(restored.room);
+    assert(restored.room->scenery[1].animations.at("walk").flipX);
     for (const auto& parameter : roomParameters()) {
         assert(parameter.read(room) == parameter.read(*restored.room));
     }
@@ -965,6 +975,41 @@ void testInteractionRulesFilesAndValidation(const std::filesystem::path& directo
     assert(reloaded.interactions->rules[1].trigger.objectId == "red_box");
     assert(reloaded.interactions->rules[1].effects.size() == 8);
 
+    // F4 / C12: wildcard triggers parse against the room (no object lookup for `*`) and
+    // survive save -> load unchanged.
+    {
+        const auto wild = InteractionFiles::parse(
+                "[use_item * red_box]\nsay \"a\"\n[use_item golden_token *]\nsay \"b\"\n"
+                "[use_item * *]\nsay \"c\"\n[interact *]\nsay \"d\"\n",
+                &testRoom);
+        assert(wild.interactions && wild.error.empty());
+        const auto& rules = wild.interactions->rules;
+        assert(rules[0].trigger.itemId == "*" && rules[0].trigger.objectId == "red_box");
+        assert(rules[1].trigger.itemId == "golden_token" && rules[1].trigger.objectId == "*");
+        assert(rules[3].trigger.kind == InteractionTriggerKind::interact
+               && rules[3].trigger.objectId == "*");
+        assert(rules[0].trigger.wildcardLevel() == 1 && rules[1].trigger.wildcardLevel() == 2
+               && rules[2].trigger.wildcardLevel() == 3 && rules[3].trigger.wildcardLevel() == 1);
+        const auto wildPath = directory / "wildcard.rules";
+        assert(InteractionFiles::save(wildPath, *wild.interactions, saveError, &testRoom));
+        const std::string written = *TextFormat::readFile(wildPath).text;
+        assert(written.find("[use_item * red_box]") != std::string::npos);
+        assert(written.find("[use_item golden_token *]") != std::string::npos);
+        assert(written.find("[use_item * *]") != std::string::npos);
+        assert(written.find("[interact *]") != std::string::npos);
+        const auto wildBack = InteractionFiles::load(wildPath, &testRoom);
+        assert(wildBack.interactions && wildBack.interactions->rules.size() == 4);
+        for (std::size_t i = 0; i < 4; ++i) {
+            assert(wildBack.interactions->rules[i].trigger.objectId == rules[i].trigger.objectId);
+            assert(wildBack.interactions->rules[i].trigger.itemId == rules[i].trigger.itemId);
+        }
+        // `*` is only a whole token: anything else is still a bad identifier.
+        assert(InteractionFiles::parse("[interact **]\nsay \"x\"\n", &testRoom).error
+               == "Linha 1: Identificador de objeto invalido: **");
+        assert(InteractionFiles::parse("[use_item a* red_box]\nsay \"x\"\n", &testRoom).error
+               == "Linha 1: Identificador de item invalido: a*");
+    }
+
     // 4. DebugEditor 'load' rejects a room if its companion .rules file has a syntax error,
     // preserving the active simulation.
     const auto brokenCompanionRoom = directory / "broken_rules.room";
@@ -1378,6 +1423,8 @@ std::string sampleArgument(const ArgType type) {
     case ArgType::text: return "Linha \"um\" #1\nfim";
     case ArgType::boolean: return "1";
     case ArgType::number: return "1.5";
+    case ArgType::integer: return "-3";
+    case ArgType::facing: return "left";
     case ArgType::itemId:
     case ArgType::flagId:
     case ArgType::roomId:
@@ -1455,6 +1502,26 @@ void testActionCatalogRoundtrip(const std::filesystem::path& directory) {
     assert(invalid(InteractionEffect::make("say", {""})) == "Texto vazio em say");
     assert(invalid(InteractionEffect::make("wait", {"1,5"})) == "Numero invalido: 1,5");
     assert(invalid(InteractionEffect::make("wait", {"-1"})) == "Numero invalido: -1");
+    assert(invalid(InteractionEffect::make("add_flag", {"coins", "1.5"}))
+           == "Inteiro invalido: 1.5");
+    assert(invalid(InteractionEffect::make("add_flag", {"coins", "+2"})) == "Inteiro invalido: +2");
+    assert(invalid(InteractionEffect::make("add_flag", {"coins"})) == "Use add_flag <flag> <n>");
+    int counter = 0;
+    assert(parseIntegerArgument("-12", counter) && counter == -12);
+    assert(parseIntegerArgument("1000000", counter) && counter == 1'000'000);
+    assert(!parseIntegerArgument("1000001", counter) && !parseIntegerArgument("-", counter));
+    {
+        const auto parsed = InteractionFiles::parse(
+                "[interact blue_box]\nflag_at_least coins x\nsay \"oi\"\n", &room);
+        assert(!parsed.interactions && parsed.error == "Linha 2: Inteiro invalido: x");
+        const auto direction = InteractionFiles::parse(
+                "[interact blue_box]\nsay \"oi\"\nface norte\n", &room);
+        assert(!direction.interactions
+               && direction.error
+                          == "Linha 3: Direcao invalida: norte (use left, right, up ou down)");
+        assert(invalid(InteractionEffect::make("face", {"idle"}))
+               == "Direcao invalida: idle (use left, right, up ou down)");
+    }
     float seconds = 0.0F;
     assert(parseNumberArgument("0.25", seconds) && seconds == 0.25F);
     assert(parseNumberArgument("12", seconds) && seconds == 12.0F);

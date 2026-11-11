@@ -19,6 +19,7 @@ struct SpriteClip {
     float fps = 8.0F;
     bool loop = true;
     bool pixelated = true;
+    bool flipX = false;          // mirror horizontally (reuse a `right` sheet as `left`)
     float displayWidth = 0.0F;   // 0 = use object's/player's base width
     float displayHeight = 0.0F;  // 0 = use object's/player's base height
     float offsetX = 0.0F;        // base units, relative to feet/bottom center

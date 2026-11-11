@@ -14,6 +14,7 @@
 #include <chrono>
 #include <clocale>
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -859,6 +860,134 @@ RoomDialogues guardDialogues() {
 
 // A rule opens a dialogue: only options whose conditions hold are listed, a goto reply is read
 // before its node reopens, once-options stay hidden and the rule resumes at the end.
+// F5: add_flag counts, flag_at_least / flag_equals pick the rule by the counter's value.
+void testFlagCounters() {
+    Game game(RoomPresets::firstRoom());
+    const auto say = [](std::string text) { return InteractionEffect::make("say", {std::move(text)}); };
+    game.setInteractions(RoomInteractions{{
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {InteractionCondition::make("flag_equals", {"knocks", "2"})},
+         .effects = {say("Dois"), InteractionEffect::make("add_flag", {"knocks", "-2"})}},
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {InteractionCondition::make("flag_at_least", {"knocks", "3"})},
+         .effects = {say("Muitos")}},
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {},
+         .effects = {say("Toc"), InteractionEffect::make("add_flag", {"knocks", "1"})}},
+    }});
+    const auto knock = [&game]() {
+        game.onClick({430.0F, 410.0F});
+        for (int i = 0; i < 400 && !game.scene().floatingText().isVisible(); ++i) game.tick(0.05F);
+        const std::string line = game.scene().floatingText().text();
+        for (int i = 0; i < 400 && game.inCutscene(); ++i) game.tick(0.05F);
+        assert(!game.inCutscene());
+        return line;
+    };
+    assert(knock() == "Toc" && game.session().flagValue("knocks") == 1);
+    assert(knock() == "Toc" && game.session().flagValue("knocks") == 2);
+    assert(knock() == "Dois" && game.session().flagValue("knocks") == 0);
+    assert(!game.session().hasFlag("knocks")); // 0 clears the flag
+    game.changeSession([](SessionState& session) { session.setFlag("knocks", 5); });
+    assert(knock() == "Muitos" && game.session().flagValue("knocks") == 5);
+}
+
+// F6: `face` turns the standing player; idle_<facing> is the clip drawn afterwards.
+void testFaceDirection() {
+    Room room = RoomPresets::firstRoom();
+    room.playerAnimations["idle_up"] = room.playerAnimations.at("idle");
+    room.playerAnimations["idle_left"] = room.playerAnimations.at("idle");
+    Game game(room);
+    game.setInteractions(RoomInteractions{{
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {InteractionCondition::make("flag_set", {"turned"})},
+         .effects = {InteractionEffect::make("face", {"left"})}},
+        {.trigger = InteractionTrigger::interact("blue_box"),
+         .conditions = {},
+         .effects = {InteractionEffect::make("face", {"up"}),
+                     InteractionEffect::make("set_flag", {"turned"})}},
+    }});
+    const auto use = [&game]() {
+        game.onClick({430.0F, 410.0F});
+        for (int i = 0; i < 400 && !game.session().hasFlag("turned"); ++i) game.tick(0.05F);
+        for (int i = 0; i < 10; ++i) game.tick(0.05F);
+        assert(!game.inCutscene() && !game.scene().player().moving());
+    };
+    use();
+    assert(game.scene().player().facing() == Facing::up);
+    assert(playerClipName(game.scene().player(), game.scene().room().playerAnimations) == "idle_up");
+    use();
+    assert(game.scene().player().facing() == Facing::left);
+    assert(playerClipName(game.scene().player(), game.scene().room().playerAnimations)
+           == "idle_left");
+}
+
+// F4 / C12: wildcard rules answer item uses and clicks that have no specific rule. Levels
+// (most specific first): exact, `* obj`, `item *`, `* *`; file order only breaks ties.
+void testWildcardRules() {
+    const auto say = [](std::string text) { return InteractionEffect::make("say", {std::move(text)}); };
+    const auto rule = [&say](InteractionTrigger trigger, std::string text,
+                             std::vector<InteractionCondition> conditions = {}) {
+        return InteractionRule{.trigger = std::move(trigger), .conditions = std::move(conditions),
+                               .effects = {say(std::move(text))}};
+    };
+    const auto spoken = [](Game& game, const std::function<bool()>& action) {
+        // The last `say` of a rule is not awaited: let the previous line expire first.
+        for (int i = 0; i < 600 && game.scene().floatingText().isVisible(); ++i) game.tick(0.05F);
+        if (!action()) return std::string("<recusado>");
+        std::string line;
+        for (int i = 0; i < 600; ++i) {
+            if (game.scene().floatingText().isVisible()) line = game.scene().floatingText().text();
+            if (!line.empty() && !game.inCutscene()) break;
+            game.tick(0.05F);
+        }
+        for (int i = 0; i < 400 && (game.inCutscene() || game.scene().player().moving()); ++i) {
+            game.tick(0.05F);
+        }
+        return line.empty() ? std::string("<nada>") : line;
+    };
+
+    // Without wildcards nothing changes: an item with no rule gets no answer (C12 as before).
+    {
+        Game game(RoomPresets::firstRoom());
+        game.setInteractions(RoomInteractions{{rule(InteractionTrigger::useItem("key", "red_box"),
+                                                    "Abriu")}});
+        game.changeSession([](SessionState& session) { session.addItem("pebble"); });
+        assert(spoken(game, [&] { return game.useItemOnObject("pebble", "red_box"); }) == "<nada>");
+    }
+
+    Game game(RoomPresets::firstRoom());
+    // Wildcards listed first on purpose: specificity, not file order, decides.
+    game.setInteractions(RoomInteractions{{
+        rule(InteractionTrigger::useItem("*", "*"), "Isso nao funciona."),
+        rule(InteractionTrigger::useItem("pebble", "*"), "Pedra nao serve."),
+        rule(InteractionTrigger::useItem("*", "red_box"), "A caixa recusa."),
+        rule(InteractionTrigger::interact("*"), "Nada de interessante."),
+        rule(InteractionTrigger::useItem("key", "red_box"), "Abriu"),
+        rule(InteractionTrigger::interact("blue_box"), "Azul",
+             {InteractionCondition::make("flag_set", {"lit"})}),
+    }});
+    game.changeSession([](SessionState& session) {
+        session.addItem("pebble");
+        session.addItem("key");
+        session.addItem("rope");
+    });
+    const auto use = [&](const char* item, const char* object) {
+        return spoken(game, [&] { return game.useItemOnObject(item, object); });
+    };
+    assert(use("key", "red_box") == "Abriu");               // exact
+    assert(use("pebble", "red_box") == "A caixa recusa.");  // `* obj` beats `item *`
+    assert(use("pebble", "blue_box") == "Pedra nao serve."); // `item *`
+    assert(use("rope", "blue_box") == "Isso nao funciona."); // `* *`
+    assert(use("key", "blue_box") == "Isso nao funciona.");
+    assert(use("ghost_item", "blue_box") == "<recusado>");   // not held: no walk, no rule
+
+    // `[interact *]` answers the click; a specific rule whose condition fails falls through.
+    const auto click = [&] { return spoken(game, [&] { game.onClick({430.0F, 410.0F}); return true; }); };
+    assert(click() == "Nada de interessante.");
+    game.changeSession([](SessionState& session) { session.setFlag("lit"); });
+    assert(click() == "Azul");
+}
+
 void testDialogueWithChoices() {
     Game game(RoomPresets::firstRoom());
     game.setInteractions(RoomInteractions{{{
@@ -1557,6 +1686,9 @@ int main() {
     testSessionCommandKeepsNavigation();
     testConditionalNpcPuzzleAndRoomPersistence();
     testScriptedSequenceAndCutscene();
+    testFlagCounters();
+    testFaceDirection();
+    testWildcardRules();
     testDialogueWithChoices();
     testGameEventQueue();
     testRoomSpawns();

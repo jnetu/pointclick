@@ -33,6 +33,7 @@ public:
         return game_.scene_.walkToObject(objectId);
     }
     bool walking() const override { return game_.scene_.player().moving(); }
+    void facePlayer(const Facing facing) override { game_.scene_.facePlayer(facing); }
 
     bool startDialogue(const std::string_view nodeId) override {
         return game_.dialogue_.request(game_.scene_.dialogues(), nodeId);

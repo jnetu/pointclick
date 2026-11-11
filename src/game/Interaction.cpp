@@ -37,11 +37,21 @@ InteractionTrigger InteractionTrigger::useItem(std::string itemId, std::string o
     return {InteractionTriggerKind::useItem, std::move(objectId), std::move(itemId)};
 }
 
-bool InteractionTrigger::matches(const InteractionTrigger& other) const noexcept {
-    if (kind != other.kind || objectId != other.objectId) {
+bool InteractionTrigger::matches(const InteractionTrigger& event) const noexcept {
+    if (kind != event.kind || (objectId != wildcard && objectId != event.objectId)) {
         return false;
     }
-    return kind == InteractionTriggerKind::interact || itemId == other.itemId;
+    return kind == InteractionTriggerKind::interact || itemId == wildcard
+           || itemId == event.itemId;
+}
+
+int InteractionTrigger::wildcardLevel() const noexcept {
+    const bool anyObject = objectId == wildcard;
+    if (kind == InteractionTriggerKind::interact) return anyObject ? 1 : 0;
+    const bool anyItem = itemId == wildcard;
+    if (anyObject && anyItem) return 3; // [use_item * *]
+    if (anyObject) return 2;            // [use_item item *]
+    return anyItem ? 1 : 0;             // [use_item * obj] or exact
 }
 
 InteractionCondition InteractionCondition::make(const std::string_view keyword,
@@ -78,16 +88,18 @@ std::string InteractionEffect::validationError(const Room* room) const {
 }
 
 std::string InteractionRule::validationError(const Room* room) const {
-    if (!validIdentifier(trigger.objectId)) {
+    const bool anyObject = trigger.objectId == InteractionTrigger::wildcard;
+    if (!anyObject && !validIdentifier(trigger.objectId)) {
         return "Identificador de objeto invalido no gatilho";
     }
-    if (trigger.kind == InteractionTriggerKind::useItem && !validIdentifier(trigger.itemId)) {
+    if (trigger.kind == InteractionTriggerKind::useItem && trigger.itemId != InteractionTrigger::wildcard
+        && !validIdentifier(trigger.itemId)) {
         return "Identificador de item invalido no gatilho";
     }
     if (trigger.kind == InteractionTriggerKind::interact && !trigger.itemId.empty()) {
         return "Gatilho interact nao aceita item";
     }
-    if (room && !room->findObject(trigger.objectId)) {
+    if (room && !anyObject && !room->findObject(trigger.objectId)) {
         return "Objeto desconhecido na sala: " + trigger.objectId;
     }
     for (const InteractionCondition& condition : conditions) {
@@ -104,24 +116,29 @@ std::string InteractionRule::validationError(const Room* room) const {
 
 bool RoomInteractions::hasRulesForObject(const std::string_view objectId) const {
     return std::any_of(rules.begin(), rules.end(), [&](const InteractionRule& rule) {
-        return rule.trigger.objectId == objectId;
+        return rule.trigger.objectId == objectId
+               || rule.trigger.objectId == InteractionTrigger::wildcard;
     });
 }
 
 const InteractionRule* RoomInteractions::findMatchingRule(const InteractionTrigger& trigger,
                                                           const SessionState& session,
                                                           const std::string_view roomId) const {
-    for (const InteractionRule& rule : rules) {
-        if (!rule.trigger.matches(trigger)) {
-            continue;
-        }
-        const bool allConditionsMet = std::all_of(
-                rule.conditions.begin(), rule.conditions.end(),
-                [&](const InteractionCondition& condition) {
-                    return condition.evaluate(session, roomId);
-                });
-        if (allConditionsMet) {
-            return &rule;
+    // The most specific level wins regardless of file order; within a level, the first rule
+    // whose conditions hold. A specific rule whose conditions fail falls through to wildcards.
+    for (int level = 0; level <= InteractionTrigger::maxWildcardLevel; ++level) {
+        for (const InteractionRule& rule : rules) {
+            if (rule.trigger.wildcardLevel() != level || !rule.trigger.matches(trigger)) {
+                continue;
+            }
+            const bool allConditionsMet = std::all_of(
+                    rule.conditions.begin(), rule.conditions.end(),
+                    [&](const InteractionCondition& condition) {
+                        return condition.evaluate(session, roomId);
+                    });
+            if (allConditionsMet) {
+                return &rule;
+            }
         }
     }
     return nullptr;

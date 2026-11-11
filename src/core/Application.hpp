@@ -2,6 +2,7 @@
 
 #include "content/RoomLibrary.hpp"
 #include "content/SaveFiles.hpp"
+#include "core/CommandLine.hpp"
 #include "game/Autosave.hpp"
 #include "game/Game.hpp"
 #include "graphics/Renderer.hpp"
@@ -23,7 +24,7 @@ union SDL_Event;
 
 class Application {
 public:
-    explicit Application(std::filesystem::path roomDirectory = {});
+    explicit Application(CommandLineOptions options = {});
     int run();
 
 private:
@@ -33,7 +34,8 @@ private:
     bool loadRoomWithRules(std::string_view roomFilename, std::string_view spawnId = {});
     // Creates the gameplay from a loaded room. With a save, its progress is restored before
     // the room is applied and the feet go back where they were. Nothing changes on false.
-    bool startGameplay(RoomBundle bundle, const SavedGame* save);
+    // spawnId places a new game at a `[spawn]` of that room (empty = playerStart).
+    bool startGameplay(RoomBundle bundle, const SavedGame* save, std::string_view spawnId = {});
     // The save in the pref path, if there is a valid one; otherwise false and a new game.
     bool resumeSavedGame();
     // Routes the domain's notifications: room changes and the autosave's stable points.
@@ -51,6 +53,7 @@ private:
     void shutdown();
 
     SDL_Window* window_ = nullptr;
+    CommandLineOptions options_;
     std::filesystem::path roomDirectory_;
     // Exists only once a room is loaded (the saved one or first.room): the binary carries no
     // placeholder room.

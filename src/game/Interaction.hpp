@@ -17,14 +17,23 @@ enum class InteractionTriggerKind {
     useItem,
 };
 
+// A rule's objectId or itemId may be `wildcard` ("*", never a valid identifier): `[interact *]`,
+// `[use_item * obj]`, `[use_item item *]`, `[use_item * *]`. Events are always concrete.
 struct InteractionTrigger {
+    static constexpr std::string_view wildcard = "*";
+
     InteractionTriggerKind kind = InteractionTriggerKind::interact;
     std::string objectId;
     std::string itemId;
 
     [[nodiscard]] static InteractionTrigger interact(std::string objectId);
     [[nodiscard]] static InteractionTrigger useItem(std::string itemId, std::string objectId);
-    [[nodiscard]] bool matches(const InteractionTrigger& other) const noexcept;
+    // this = a rule's trigger (wildcards allowed), event = what the player did.
+    [[nodiscard]] bool matches(const InteractionTrigger& event) const noexcept;
+    // 0 = exact; higher = broader. findMatchingRule tries every rule of a level before the next:
+    // exact, then `* obj` (the object's own fallback), then `item *`, then `* *`.
+    [[nodiscard]] int wildcardLevel() const noexcept;
+    static constexpr int maxWildcardLevel = 3;
 };
 
 // A condition or effect is one catalog entry (game/ActionCatalog) plus its typed arguments,
@@ -62,6 +71,7 @@ struct RoomInteractions {
     std::vector<InteractionRule> rules;
 
     [[nodiscard]] bool empty() const noexcept { return rules.empty(); }
+    // Counts wildcard triggers too: `[interact *]` makes every visible object clickable.
     [[nodiscard]] bool hasRulesForObject(std::string_view objectId) const;
     [[nodiscard]] const InteractionRule* findMatchingRule(const InteractionTrigger& trigger,
                                                           const SessionState& session,

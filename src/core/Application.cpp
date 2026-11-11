@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <exception>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -25,8 +26,8 @@ constexpr double kMaximumFrameTime = 0.25;
 }
 
 // The Game is created in initialize(), from the save or from first.room on disk.
-Application::Application(std::filesystem::path roomDirectory)
-        : roomDirectory_(std::move(roomDirectory)) {
+Application::Application(CommandLineOptions options)
+        : options_(std::move(options)), roomDirectory_(options_.roomsDirectory) {
 #if POINTCLICK_TOOLS
     debugEditor_.setLibrary(library_);
     debugEditor_.setArtReloader([this] { renderer_.invalidateTextures(); });
@@ -54,7 +55,7 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename,
                 roomFilename.data(), loaded.error.c_str());
         return false;
     }
-    if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr);
+    if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr, spawnId);
     std::string error;
     Game& game = gameplay_->game;
     if (!game.applyRoom(std::move(loaded.bundle->room), true, error, spawnId)
@@ -66,8 +67,15 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename,
     return true;
 }
 
-bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
+bool Application::startGameplay(RoomBundle bundle, const SavedGame* save,
+                                const std::string_view spawnId) {
     std::string error;
+    const std::optional<RoomSpawn> entry = bundle.room.entryPoint(spawnId);
+    if (!entry) {
+        SDL_Log("Unknown spawn %.*s in room %s", static_cast<int>(spawnId.size()), spawnId.data(),
+                bundle.room.id.c_str());
+        return false;
+    }
     SessionState progress;
     if (save && !progress.restore(save->session, error)) {
         SDL_Log("Could not restore the saved progress: %s", error.c_str());
@@ -89,6 +97,7 @@ bool Application::startGameplay(RoomBundle bundle, const SavedGame* save) {
         return false;
     }
     if (save) (void)game.placePlayerNear(save->feet, save->facing);
+    else if (!spawnId.empty()) (void)game.placePlayerNear(entry->feet, entry->facing);
     gameplay_ = std::move(gameplay);
     inputRouter_.addUiConsumer(&gameplay_->dialogueMenu);
     return true;
@@ -110,7 +119,7 @@ bool Application::resumeSavedGame() {
     }
     if (startGameplay(std::move(*resumed.bundle), &*resumed.save)) return true;
     std::string renameError;
-    (void)SaveFiles::quarantine(savePath_, renameError);
+    if (!options_.noSave) (void)SaveFiles::quarantine(savePath_, renameError);
     SDL_Log("Ignoring the save (kept as %s.bad), starting a new game",
             TextFormat::pathToUtf8(savePath_.filename()).c_str());
     return false;
@@ -155,7 +164,7 @@ void Application::onQuit() {
 }
 
 void Application::writeAutosave(const SavedGame* save) {
-    if (!save || savePath_.empty()) return;
+    if (!save || savePath_.empty() || options_.noSave) return;
     std::string error;
     if (SaveFiles::save(savePath_, *save, error)) {
         autosave_.markWritten();
@@ -226,7 +235,12 @@ bool Application::initialize() {
     if (std::string error; (savePath_ = SaveFiles::defaultSlot(error)).empty()) {
         SDL_Log("No writable folder for saves, playing without them: %s", error.c_str());
     }
-    if (!resumeSavedGame() && !loadRoomWithRules(RoomLibrary::startRoomFile)) {
+    if (options_.noSave) SDL_Log("--no-save: the autosave will not be written");
+    const std::string startRoom = options_.startRoom.empty()
+                                  ? std::string(RoomLibrary::startRoomFile)
+                                  : options_.startRoom + ".room";
+    if (!(options_.resumesSave() && resumeSavedGame())
+        && !loadRoomWithRules(startRoom, options_.startSpawn)) {
         return false;
     }
     autosave_.capture(gameplay_->game);

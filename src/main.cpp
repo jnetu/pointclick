@@ -1,19 +1,50 @@
 #include <SDL3/SDL_main.h> // IWYU pragma: keep -- required by SDL on some platforms
 
+#include "content/ContentCheck.hpp"
 #include "core/Application.hpp"
+#include "core/CommandLine.hpp"
+
+#include <SDL3/SDL_filesystem.h>
+#include <SDL3/SDL_stdinc.h>
+
 #include <cstdio>
 #include <string>
 #include <string_view>
+#include <utility>
+#include <vector>
+
+namespace {
+// --check: no window, no SDL subsystem; errors on stderr as "<arquivo>: Linha N: ...".
+int runContentCheck(std::filesystem::path roomsDirectory) {
+    if (roomsDirectory.empty()) {
+        const char* base = SDL_GetBasePath();
+        if (!base) {
+            std::fprintf(stderr, "Nao foi possivel localizar os assets: %s\n", SDL_GetError());
+            return 1;
+        }
+        const std::u8string basePath(base, base + SDL_strlen(base));
+        roomsDirectory = std::filesystem::path(basePath) / "assets" / "rooms";
+    }
+    const ContentCheckReport report = checkContent(roomsDirectory);
+    for (const ContentProblem& problem : report.problems) {
+        std::fprintf(stderr, "%s: %s\n", problem.file.c_str(), problem.message.c_str());
+    }
+    std::printf("%zu sala(s) verificada(s), %zu erro(s)\n", report.roomsChecked,
+                report.problems.size());
+    return report.ok() ? 0 : 1;
+}
+} // namespace
 
 int main(int argc, char* argv[]) {
-    std::filesystem::path roomDirectory;
-    if (argc == 3 && std::string_view(argv[1]) == "--rooms") {
-        const std::string_view utf8Path(argv[2]);
-        roomDirectory = std::u8string(utf8Path.begin(), utf8Path.end());
-    } else if (argc != 1) {
-        std::fprintf(stderr, "Usage: pointclick [--rooms path/to/rooms]\n");
-        return 1;
+    const std::vector<std::string_view> args(argv + (argc > 0 ? 1 : 0), argv + argc);
+    CommandLineResult parsed = parseCommandLine(args);
+    if (!parsed.options) {
+        const std::string_view usage = commandLineUsage();
+        std::fprintf(stderr, "%s\n%.*s", parsed.error.c_str(), static_cast<int>(usage.size()),
+                     usage.data());
+        return 2;
     }
-    Application application(roomDirectory);
+    if (parsed.options->check) return runContentCheck(parsed.options->roomsDirectory);
+    Application application(std::move(*parsed.options));
     return application.run();
 }

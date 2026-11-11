@@ -69,17 +69,19 @@ InteractionLoadResult InteractionFiles::parse(const std::string_view content, co
                     return failAt(lineNumber, "Use [use_item <item> <objeto>]");
                 }
                 trigger.kind = InteractionTriggerKind::useItem;
-                if (!validIdentifier(trigger.itemId)) {
+                if (trigger.itemId != InteractionTrigger::wildcard
+                    && !validIdentifier(trigger.itemId)) {
                     return failAt(lineNumber, "Identificador de item invalido: " + trigger.itemId);
                 }
             } else {
                 return failAt(lineNumber, "Gatilho desconhecido: " + triggerVerb);
             }
 
-            if (!validIdentifier(trigger.objectId)) {
+            const bool anyObject = trigger.objectId == InteractionTrigger::wildcard;
+            if (!anyObject && !validIdentifier(trigger.objectId)) {
                 return failAt(lineNumber, "Identificador de objeto invalido: " + trigger.objectId);
             }
-            if (room && !room->findObject(trigger.objectId)) {
+            if (room && !anyObject && !room->findObject(trigger.objectId)) {
                 return failAt(lineNumber, "Objeto desconhecido na sala: " + trigger.objectId);
             }
 

@@ -37,6 +37,25 @@ Os PNGs ficam em [assets/sprites](assets/sprites). A sala define separadamente
 o corte, o número de quadros e a velocidade de cada animação. Quando algum PNG
 faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e preto.
 
+## Opções de linha de comando
+
+| Opção | Efeito |
+| --- | --- |
+| `--rooms <pasta>` | Pasta das salas (padrão: `assets/rooms` junto do executável) |
+| `--new-game` | Começa do zero, sem retomar o `save.slot` |
+| `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`) |
+| `--room <sala> [spawn]` | Começa um jogo **novo** em `<sala>.room`, no `[spawn]` indicado (sem ele: `player.start`). Não retoma o save; combine com `--no-save` para não sobrescrevê-lo |
+| `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Só aceita `--rooms` |
+
+```sh
+./build/debug/pointclick --rooms assets/rooms --check
+./build/debug/pointclick --rooms assets/rooms --no-save --room gallery
+```
+
+O `--check` imprime cada erro como `<arquivo>: Linha N: <motivo>` na saída de erro, um resumo
+na saída padrão, e sai com `0` (tudo válido) ou `1` (algum erro); serve a CI. Opção inválida
+sai com `2` e mostra o uso.
+
 - [Guia para game design](docs/GAME_DESIGN.md): parâmetros, controles, colisões e novas salas.
 - [Arquitetura e novas mecânicas](docs/ARCHITECTURE.md): responsabilidades e pontos de extensão.
 - [Mapa rápido para código e IA](AGENTS.md): onde alterar cada comportamento.

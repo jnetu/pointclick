@@ -1,0 +1,24 @@
+# Coerente com .clang-format (4 espaços, sem tabs) e com .gitattributes (LF).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{cpp,hpp,h}]
+max_line_length = 100
+
+# Markdown usa dois espaços no fim da linha como quebra.
+[*.md]
+trim_trailing_whitespace = false
+
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# Arquivos de projeto do Windows mantêm CRLF (.gitattributes).
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

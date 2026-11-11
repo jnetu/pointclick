@@ -97,5 +97,8 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
+Antes de concluir, confira o estilo só das linhas alteradas (clang-format 21, ver `README.md`):
+`cmake --build --preset debug --target format-check` (`--target format` corrige essas linhas).
+
 Há também uma build local em `cmake-build-debug`, caso já esteja configurada.
 Para testar arquivos da raiz do projeto, execute o jogo com `--rooms assets/rooms`.

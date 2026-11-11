@@ -12,6 +12,8 @@ if(NOT CMAKE_C_COMPILER_LAUNCHER AND NOT CMAKE_CXX_COMPILER_LAUNCHER)
 endif()
 
 include(cmake/Dependencies.cmake)
+# Optional format/format-check targets (changed lines only; outside ALL and CTest).
+include(cmake/ClangFormat.cmake)
 
 # One warning set for every target. /W4 already reports shadowing (C4456-C4459) and narrowing
 # conversions (C4244, C4267), the MSVC counterparts of -Wshadow and -Wconversion.

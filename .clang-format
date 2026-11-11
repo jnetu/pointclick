@@ -1,32 +1,40 @@
-# Estilo do pointclick, calibrado no código existente.
-# Aplique só nos trechos que você tocar (ex.: git clang-format), não em lote.
+# Estilo do pointclick, calibrado no código existente com clang-format 21 (major fixado).
+# Versões de outro major podem formatar diferente: use a mesma em todas as plataformas.
+#   macOS/Linux/Windows: pip install "clang-format==21.*"   (igual nos três sistemas)
+#   macOS (alternativa): o do Xcode 27 ("Apple clang-format 21", via xcrun clang-format)
+# Aplique só nos trechos que você tocar: cmake --build --preset debug --target format-check
+# (ou --target format). Não reformate arquivos inteiros nem o repositório em lote.
 BasedOnStyle: LLVM
 Language: Cpp
 Standard: c++20
 IndentWidth: 4
 ContinuationIndentWidth: 8
 ConstructorInitializerIndentWidth: 8
-ColumnLimit: 120
+BracedInitializerIndentWidth: 4
+ColumnLimit: 100
 UseTab: Never
 PointerAlignment: Left
 ReferenceAlignment: Left
 NamespaceIndentation: None
-FixNamespaceComments: true
+FixNamespaceComments: false
 SpacesBeforeTrailingComments: 1
 AccessModifierOffset: -4
 AllowShortFunctionsOnASingleLine: Inline
-AllowShortIfStatementsOnASingleLine: WithoutElse
-AllowShortBlocksOnASingleLine: Always
-AllowShortLoopsOnASingleLine: false
+AllowShortIfStatementsOnASingleLine: AllIfsAndElse
+AllowShortBlocksOnASingleLine: Empty
+AllowShortLoopsOnASingleLine: true
 AllowShortLambdasOnASingleLine: All
 AllowShortEnumsOnASingleLine: true
 BreakBeforeBraces: Attach
+BreakBeforeBinaryOperators: All
 BreakConstructorInitializers: BeforeColon
 PackConstructorInitializers: BinPack
+PenaltyBreakAssignment: 100
 AlignAfterOpenBracket: Align
 BinPackArguments: true
 BinPackParameters: true
 AlwaysBreakTemplateDeclarations: Yes
+ReflowComments: Never
 IncludeBlocks: Preserve
-SortIncludes: CaseSensitive
+SortIncludes: Never
 InsertNewlineAtEOF: true

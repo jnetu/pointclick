@@ -66,3 +66,33 @@ sai com `2` e mostra o uso.
 ```sh
 ctest --test-dir build/debug --output-on-failure
 ```
+
+## Formatação
+
+O [.clang-format](.clang-format) foi calibrado com o **clang-format 21** (versão major fixada);
+outro major pode formatar diferente e gerar ruído de diff. A mesma versão em qualquer sistema:
+
+```sh
+pip install "clang-format==21.*"
+```
+
+Funciona igual no macOS, Linux e Windows (use um venv ou `pipx install "clang-format==21.*"`
+se preferir). Alternativas: no macOS, o do Xcode 27 já é o 21 (`xcrun clang-format --version`);
+no Linux, o pacote `clang-format-21` da distribuição ou de apt.llvm.org; no Windows, o
+instalador do LLVM 21. Formate só o que você mudou, nunca o repositório inteiro:
+
+```sh
+cmake --build --preset debug --target format-check
+```
+
+```sh
+cmake --build --preset debug --target format
+```
+
+`format-check` falha se alguma linha alterada (staged, não staged ou arquivo novo) em relação
+ao `HEAD` estiver fora do estilo; `format` reescreve só essas linhas. Para comparar com outra
+revisão (ex.: numa branch), configure com `-DPOINTCLICK_FORMAT_BASE=origin/main`. Os alvos
+usam apenas CMake, git e clang-format (sem shell nem Python), avisam quando o major instalado
+difere do fixado e não fazem parte da build nem do `ctest`. Se o CMake achar outro executável,
+aponte o certo com `-DPOINTCLICK_CLANG_FORMAT=<caminho>`. O [.editorconfig](.editorconfig)
+dá ao editor a mesma base (UTF-8, LF, 4 espaços, 100 colunas).

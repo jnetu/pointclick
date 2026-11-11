@@ -26,7 +26,10 @@ Os presets `debug`/`release` usam o gerador padrão da plataforma (ou `CMAKE_GEN
 `ninja-debug`/`ninja-release` fixam Ninja. A build do CLion fica em `cmake-build-debug`
 (`cmake --build cmake-build-debug && ctest --test-dir cmake-build-debug --output-on-failure`).
 SDL3: uma versão de referência (`POINTCLICK_SDL3_VERSION` em `cmake/Dependencies.cmake`)
-vale para o pacote do sistema (mínimo) e para o CPM. Estilo: `.clang-format` só nos trechos tocados.
+vale para o pacote do sistema (mínimo) e para o CPM. Estilo: `.clang-format` calibrado com o
+clang-format **21** (major fixado; `pip install "clang-format==21.*"`), aplicado só nas linhas
+alteradas: `cmake --build --preset debug --target format-check` (ou `format` para corrigir).
+Nunca reformate arquivos inteiros. Lógica dos alvos em `cmake/ClangFormat.cmake`.
 Para rodar com os assets da raiz: `pointclick --rooms assets/rooms`.
 Validar o conteúdo sem abrir janela (salas, `.rules`, `.dlg`, `change_room`; sai ≠ 0 com erro):
 `pointclick --rooms assets/rooms --check` (também roda no `ctest`). Testar do zero sem mexer no

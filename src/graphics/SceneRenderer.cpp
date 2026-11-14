@@ -1,5 +1,6 @@
 #include "graphics/SceneRenderer.hpp"
 #include "graphics/EntityRenderer.hpp"
+#include "graphics/LayerRenderer.hpp"
 #include "graphics/RoomBackdropRenderer.hpp"
 #include "graphics/SpriteLibrary.hpp"
 #include "game/Scene.hpp"
@@ -11,7 +12,12 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
                          const Scene& scene, const float interpolation) {
     const Room& room = scene.room();
     const SDL_FPoint cameraOffset = scene.camera().interpolatedPosition(interpolation);
-    RoomBackdropRenderer::draw(renderer, room, cameraOffset);
+    // D8: painted `back` layers replace the procedural backdrop; a room without them keeps it.
+    if (hasLayers(room, LayerPlane::back)) {
+        LayerRenderer::draw(renderer, sprites, room, LayerPlane::back, cameraOffset);
+    } else {
+        RoomBackdropRenderer::draw(renderer, room, cameraOffset);
+    }
 
     const SDL_FPoint feet = scene.player().interpolatedFeet(interpolation);
     const auto& scenery = room.scenery;

@@ -38,3 +38,6 @@ struct RoomLayer {
 // True when the layer fills the whole viewport for every camera offset the room allows
 // ([0, room - World] on each axis). The rect is affine in the camera, so both ends suffice.
 [[nodiscard]] bool layerCoversViewport(const RoomLayer& layer, const Room& room);
+// True when the room declares at least one layer on that plane (a `back` one replaces the
+// procedural backdrop, D8).
+[[nodiscard]] bool hasLayers(const Room& room, LayerPlane plane);

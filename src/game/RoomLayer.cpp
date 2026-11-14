@@ -31,3 +31,8 @@ bool layerCoversViewport(const RoomLayer& layer, const Room& room) {
     };
     return covers({0.0F, 0.0F}) && covers(farthest);
 }
+
+bool hasLayers(const Room& room, const LayerPlane plane) {
+    return std::ranges::any_of(room.layers,
+                               [plane](const RoomLayer& layer) { return layer.plane == plane; });
+}

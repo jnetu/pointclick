@@ -601,6 +601,56 @@ TEST_CASE("testDepthDrawOrderPixels") {
     SDL_Quit();
 }
 
+// M2-08 (D8): a room with a `back` layer draws the PNG instead of the procedural backdrop. The
+// pixels where testBackdropPixelsWithoutLayers finds wall, floor and a guide take the PNG's own
+// colors (read from the file, so the art can be regenerated). The full frame battery is M2-09.
+TEST_CASE("testBackLayerReplacesBackdrop") {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Back layer test", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    const std::filesystem::path sprites = std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                                          / "assets/sprites";
+    renderer.setSpriteRoot(sprites);
+
+    const std::string file = "cenario/test_1280x720_ground.png";
+    const std::u8string path = (sprites / file).u8string();
+    SDL_Surface* art = SDL_LoadPNG(reinterpret_cast<const char*>(path.c_str()));
+    REQUIRE((art && art->w == 1280 && art->h == 720));
+    Room room;
+    room.id = "layered";
+    room.playerAnimations = sharedPlayerArt();
+    RoomLayer ground;
+    ground.id = "ground";
+    ground.image.file = file;
+    room.layers.push_back(ground);
+    REQUIRE(room.validationError().empty());
+    const Game game(room);
+    renderer.render(game, 1.0F);
+    SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+    // Wall, floor, the ray at x = 640 and the 0.62 guide; the player (feet at 640,360) is clear.
+    const SDL_Point samples[]{{640, 100}, {700, 520}, {640, 500}, {670, 449}};
+    for (const SDL_Point sample : samples) {
+        const SDL_Color expected = pixel(art, sample.x, sample.y);
+        const SDL_Color actual = pixel(frame, sample.x, sample.y);
+        INFO("pixel " << sample.x << "," << sample.y << " = " << int(actual.r) << ","
+                      << int(actual.g) << "," << int(actual.b));
+        expectColor(actual, expected.r, expected.g, expected.b);
+    }
+    // The PNG is not the procedural wall, so the sample above really changed.
+    const SDL_Color wall = pixel(frame, 640, 100);
+    REQUIRE((wall.r != 171 || wall.g != 62 || wall.b != 67));
+    SDL_DestroySurface(frame);
+    SDL_DestroySurface(art);
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 // F3: the door playground, played from the shipped files and drawn headless. The twin door uses
 // the same sheet as the first with flip_x, so the blue hinge post that sits on the left of the
 // first door is on the right of the twin, both closed and open.

@@ -1438,6 +1438,21 @@ TEST_CASE("testLayerRect") {
     REQUIRE(room.findLayer("hills") == nullptr);
 }
 
+TEST_CASE("testHasLayers") {
+    Room room;
+    REQUIRE((!hasLayers(room, LayerPlane::back) && !hasLayers(room, LayerPlane::front)));
+    RoomLayer foliage;
+    foliage.id = "foliage";
+    foliage.plane = LayerPlane::front;
+    room.layers.push_back(foliage);
+    // A front layer alone keeps the procedural backdrop (D8 looks only at `back`).
+    REQUIRE((!hasLayers(room, LayerPlane::back) && hasLayers(room, LayerPlane::front)));
+    RoomLayer ground;
+    ground.id = "ground";
+    room.layers.push_back(ground);
+    REQUIRE(hasLayers(room, LayerPlane::back));
+}
+
 TEST_CASE("testLayerCoversViewport") {
     Room room;
     room.width = 2560.0F;

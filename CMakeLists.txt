@@ -99,6 +99,7 @@ target_link_libraries(pointclick_ui PUBLIC pointclick_input)
 # Read-only presentation.
 add_library(pointclick_graphics STATIC
         src/graphics/EntityRenderer.cpp
+        src/graphics/LayerRenderer.cpp
         src/graphics/Renderer.cpp
         src/graphics/RoomBackdropRenderer.cpp
         src/graphics/SceneRenderer.cpp

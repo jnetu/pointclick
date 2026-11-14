@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-07 ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-08 ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -134,7 +134,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
-| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 4/7 |
+| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 5/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
@@ -202,12 +202,14 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   estender `testObjectFieldsRoundTripAssets` (ou `testRoomLayerFiles`) com "nenhum `[layer`" no
   texto. Feito como caso próprio, `testRoomsWithoutLayersSaveUnchanged` (`tests/EditorTests.cpp`),
   que compara com o `.room` original e não com os goldens da M2-03. **Pronto quando:** passa também sem a M2-03 (compara com o texto original).
-- [ ] **M2-08 · M · Arg. não — `LayerRenderer` e o fundo condicional.**
+- [x] **M2-08 · M · Arg. não — `LayerRenderer` e o fundo condicional.**
   `src/graphics/LayerRenderer.hpp/.cpp`: `draw(renderer, sprites, room, plane, cameraOffset)` com
   `layerRect` + `SpriteLibrary::draw`. `SceneRenderer::draw`: se `room.layers` tem alguma `back`,
   desenha só as camadas; senão chama `RoomBackdropRenderer::draw` (D8). Objetos e player depois,
   sem mudança. **Pronto quando:** uma sala de teste com uma camada `back` mostra o PNG. **Teste:**
-  M2-09.
+  M2-09. Feito com `hasLayers(room, plane)` em `game/RoomLayer` (servirá ao `ArtCheck` da M2-10);
+  prova mínima em `testBackLayerReplacesBackdrop` (`tests/SpriteTests.cpp`) e `testHasLayers`
+  (`tests/GameTests.cpp`). Camadas `front` ainda não são desenhadas (M2-12).
 - [ ] **M2-09 · M · Arg. sim — Testes de frame do fundo.**
   Frame headless (renderer de software, como `testGameFrameHasNoDebugDrawing`): (a) sala sem
   camadas = pixels da M2-02; (b) com camada `back` o pixel onde o placeholder tinha parede/chão/

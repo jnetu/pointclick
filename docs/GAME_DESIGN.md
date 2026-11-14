@@ -200,6 +200,142 @@ repetido é acusado na linha do próprio cabeçalho. Só os erros da sala como u
 usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.actor`
 (veja abaixo). Nenhum dado de arte vem do C++. Os objetos devem ser declarados no arquivo.
 
+## Camadas, hotspots e profundidade
+
+> **Em implementação (M2, `docs/ROADMAP_M2.md`).** Esta seção é a especificação que as tarefas
+> M2-04 a M2-28 cumprem; nada dela existe no código ainda e um `.room` com `[layer]`, `[hotspot]`
+> ou `baseline` é recusado até a tarefa correspondente. Quando cada parte ficar pronta, o texto
+> "ainda não" some e o guia vira a referência final (M2-34).
+
+Hoje a sala é cor chapada com guias (`RoomBackdropRenderer`) e objeto sem sprite vira um
+retângulo colorido. O M2 troca isso por arte pintada, sem mudar nenhuma sala antiga.
+
+```ini
+[room]
+id = stage
+room.width = 2560
+
+# Fundo: só o arquivo. Cobre a sala inteira e anda junto com o mundo.
+[layer ground]
+plane = back
+image.file = cenario/stage_ground.png
+
+# Paralaxe: mais estreita que a sala, anda a 20 % da câmera.
+[layer sky]
+plane = back
+image.file = cenario/stage_sky.png
+position = 0, 0
+size = 1600, 720
+scroll_factor = 0.2, 0
+
+# Primeiro plano: desenha por cima de tudo, inclusive do player.
+[layer foliage]
+plane = front
+image.file = cenario/stage_foliage.png
+scroll_factor = 1.3, 1
+
+# Objeto alto: o player passa atrás enquanto os pés estiverem acima de y = 240 + 296.
+[object pillar]
+bounds = 900,240,96,300
+baseline = 296
+sprite.file = cenario/stage_pillar.png
+
+# Áreas invisíveis sobre a arte pintada.
+[hotspot window]
+bounds = 400,60,160,120
+
+[hotspot invisible_wall]
+bounds = 1500,300,64,200
+type = solid
+collision = 0,0,64,200
+```
+
+### Camadas (`[layer <id>]`)
+
+Uma camada é **só visual**: não é clicável, não bloqueia o chão, não entra na ordem de
+profundidade e não muda o save. Quem interage com a arte são os objetos e os hotspots.
+
+| Chave | Padrão | Efeito |
+| --- | --- | --- |
+| `plane` | `back` | `back` desenha atrás de objetos e player; `front` desenha por cima deles |
+| `image.file` | (obrigatório) | PNG relativo a `assets/sprites` (como `sprite.file`) |
+| `image.pixelated` | `1` | `1` = vizinho mais próximo (pixel art); `0` = filtragem suave (pintura) |
+| `image.frame_width`, `image.frame_height`, `image.frames`, `image.columns`, `image.first_frame`, `image.margin_*`, `image.spacing_*` | imagem inteira | corte de spritesheet, igual aos clips; só útil à camada animada (M2-14, opcional) |
+| `position` | `0, 0` | canto superior esquerdo na sala, em coordenadas da sala |
+| `size` | tamanho da sala | tamanho desenhado, em unidades da sala (1 pixel do PNG = 1 unidade quando igual ao PNG) |
+| `scroll_factor` | `1, 1` | quanto a camada acompanha a câmera em cada eixo, de `0` a `4` |
+
+- **Posição na tela** = `position - câmera × scroll_factor`. Fator `1` anda com o mundo, `0` fica
+  parado na tela (céu fixo), menor que `1` é fundo distante e maior que `1` é primeiro plano que
+  passa mais rápido que o chão.
+- **Cobertura.** Para não aparecer borda vazia ao rolar até o fim, com a camada em `0, 0`:
+  `size.x ≥ 1280 + (largura_da_sala − 1280) × fx` e `size.y ≥ 720 + (altura_da_sala − 720) × fy`
+  (1280 × 720 é a viewport). Uma camada de fator `1` precisa ter o tamanho da sala. Camada que
+  não cobre a tela gera **aviso** (`--check` e log), nunca erro.
+- **Ordem de desenho:** camadas `back` na ordem do arquivo → objetos e player por profundidade →
+  camadas `front` na ordem do arquivo → fala e menus.
+- **Fundo procedural.** A parede, o chão e as guias coloridas só desenham quando a sala **não**
+  tem camada `back`. Pintar a sala não exige chave para desligar o placeholder, e as salas antigas
+  ficam idênticas.
+- **Arte ausente nunca recusa a sala:** PNG que falta desenha o quadriculado roxo e vira aviso,
+  como em qualquer sprite.
+- **Recusado ao carregar** (sempre com a linha da chave ou do cabeçalho): ID de camada inválido ou
+  repetido (camadas têm IDs próprios, independentes dos objetos), `plane` diferente de
+  `back`/`front`, `image.file` ausente, `size` com lado ≤ 0, `scroll_factor` fora de `0..4`,
+  e `image.display_*`/`image.offset_*` (o tamanho e o deslocamento da camada são `size` e
+  `position`).
+
+### Profundidade (`baseline`)
+
+A profundidade de um objeto é a linha onde ele "pisa": o player é desenhado atrás do objeto
+enquanto seus pés estiverem acima dela, e na frente quando estiverem abaixo. Sem `baseline` é a
+base do retângulo (`bounds.y + bounds.h`), como sempre foi.
+
+- `baseline = N` é **relativa ao topo de `bounds`**: profundidade = `bounds.y + N`. Mover o
+  objeto leva a linha junto. Aceita `0 ≤ N ≤ bounds.h`.
+- Só é gravada no arquivo quando definida; salas antigas regravam idênticas.
+- A mesma profundidade manda no desenho, no picking (entre objetos sobrepostos o da frente vence)
+  e no **ponto de chegada** de um objeto não sólido (`interactionApproachPoint`), então o player
+  caminha até onde o objeto pisa. Objeto sólido continua usando o centro da base de colisão.
+- Exemplo: um pilar `bounds = 900,240,96,300` com `baseline = 296` tem profundidade 536; o
+  player em `feet.y = 520` aparece atrás dele e em `feet.y = 560` aparece na frente.
+
+### Hotspots (`[hotspot <id>]`)
+
+Um hotspot é uma **área retangular invisível e clicável** sobre a arte pintada: a janela pintada
+no fundo, a porta que é só desenho. Por dentro é um objeto da sala com `hotspot = true`, sem sprite
+e sem desenho. Por isso ele divide o espaço de IDs com os objetos (um `[hotspot window]` e um
+`[object window]` na mesma sala colidem) e tudo que já funciona por `sala.objeto` vale para ele:
+regras em `.rules` (`[interact window]`, `[use_item chave window]`), `show_object`/`hide_object`,
+`set_solid`, `walk_to`, o `hideobj` do editor e o progresso no save.
+
+| Chave | Padrão | Efeito |
+| --- | --- | --- |
+| `bounds` | (obrigatório) | área clicável, `x, y, largura, altura` |
+| `type` | `decoration` | `solid` bloqueia o chão (parede invisível); `decoration` não bloqueia |
+| `collision` | (nenhuma) | base de colisão relativa a `bounds`, só com `type = solid` |
+| `baseline` | `bounds.h` | profundidade e ponto de chegada, como num objeto |
+
+Um hotspot **recusa** `color`, `sprite.*` e `animation.*` (ele não desenha nada). O resto é igual
+a um objeto: sem regra ele não responde ao clique, como qualquer objeto sem regra. Para ver os
+hotspots durante o teste use o editor (`show hotspots 1`, M2-21); numa build sem ferramentas não
+há nenhum desenho deles.
+
+### Receita: pintar uma sala em três passos
+
+1. **Fundo.** Um PNG do tamanho da sala (`[layer ground]`, `plane = back`). Ao salvar, o
+   placeholder colorido some sozinho.
+2. **Profundidade.** Recorte cada elemento que o player precisa atravessar por trás (pilar,
+   árvore, mesa) como PNG com fundo transparente e um `[object]` com `baseline` na linha do chão
+   dele. Primeiro plano que cobre o player (galhos, grades) vai numa camada `plane = front`.
+3. **Interação.** Janela, porta e quadros que só existem no fundo viram `[hotspot]`, com as regras
+   no `.rules`; paredes que a arte sugere mas o chão não bloqueia viram hotspot `type = solid`.
+
+Texturas grandes têm custo: uma camada de 4673 × 1620 ocupa cerca de 30 MB de VRAM, e o limite
+de lado de uma textura varia por aparelho (4096 é o valor seguro em celulares antigos). Salas
+com mais de 4096 de lado ficam melhor fatiadas em camadas lado a lado, com 2 pixels de sobreposição
+para não aparecer costura ao rolar.
+
 ## Sprites e animações
 
 Coloque os PNGs em `assets/sprites`. Cada `*.file` é relativo a essa pasta;

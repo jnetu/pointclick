@@ -315,7 +315,8 @@ M3–M6 (o núcleo de um point & click), depois o resto.
   `[layer <id>]` (arquivo, `scroll_factor` para parallax, atrás/à frente, `baseline`),
   `[hotspot <id>]` invisível e `baseline` por objeto, com picking e render usando a mesma função
   de profundidade. Toca: `Room`, `RoomFiles` (via `ObjectFieldCatalog`), renderer de camadas
-  novo em `graphics/`, `Interaction.cpp`.
+  novo em `graphics/`, `Interaction.cpp`. **Plano detalhado em 38 micro-tarefas:
+  [`docs/ROADMAP_M2.md`](ROADMAP_M2.md)** (decisões de formato, fases, testes e riscos).
 - **M3 — Verbos, hover e cursor.** `TriggerCatalog` (`look`, `talk`, `pick_up`...); `input/` com
   ação secundária (botão direito, toque longo) e *release*; `Scene::hoveredObject()` recalculado
   por tick a partir do ponto na viewport (hoje `Scene::onPointerMove` guarda o ponto no mundo,

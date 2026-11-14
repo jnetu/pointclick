@@ -75,7 +75,7 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 ```
 
 O `--check` imprime cada erro como `<arquivo>: Linha N: <motivo>` na saída de erro, um resumo
-na saída padrão, e sai com `0` (tudo válido) ou `1` (algum erro); serve a CI. Opção inválida
+na saída padrão, e sai com `0` (tudo válido) ou `1` (algum erro); serve a scripts de verificação. Opção inválida
 sai com `2` e mostra o uso.
 
 `--exec`/`--exec-file` é o modo para agentes e scripts: começa um jogo **novo** em `first.room`
@@ -169,7 +169,7 @@ cmake --build --preset store
 ctest --preset store
 ```
 
-Validar o conteúdo sem abrir janela (é o que a CI roda em todas as plataformas):
+Validar o conteúdo sem abrir janela (também roda no `ctest`):
 
 ```sh
 ./build/debug/pointclick --rooms assets/rooms --check
@@ -187,10 +187,9 @@ cmake --build --preset asan --target pointclick_parser_fuzz
 
 Os argumentos são as iterações por arquivo-semente (padrão 2000) e a semente (padrão 20261111).
 
-A integração contínua ([.github/workflows/ci.yml](.github/workflows/ci.yml)) roda configure,
-build, `ctest` e o `--check` em macOS (AppleClang), Linux (clang e gcc) e Windows (MSVC), mais
-ASan + UBSan e a build de loja no Linux. `-DPOINTCLICK_WARNINGS_AS_ERRORS=ON` transforma os avisos
-do projeto (não os das dependências) em erro; a CI liga isso fora do Windows.
+O projeto não usa integração contínua hospedada: a verificação é local, com os presets `debug`,
+`asan` e `store` (e o `--check`). `-DPOINTCLICK_WARNINGS_AS_ERRORS=ON` transforma os avisos do
+projeto (não os das dependências) em erro.
 
 ## Formatação
 

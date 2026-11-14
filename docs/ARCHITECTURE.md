@@ -552,6 +552,7 @@ um laço determinístico que muta os assets reais e chama os parsers e os writer
 sob ASan + UBSan. Ele só exige "aceitou ou recusou, sem crash"; o significado de cada entrada é
 assunto dos testes.
 
-A CI (`.github/workflows/ci.yml`) roda os mesmos presets (`debug`, `asan`, `store`) em macOS,
-Linux (clang e gcc) e Windows (MSVC), mais o `--check` dos assets. O que ela ainda não provou
-está em `docs/ROADMAP.md`, seção 3.3.
+Não há integração contínua hospedada (decisão de 14/11/2026: o GitHub Actions é pago e não
+serve ao fluxo do projeto). A verificação é local, com os presets `debug`, `asan` e `store` e o
+`--check` dos assets. O que ainda não foi provado fora do macOS está em `docs/ROADMAP.md`,
+seção 3.3.

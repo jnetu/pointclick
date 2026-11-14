@@ -29,7 +29,7 @@ else()
     set(POINTCLICK_KEEP_ASSERTS -UNDEBUG)
 endif()
 
-# CI turns this on where the build is known to be clean; local builds only report.
+# Turn this on where the build is known to be clean; by default local builds only report.
 option(POINTCLICK_WARNINGS_AS_ERRORS "Treat the project's warnings as errors (not the dependencies')" OFF)
 if(POINTCLICK_WARNINGS_AS_ERRORS)
     if(MSVC)

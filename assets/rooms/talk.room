@@ -1,0 +1,30 @@
+# Playground: dialogo com escolhas (talk.dlg): once, goto, condicoes e change_room dentro da conversa.
+[room]
+id = talk
+room.wall_y = 280
+room.walkable_y = 300
+room.vanishing_x = 640
+room.ray_spacing = 160
+perspective.far_y = 300
+perspective.near_y = 720
+perspective.far_scale = 0.55
+perspective.near_scale = 1.65
+player.start_x = 320
+player.start_y = 560
+player.width = 48
+player.height = 80
+player.far_speed = 110
+player.near_speed = 330
+collision.padding_x = 40
+collision.padding_y = 8
+wall.color = 60,80,110,255
+floor.color = 100,80,60,255
+wall.trim_color = 36,48,70,255
+floor.guide_color = 120,98,76,255
+floor.lines = 0.18,0.38,0.62,0.85
+
+[object guide]
+bounds = 700,350,70,150
+color = 90,170,200,255
+type = solid
+collision = 10,115,50,25

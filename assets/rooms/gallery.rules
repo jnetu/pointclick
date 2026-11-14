@@ -13,3 +13,8 @@ say "Apenas uma planta bem cuidada no canto da galeria."
 # A mesa abre um dialogo com escolhas (gallery.dlg, no "mesa").
 [interact table]
 start_dialogue mesa
+
+# Playground first <-> gallery: a volta entra por first from_gallery.
+[interact door_first]
+say "De volta ao primeiro salão."
+change_room first from_gallery

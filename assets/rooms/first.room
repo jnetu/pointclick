@@ -37,3 +37,13 @@ color = 220,74,68,255
 type = solid
 # Base relativa ao canto superior esquerdo do objeto.
 collision = 14,92,82,33
+
+# Porta da direita: leva a gallery (first.rules). Quem volta de la chega por [spawn from_gallery].
+[object door_gallery]
+bounds = 1090,160,110,140
+color = 120,80,50,255
+type = decoration
+
+[spawn from_gallery]
+feet = 1120,330
+facing = left

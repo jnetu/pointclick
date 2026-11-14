@@ -1,0 +1,6 @@
+# Playground wide: so objetos para clicar nas duas pontas da sala.
+[interact west_post]
+say "O poste do começo. A sala tem 2560 de largura."
+
+[interact east_lamp]
+say "A lanterna do outro lado da sala."

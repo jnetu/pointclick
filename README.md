@@ -124,10 +124,14 @@ registra os mesmos avisos no log ao carregar cada sala, uma vez por execução.
 ctest --preset debug
 ```
 
-O `ctest` roda um teste por executável (`pointclick_tests`, `pointclick_sprite_tests`,
-`pointclick_text_tests`, `pointclick_cli_tests`, `pointclick_editor_tests`), mais o `--check` dos
-assets, o `--exec` nos assets (a chave destrava a caixa vermelha; um comando que falha sai com
-código ≠ 0) e a checagem de camadas. Os executáveis usam o [doctest](https://github.com/doctest/doctest)
+O `ctest` roda um teste por executável (`pointclick_tests`, `pointclick_walkthrough_tests`,
+`pointclick_sprite_tests`, `pointclick_text_tests`, `pointclick_cli_tests`,
+`pointclick_editor_tests`), mais o `--check` dos assets (que não pode ter nenhum `aviso:`), o
+`--exec` nos assets (a chave destrava a caixa vermelha; `--room gallery from_first`; um comando que
+falha sai com código ≠ 0), a conferência da arte sintética dos playgrounds (precisa de Python 3) e
+a checagem de camadas. Os `pointclick_walkthrough_tests` **jogam as salas de `assets/rooms`** sem
+janela e sem relógio real, uma sala por caso (ver "Playgrounds" no
+[guia de game design](docs/GAME_DESIGN.md)). Os executáveis usam o [doctest](https://github.com/doctest/doctest)
 (baixado pelo CPM na versão fixada em `cmake/Dependencies.cmake`): cada função de teste é um
 `TEST_CASE`, uma falha diz o caso, o arquivo, a linha e os valores comparados, e os outros casos
 continuam rodando. Para escolher casos, chame o executável com as opções do doctest:

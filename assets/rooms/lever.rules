@@ -1,0 +1,24 @@
+# Playground lever: ao puxar, o jogo entra em modo cutscene (clicar so pula a fala).
+[interact lever]
+flag_not_set lever_pulled
+set_flag lever_pulled
+face left
+say "Vou puxar a alavanca."
+wait 0.5
+set_solid gate 0
+walk_to gate
+face up
+say "O portão abriu."
+wait 0.5
+face right
+say "Pronto."
+
+[interact lever]
+say "Já puxei a alavanca."
+
+[interact gate]
+flag_set lever_pulled
+say "O portão está aberto."
+
+[interact gate]
+say "Trancado. Deve haver uma alavanca por perto."

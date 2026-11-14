@@ -25,7 +25,8 @@ Sem esse argumento, o jogo usa a cópia de `assets/rooms` junto do executável;
 essa cópia é atualizada durante o build.
 
 A primeira sala carregada é `first.room`. Existe também `gallery.room`, uma
-segunda sala de exemplo com parâmetros e objetos diferentes.
+segunda sala de exemplo com parâmetros e objetos diferentes; as duas se ligam por uma porta
+(veja "Playgrounds" abaixo).
 
 ## Editar durante o jogo
 
@@ -74,8 +75,8 @@ mensagem e preservam o estado anterior.
 | `show diagnostics 0` | Oculta o painel técnico de posições |
 | `reload` | Relê os PNGs do disco (arte trocada com o jogo aberto); não altera a sala nem o progresso |
 | `show hint 0` | Oculta a dica "DEBUG / F1 / Select" exibida com o editor fechado (para capturas de tela limpas) |
-| `undo` | Desfaz a última edição/carregamento; uma chamada seguinte alterna os dois estados |
-| `reset` | Restaura a sala que estava ativa quando DEBUG foi aberto |
+| `undo` | Desfaz a última edição/carregamento; uma chamada seguinte alterna os dois estados. Uma sala nova (`goto`, `change_room`, `newgame`) zera o histórico: não há o que desfazer nela |
+| `reset` | Restaura a sala como o jogo a carregou: a que estava ativa quando DEBUG foi aberto ou a última que entrou depois (`goto`, `change_room`, `newgame`). O progresso não é tocado |
 
 `save` substitui o arquivo informado e salva os parâmetros/objetos, não o
 progresso do personagem. O arquivo é **regravado por inteiro** a partir da sala em
@@ -117,6 +118,46 @@ O nome do arquivo é a identidade da sala: `biblioteca.room` precisa ter
 `id = biblioteca` (ou omitir `id`, que então vale o nome do arquivo). É por esse
 nome que `change_room` encontra a sala e que o progresso da partida é guardado;
 um arquivo com `id` diferente do nome é recusado ao carregar.
+
+### Playgrounds (uma sala por mecânica)
+
+As salas pequenas de `assets/rooms/` existem para ver cada mecânica funcionando e para o teste de
+percurso (`tests/WalkthroughTests.cpp`) jogá-las sem janela. Para abrir uma delas num jogo novo,
+sem tocar no save: `pointclick --rooms assets/rooms --room <sala> [spawn] --new-game --no-save`.
+
+| Sala | Entradas | O que mostra |
+| --- | --- | --- |
+| `first` ↔ `gallery` | `from_gallery` / `from_first` | porta de ida e volta: `change_room gallery from_first` e `change_room first from_gallery`, chegada com posição e direção do `[spawn]`, autosave a cada sala |
+| `wide` | `west`, `east` | sala de 2560 de largura: a câmera acompanha e para nas pontas; o clique na tela é somado ao deslocamento da câmera |
+| `door` | `entry`, `near_door` | PNGs sintéticos: `play_animation`, `wait_animation`, `set_animation` (a porta fica aberta ao voltar e no save) e `flip_x` (a porta gêmea usa a mesma folha, espelhada) |
+| `lever` | (início) | sequência longa em cutscene: `face`, `say`, `wait`, `set_solid`, `walk_to`; clicar só pula a fala |
+| `talk` | (início) | diálogo com `once`, `goto`, condições e um `change_room items from_talk` dentro da conversa |
+| `items` | `from_talk` | pegar item, `[use_item brass_key red_box]`, as quatro curingas na ordem de especificidade e os contadores (`add_flag`, `flag_at_least`, o limite de ±1.000.000.000) |
+
+Um exemplo do que a sala `door` mostra no `.room` (o mesmo clip, normal e espelhado):
+
+```ini
+[object door_twin]
+bounds = 860,120,120,180
+animation.initial = closed
+animation.closed.file = playground/door_closed.png
+animation.open.file = playground/door_open.png
+animation.open.frame_width = 32
+animation.open.frame_height = 64
+animation.open.frames = 4
+animation.open.fps = 8
+animation.open.loop = 0
+animation.open.flip_x = 1
+```
+
+Os PNGs de `assets/sprites/playground/` vêm de `scripts/make_playground_art.py`; não edite à mão.
+Para jogar uma sala nos testes use o `WalkthroughDriver` (`tests/support/`):
+
+```cpp
+WalkthroughDriver play("items");
+play.clickObject("key_crate").settle().expectItems({"brass_key"});
+play.use("brass_key", "red_box").settle().expectFlag("red_box_unlocked", 1);
+```
 
 ### Pontos de entrada (`[spawn]`)
 

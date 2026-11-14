@@ -1,0 +1,28 @@
+# Dialogo do playground talk. A ordem dentro de uma escolha e: condicoes, once, efeitos, goto.
+
+[node guide]
+say "Olá, viajante. Posso ajudar?"
+
+# Some depois de escolhida (once) e volta ao menu (goto).
+[choice nome "Quem é você?"]
+once
+say "Sou só um guia."
+set_flag knows_guide
+goto guide
+
+# Condicao: so aparece depois de perguntar o nome; lacks_item esconde de novo ao pegar o mapa.
+[choice mapa "Pode me dar um mapa?"]
+flag_set knows_guide
+lacks_item guide_map
+give_item guide_map
+say "Aqui está o mapa."
+goto guide
+
+# Condicao de item: so com o mapa. O change_room so acontece quando a conversa termina.
+[choice seguir "Seguir o guia."]
+has_item guide_map
+say "Venha comigo."
+change_room items from_talk
+
+[choice sair "Deixar o guia."]
+say "Até logo."

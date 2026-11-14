@@ -46,7 +46,9 @@ public:
     // Where `newgame` starts (the --room <sala> [spawn] of the run; default first.room).
     void setStartRoom(std::string roomId, std::string spawnId = {});
 
-    // The room `reset` returns to is the one in play now; `undo` starts empty.
+    // The room `reset` returns to is the one in play now; `undo` starts empty. A room the game
+    // loads later (goto, change_room, newgame) starts over the same way: the console notices it
+    // by the scene's roomRevision, so `undo`/`reset` never refer to a room that is gone.
     void begin(const Game& game);
     // Runs one line ("verb args"). A blank line is ok with no output.
     CommandResult execute(std::string_view line, Game& game);
@@ -71,6 +73,9 @@ public:
     bool reset(Game& game, std::string& output);
 
 private:
+    // begin() again when the scene was replaced behind the console's back (not by commit).
+    void followGame(const Game& game);
+
     const RoomLibrary* library_ = nullptr;
     std::function<void()> reloadArt_;
     DebugViews views_;
@@ -82,4 +87,7 @@ private:
     std::optional<Room> undo_;
     std::optional<RoomInteractions> undoInteractions_;
     std::optional<RoomDialogues> undoDialogues_;
+    // Scene::roomRevision after begin() or the last commit; a different one means another loader
+    // (the shell answering a RoomChangeRequested) replaced the room.
+    unsigned long long knownRevision_ = 0;
 };

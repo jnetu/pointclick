@@ -1,0 +1,45 @@
+# Playground: sala panoramica (2560 de largura). Camera suave, clamp nas pontas e clique
+# convertido com a camera deslocada. Entre por --room wide west|east.
+[room]
+id = wide
+room.width = 2560
+room.wall_y = 280
+room.walkable_y = 300
+room.vanishing_x = 1280
+room.ray_spacing = 160
+perspective.far_y = 300
+perspective.near_y = 720
+perspective.far_scale = 0.55
+perspective.near_scale = 1.65
+player.start_x = 200
+player.start_y = 450
+player.width = 48
+player.height = 80
+player.far_speed = 110
+player.near_speed = 330
+collision.padding_x = 40
+collision.padding_y = 8
+wall.color = 74,96,120,255
+floor.color = 52,110,92,255
+wall.trim_color = 40,52,70,255
+floor.guide_color = 70,130,112,255
+floor.lines = 0.18,0.38,0.62,0.85
+
+[object west_post]
+bounds = 420,330,60,130
+color = 200,160,70,255
+type = decoration
+
+[object east_lamp]
+bounds = 2240,330,70,140
+color = 240,220,110,255
+type = solid
+collision = 10,105,50,25
+
+[spawn west]
+feet = 160,450
+facing = right
+
+[spawn east]
+feet = 2400,450
+facing = left

@@ -168,7 +168,7 @@ TEST_CASE("testRoomFiles") {
     const auto loaded = RoomFiles::load(source, sharedPlayerArt());
     REQUIRE(loaded.room);
     REQUIRE((loaded.room->width == 1280.0F && loaded.room->height == 720.0F));
-    REQUIRE(loaded.room->scenery.size() == 2);
+    REQUIRE(loaded.room->scenery.size() == 3); // blue_box, red_box and the door to gallery
     const auto missing = RoomFiles::load(directory / std::filesystem::path(u8"ausente-\u00e7.room"));
     REQUIRE(!missing.room);
     REQUIRE(missing.error == "Nao foi possivel abrir ausente-\xC3\xA7.room");
@@ -2131,6 +2131,55 @@ TEST_CASE("testGotoCommandKeepsSession") {
     REQUIRE(!hasRoomChange(game));
     REQUIRE(shipped.script->run("goto first")); // the room in play: re-entered at its start
     REQUIRE(game.session().snapshot() == before);
+}
+
+// `undo` and `reset` belong to the room in play: a room the game loads after the editor opened
+// (goto, here; change_room and newgame take the same road) starts them over, so neither jumps
+// back to a room that is gone nor restores an edit the reload already threw away.
+TEST_CASE("testUndoAndResetFollowARoomChange") {
+    ShippedGame shipped;
+    Game& game = *shipped.game;
+    REQUIRE(shipped.execute("give brass_key").ok);
+    REQUIRE(shipped.execute("set player.far_speed 150").ok);
+    REQUIRE(game.scene().room().playerFarSpeed == 150.0F);
+
+    // The edit was to `first`; gallery loads from its file and has nothing to undo.
+    REQUIRE(shipped.script->run("goto gallery"));
+    REQUIRE((game.scene().room().id == "gallery" && game.scene().room().playerFarSpeed == 140.0F));
+    CommandResult undone = shipped.execute("undo");
+    REQUIRE((!undone.ok && undone.output == "Nenhuma edicao para desfazer"));
+    // `reset` is gallery's: an edit made here goes back to the file's value, in gallery.
+    REQUIRE(shipped.execute("set player.far_speed 200").ok);
+    REQUIRE(shipped.execute("reset").ok);
+    REQUIRE((game.scene().room().id == "gallery" && game.scene().room().playerFarSpeed == 140.0F));
+    REQUIRE(!game.scene().interactions().rules.empty()); // gallery.rules stayed with the room
+    REQUIRE(game.session().hasItem("brass_key"));        // progress is never touched
+
+    // Back in first: reset restores first as it loads, not the edit from before the trip.
+    REQUIRE(shipped.script->run("goto first"));
+    REQUIRE(shipped.execute("set player.far_speed 90").ok);
+    REQUIRE(shipped.execute("reset").ok);
+    REQUIRE((game.scene().room().id == "first" && game.scene().room().playerFarSpeed == 110.0F));
+
+    // The same room entered again is a fresh load too: the earlier edit is gone, and so is its undo.
+    REQUIRE(shipped.execute("set player.far_speed 150").ok);
+    REQUIRE(shipped.script->run("goto first"));
+    REQUIRE(game.scene().room().playerFarSpeed == 110.0F);
+    undone = shipped.execute("undo");
+    REQUIRE((!undone.ok && undone.output == "Nenhuma edicao para desfazer"));
+    REQUIRE(game.scene().room().playerFarSpeed == 110.0F);
+
+    // Edits and undo still work inside the room, and the console's own load is not a room change
+    // behind its back: undo takes it back, reset still means the room entered by the game.
+    REQUIRE(shipped.execute("set player.far_speed 120").ok);
+    REQUIRE(shipped.execute("undo").ok);
+    REQUIRE(game.scene().room().playerFarSpeed == 110.0F);
+    REQUIRE(shipped.execute("load gallery.room").ok);
+    REQUIRE(game.scene().room().id == "gallery");
+    REQUIRE(shipped.execute("undo").ok);
+    REQUIRE(game.scene().room().id == "first");
+    REQUIRE(shipped.execute("reset").ok);
+    REQUIRE((game.scene().room().id == "first" && game.scene().room().playerFarSpeed == 110.0F));
 }
 
 // A spawn travels with the request; the room is entered there (Room::entryPoint).

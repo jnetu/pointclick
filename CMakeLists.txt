@@ -158,12 +158,24 @@ if(BUILD_TESTING)
     target_include_directories(pointclick_test_support PUBLIC tests)
     target_link_libraries(pointclick_test_support PUBLIC pointclick_game)
     target_compile_options(pointclick_test_support PRIVATE ${POINTCLICK_WARNINGS})
+    # F3: the headless walkthrough driver plays the shipped rooms (assets/rooms) with a simulated
+    # clock. It links the domain and content only, so the store build runs it as well.
+    add_library(pointclick_walkthrough_support STATIC tests/support/WalkthroughDriver.cpp)
+    target_link_libraries(pointclick_walkthrough_support PUBLIC pointclick_content
+            pointclick_test_support doctest::doctest)
+    target_compile_options(pointclick_walkthrough_support PRIVATE ${POINTCLICK_WARNINGS})
+    target_compile_definitions(pointclick_walkthrough_support PRIVATE
+            POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     # GameTests links the domain and content only: gameplay runs without any renderer.
     add_executable(pointclick_tests tests/GameTests.cpp)
     target_link_libraries(pointclick_tests PRIVATE pointclick_content pointclick_test_support)
+    # One TEST_CASE per playground room (assets/rooms), played from the real files.
+    add_executable(pointclick_walkthrough_tests tests/WalkthroughTests.cpp)
+    target_link_libraries(pointclick_walkthrough_tests PRIVATE pointclick_walkthrough_support)
     add_executable(pointclick_sprite_tests tests/SpriteTests.cpp)
-    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_content pointclick_graphics
-            pointclick_test_support)
+    # content and the test fixtures come with the walkthrough driver (the door playground frame).
+    target_link_libraries(pointclick_sprite_tests PRIVATE pointclick_graphics
+            pointclick_walkthrough_support)
     target_compile_definitions(pointclick_sprite_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     # Text layout links ui/ only: wrapping is tested with fake metrics, no window or GPU.
@@ -179,8 +191,8 @@ if(BUILD_TESTING)
     endif()
     target_compile_definitions(pointclick_cli_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
-    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests pointclick_text_tests
-            pointclick_cli_tests)
+    set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_walkthrough_tests
+            pointclick_sprite_tests pointclick_text_tests pointclick_cli_tests)
     if(POINTCLICK_ENABLE_TOOLS)
         add_executable(pointclick_editor_tests tests/EditorTests.cpp)
         target_link_libraries(pointclick_editor_tests PRIVATE pointclick_tools pointclick_test_support)
@@ -222,10 +234,34 @@ if(BUILD_TESTING)
         add_test(NAME pointclick_exec_assets_report COMMAND pointclick ${POINTCLICK_EXEC_KEY_ARGS})
         set_tests_properties(pointclick_exec_assets_report PROPERTIES
                 PASS_REGULAR_EXPRESSION "flags: red_box_unlocked=1")
+        # F3: --room <sala> <spawn> with a spawn the shipped rooms now have (exit 0, and a second
+        # run for the text); an unknown spawn exits non-zero.
+        set(POINTCLICK_EXEC_SPAWN_ARGS --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms
+                --room gallery from_first --exec state)
+        add_test(NAME pointclick_exec_room_spawn COMMAND pointclick ${POINTCLICK_EXEC_SPAWN_ARGS})
+        add_test(NAME pointclick_exec_room_spawn_report COMMAND pointclick ${POINTCLICK_EXEC_SPAWN_ARGS})
+        set_tests_properties(pointclick_exec_room_spawn_report PROPERTIES
+                PASS_REGULAR_EXPRESSION "sala: gallery")
+        add_test(NAME pointclick_exec_room_unknown_spawn
+                COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms
+                        --room gallery nenhum --exec state)
+        set_tests_properties(pointclick_exec_room_unknown_spawn PROPERTIES WILL_FAIL TRUE)
         add_test(NAME pointclick_exec_failure
                 COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms
                         --exec "use brass_key red_box")
         set_tests_properties(pointclick_exec_failure PROPERTIES WILL_FAIL TRUE)
+    endif()
+    # F3: the shipped rooms (playgrounds included) have no art warning: the generated PNGs exist.
+    add_test(NAME pointclick_check_assets_no_warnings
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms --check)
+    set_tests_properties(pointclick_check_assets_no_warnings PROPERTIES
+            FAIL_REGULAR_EXPRESSION "aviso:")
+    # The synthetic art comes from a script and must be reproducible: same bytes as on disk.
+    find_package(Python3 COMPONENTS Interpreter QUIET)
+    if(Python3_Interpreter_FOUND)
+        add_test(NAME pointclick_playground_art
+                COMMAND ${Python3_EXECUTABLE} -I
+                        ${CMAKE_CURRENT_SOURCE_DIR}/scripts/make_playground_art.py --check)
     endif()
     add_test(NAME pointclick_layer_includes
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}

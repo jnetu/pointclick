@@ -10,6 +10,7 @@
 #include "graphics/SpriteLibrary.hpp"
 
 #include "support/TempDirectory.hpp"
+#include "support/WalkthroughDriver.hpp"
 
 #include <doctest/doctest.h>
 #include <SDL3/SDL.h>
@@ -440,6 +441,66 @@ TEST_CASE("testGameFrameHasNoDebugDrawing") {
                       static_cast<int>(base.y + base.h * 0.5F)),
                 solid.color.r, solid.color.g, solid.color.b);
     SDL_DestroySurface(frame);
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+// F3: the door playground, played from the shipped files and drawn headless. The twin door uses
+// the same sheet as the first with flip_x, so the blue hinge post that sits on the left of the
+// first door is on the right of the twin, both closed and open.
+TEST_CASE("testDoorPlaygroundFlipPixels") {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Door playground", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    renderer.setSpriteRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/sprites");
+
+    constexpr SDL_Color hinge{40, 60, 200, 255};
+    constexpr SDL_Color doorway{25, 25, 40, 255};
+    WalkthroughDriver play("door", "entry");
+    const SceneObject& door = *play.game().scene().room().findObject("door");
+    const SceneObject& twin = *play.game().scene().room().findObject("door_twin");
+    // Eight pixels in from each side, halfway up: clear of the player, who stands at the base.
+    const auto sample = [&](const SceneObject& object, const bool rightSide) {
+        const auto x = static_cast<int>(object.bounds.x
+                                        + (rightSide ? object.bounds.w - 8.0F : 8.0F));
+        const auto y = static_cast<int>(object.bounds.y + object.bounds.h * 0.5F);
+        renderer.render(play.game(), 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE(frame);
+        const SDL_Color color = pixel(frame, x, y);
+        SDL_DestroySurface(frame);
+        return color;
+    };
+    const auto expectSide = [&](const SceneObject& object, const bool rightSide,
+                                const SDL_Color expected) {
+        const SDL_Color color = sample(object, rightSide);
+        const std::string where = object.id + (rightSide ? " right side got " : " left side got ")
+                                  + std::to_string(color.r) + "," + std::to_string(color.g) + ","
+                                  + std::to_string(color.b);
+        INFO(where);
+        expectColor(color, expected.r, expected.g, expected.b);
+    };
+
+    // Closed: wood in the middle, the hinge post on the first door's left and the twin's right.
+    expectSide(door, false, hinge);
+    expectSide(twin, true, hinge);
+
+    // Open (the last frame of the sheet): the leaf is swung away, the doorway shows behind it.
+    play.clickObject("door").settle().advance(15.0F);
+    play.clickObject("door_twin").settle().advance(15.0F); // the line is gone from the screen
+    REQUIRE(!play.game().scene().floatingText().isVisible());
+    play.expectObjectAnimation("door", "open", true)
+            .expectObjectAnimation("door_twin", "open", true);
+    expectSide(door, false, hinge);
+    expectSide(door, true, doorway);
+    expectSide(twin, true, hinge);
+    expectSide(twin, false, doorway);
+
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

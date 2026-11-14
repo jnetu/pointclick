@@ -1,0 +1,36 @@
+# Playground: uma sequencia longa (walk_to, face, wait, say) em modo cutscene.
+[room]
+id = lever
+room.wall_y = 280
+room.walkable_y = 300
+room.vanishing_x = 640
+room.ray_spacing = 160
+perspective.far_y = 300
+perspective.near_y = 720
+perspective.far_scale = 0.55
+perspective.near_scale = 1.65
+player.start_x = 640
+player.start_y = 600
+player.width = 48
+player.height = 80
+player.far_speed = 110
+player.near_speed = 330
+collision.padding_x = 40
+collision.padding_y = 8
+wall.color = 110,70,70,255
+floor.color = 60,90,60,255
+wall.trim_color = 70,44,44,255
+floor.guide_color = 80,112,80,255
+floor.lines = 0.18,0.38,0.62,0.85
+
+[object lever]
+bounds = 160,330,50,110
+color = 210,200,70,255
+type = decoration
+
+# O portao trava o chao ate a alavanca ser puxada.
+[object gate]
+bounds = 900,340,140,170
+color = 120,120,130,255
+type = solid
+collision = 10,120,120,40

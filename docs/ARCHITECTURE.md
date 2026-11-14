@@ -520,6 +520,15 @@ configurações inválidas, entrada multiplataforma e independência de resoluç
 direção, persistência e imagem de substituição. Os testes gráficos usam o driver
 virtual e o renderizador de software do SDL.
 
+Os **testes de percurso** (`tests/WalkthroughTests.cpp`, F3) jogam os arquivos reais de
+`assets/rooms`, uma sala por caso, com o `WalkthroughDriver` (`tests/support/`): ele faz o que o
+`Application` faz em volta do `Game` (sala nova como `--room <sala> [spawn]`, `RoomChangeRequested`
+→ `enterRoom`, `AutosavePolicy`, save e retomada por `SaveFiles`) com **tempo simulado** (tick de
+1/60 s, nada de `sleep` nem relógio), e linka só `content` + `game`, então roda também na build de
+loja. O que precisa de pixels (o `flip_x` da sala `door`) renderiza o mesmo `Game` num frame
+headless em `SpriteTests.cpp`. Uma falha nomeia o passo, o obtido contra o esperado, o estado e os
+passos anteriores.
+
 Os testes usam o **doctest** (versão e hash fixos em `cmake/Dependencies.cmake`, baixado pelo
 CPM só com `BUILD_TESTING`). As regras:
 

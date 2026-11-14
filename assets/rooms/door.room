@@ -1,0 +1,79 @@
+# Playground: objetos com sprites (PNG sintetico de scripts/make_playground_art.py).
+# door/door_twin: play_animation, wait_animation, set_animation (estado que fica) e flip_x
+# (a gemea usa a mesma folha espelhada). knocker: play_animation passageiro.
+[room]
+id = door
+room.wall_y = 280
+room.walkable_y = 300
+room.vanishing_x = 640
+room.ray_spacing = 160
+perspective.far_y = 300
+perspective.near_y = 720
+perspective.far_scale = 0.55
+perspective.near_scale = 1.65
+player.start_x = 640
+player.start_y = 480
+player.width = 48
+player.height = 80
+player.far_speed = 110
+player.near_speed = 330
+collision.padding_x = 40
+collision.padding_y = 8
+wall.color = 96,84,110,255
+floor.color = 70,70,90,255
+wall.trim_color = 52,44,64,255
+floor.guide_color = 88,88,110,255
+floor.lines = 0.18,0.38,0.62,0.85
+
+[object door]
+bounds = 300,120,120,180
+type = decoration
+animation.initial = closed
+animation.closed.file = playground/door_closed.png
+animation.closed.fps = 0
+animation.open.file = playground/door_open.png
+animation.open.frame_width = 32
+animation.open.frame_height = 64
+animation.open.frames = 4
+animation.open.columns = 4
+animation.open.fps = 8
+animation.open.loop = 0
+
+# Mesma folha, espelhada: a dobradica azul passa para o lado direito.
+[object door_twin]
+bounds = 860,120,120,180
+type = decoration
+animation.initial = closed
+animation.closed.file = playground/door_closed.png
+animation.closed.fps = 0
+animation.closed.flip_x = 1
+animation.open.file = playground/door_open.png
+animation.open.frame_width = 32
+animation.open.frame_height = 64
+animation.open.frames = 4
+animation.open.columns = 4
+animation.open.fps = 8
+animation.open.loop = 0
+animation.open.flip_x = 1
+
+[object knocker]
+bounds = 616,252,48,48
+type = decoration
+animation.initial = idle
+animation.idle.file = playground/knocker_idle.png
+animation.idle.fps = 0
+animation.pulse.file = playground/knocker_pulse.png
+animation.pulse.frame_width = 16
+animation.pulse.frame_height = 16
+animation.pulse.frames = 3
+animation.pulse.columns = 3
+animation.pulse.fps = 6
+animation.pulse.loop = 0
+
+[spawn entry]
+feet = 640,480
+facing = down
+
+[spawn near_door]
+feet = 360,360
+facing = up

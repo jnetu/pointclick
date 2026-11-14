@@ -11,3 +11,7 @@ Quadros, margens, velocidade e tamanho visual de cada clip estão descritos em
 [Sprites e animações](../../docs/GAME_DESIGN.md#sprites-e-animações) no guia de game design.
 Um PNG ausente ou com corte inválido aparece no jogo como um quadriculado roxo e preto. Depois
 de trocar um PNG com o jogo aberto, use `reload` no modo DEBUG.
+
+Os playgrounds (`assets/rooms/door.room`) usam PNGs sintéticos em `playground/`, gerados por
+`scripts/make_playground_art.py` (Python 3, sem dependências; `--check` confere os bytes). Não
+edite esses PNGs à mão: mude o script e rode-o de novo.

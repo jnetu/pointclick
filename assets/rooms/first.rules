@@ -30,3 +30,8 @@ say "Usei a chave de latão e liberei a passagem da caixa vermelha!"
 
 [interact red_box]
 say "Está pesada e trancada no chão. Talvez haja uma chave por perto."
+
+# Playground first <-> gallery: change_room com [spawn] (a ida entra por gallery from_first).
+[interact door_gallery]
+say "Vamos ver a galeria."
+change_room gallery from_first

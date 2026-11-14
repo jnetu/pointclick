@@ -1,0 +1,25 @@
+# Playground door. set_animation guarda o clip no progresso (porta que fica aberta);
+# play_animation e so do momento (o aldrava volta ao clip inicial ao sair e voltar).
+
+[interact door]
+flag_not_set door_open
+set_flag door_open
+set_animation door open
+wait_animation door
+say "A porta rangeu e abriu."
+
+# Ja aberta: toca de novo sem mudar o que esta guardado.
+[interact door]
+play_animation door open
+wait_animation door
+say "Ela já estava aberta."
+
+[interact door_twin]
+set_animation door_twin open
+wait_animation door_twin
+say "A porta gêmea abriu espelhada."
+
+[interact knocker]
+play_animation knocker pulse
+wait_animation knocker
+say "Toc, toc."

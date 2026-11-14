@@ -26,6 +26,12 @@ sem prova (seção 3.3).
 passou para a seção 3.1. O `ctest` tem 13 testes (9 na build sem ferramentas): debug 13/13,
 ASan + UBSan 13/13, loja 9/9, sem avisos do compilador.
 
+**Segunda atualização de 13/11/2026:** F3 (playgrounds por mecânica + teste de percurso) foi
+concluído sobre `657307d` e passou para a seção 3.1. Salas novas `wide`, `door`, `lever`, `talk` e
+`items`, `first` ↔ `gallery` ligadas por porta e `[spawn]`, arte sintética gerada por script e um
+`WalkthroughDriver` que joga os assets reais sem janela. O `ctest` tem 19 testes (12 na build sem
+ferramentas): debug 19/19, ASan + UBSan 19/19, loja 12/12, sem avisos do compilador.
+
 Este projeto é a **engine**; história, personagens e música ficam nos jogos construídos sobre
 ela. Aqui só entram mecânicas e *playgrounds* pequenos para testá-las. As listas abaixo seguem
 esse recorte.
@@ -187,6 +193,7 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 | D12 | Erros de sala sem linha (`Room::validationError` só era conferido no fim de `RoomFiles::load`) | `Room::validationIssue` devolve `RoomValidationIssue` (mensagem, sujeito sala/spawn/objeto, posição, campo) e continua sendo a única fonte das regras; `validationError()` é a mensagem dela. `RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]` e de cada chave e prefixa `Linha N:` com a chave que alimentou o erro (`bounds`, `collision`, `animation.initial`, `feet`) ou, sem ela, o cabeçalho; ID inválido ou repetido é recusado no próprio cabeçalho; `Spawn sem feet` também ganhou a linha. Textos iguais, sem chave nova. Erros da sala como um todo continuam sem linha | `testRoomObjectErrorsCarryLines` e os casos de `[spawn]` em `testRoomSpawnFilesAndTransitions` (`EditorTests.cpp`) |
 | F1 | Opções `--new-game`, `--no-save`, `--room <id> [spawn]`, `--check` | `core/CommandLine` (sem SDL) + `content/ContentCheck` | `CommandLineTests.cpp`, `pointclick_check_*` |
 | F2 | Sem comandos de sessão no editor: a regra `[use_item brass_key red_box]` dos assets não podia ser disparada no jogo (não há UI de inventário), e cada comando novo exigia mexer na cadeia de `if` de `DebugEditor::submit` e no texto fixo de `DebugOverlay.cpp` | **`CommandCatalog`** (`debug/CommandCatalog.*`, 2.1): `CommandDescriptor{nome, uso, descrição, função}`; os 12 comandos antigos migraram sem mudar comportamento nem texto de erro (o "Use: show route\|diagnostics\|hint 0/1" agora sai de `kViewSwitches`); `help` (lista + uma linha "uso -- descrição" por comando), `help <comando>` e a lista do painel saem da tabela. **`CommandConsole`** (`debug/CommandConsole.*`) guarda o estado das ferramentas (biblioteca, recarga de arte, `undo`/`reset`, `DebugViews`, sala do `newgame`) e executa uma linha → `CommandResult{ok, output}`, sem UI; o `DebugEditor` virou só entrada e hit-test. **Comandos de sessão**, todos por `Game::changeSession` ou por intenção do `Game`: `flag <id> <n>` (recusa fora de ±1.000.000.000, sem saturar em silêncio; `0` apaga), `give`/`take <item>`, `showobj`/`hideobj <sala.objeto\|objeto>` (nomes espelham `show_object`/`hide_object`, porque `show` já é das visões; outra sala é conferida no arquivo), `use <item> <obj>` (`Game::useItemOnObject`, curingas incluídos), `goto <sala> [spawn]` (`Game::requestRoomChange` → `RoomChangeRequested`, o caminho do `change_room`), `newgame` (`Game::startNewGame`: cancela sequência e diálogo, zera a sessão e pede a sala inicial, `first` ou a do `--room`), `state` (sala, flags e overrides ordenados, itens na ordem do inventário, escolhas de diálogo). **Headless:** `--exec "<comando>"` e `--exec-file <arquivo>` (repetíveis, em ordem; parsing em `core/CommandLine`, só com `POINTCLICK_TOOLS`) rodam em `debug/CommandScript` um jogo novo que nunca lê nem grava o save, assentam a simulação a 60 Hz após cada comando, imprimem `> comando`, resposta (`erro: ` nas falhas), `fala:` e `sala:`, e saem com 1 se algum comando falhar. A carga de sala de um `RoomChangeRequested` virou `enterRoom` (`content/RoomLibrary`), usada pelo `Application` e pelo headless. Formatos e save (versão 3) não mudaram | `testCommandCatalogHelp`, `testPanelTextRows`, `testFlagCommand`, `testItemCommands`, `testObjectVisibilityCommands`, `testUseCommand`, `testGotoCommandKeepsSession`, `testGotoCommandSpawn`, `testNewGameCommand`, `testStateCommand` (`EditorTests.cpp`); `testNewGameAndRoomRequests` (`GameTests.cpp`, roda também na loja); `testParseExecOptions`, `testExecUsesBrassKeyOnShippedRedBox`, `testExecReportsFailures`, `testExecFile` (`CommandLineTests.cpp`); `pointclick_exec_assets`, `pointclick_exec_assets_report` e `pointclick_exec_failure` no `ctest`; binário da loja sem nenhum símbolo de `debug/` e recusando `--exec` |
+| F3 | Os assets não exercitavam em jogo real `change_room`, `[spawn]`, câmera, sprites de objeto, `walk_to`, `wait`, `wait_animation`, curingas, contadores, `face` nem `flip_x` | **Playgrounds** (seção 8), todos em `assets/rooms/`: `first` ↔ `gallery` ganharam uma porta de ida e volta com `[spawn from_first]`/`[spawn from_gallery]`; `wide` (2560, `[spawn west\|east]`), `door` (clips por PNG, `set_animation`, `flip_x`), `lever` (sequência longa), `talk` (`.dlg` com `once`/`goto`/condições/`change_room`) e `items` (pegar, usar, curingas, contadores). Os formatos e o save (versão 3) não mudaram. **Arte sintética**: `scripts/make_playground_art.py` gera `assets/sprites/playground/*.png` (quadrados e uma faixa assimétrica de dobradiça, em Python puro, deflate sem compressão: os mesmos bytes em qualquer máquina); `--check` compara com o disco. **`WalkthroughDriver`** (`tests/support/WalkthroughDriver.*`, linka só `content` + `game`): joga os arquivos reais com relógio simulado (tick de 1/60 s, sem `sleep`), faz o que o `Application` faz em volta do `Game` (sala nova como `--room <sala> [spawn]`, `RoomChangeRequested` → `enterRoom`, `AutosavePolicy` em `RoomEntered`/`CutsceneEnded`, save e retomada pelo mesmo `SaveFiles`) e oferece passos (`click`, `clickObject`, `use`, `choose`, `advance`, `settle`, `waitForChoice`, `saveAndResume`, `goTo`...) e verificações; uma falha lança `WalkthroughFailure` com o passo, o obtido contra o esperado, o estado e os passos anteriores. Um caso por sala em `tests/WalkthroughTests.cpp`, mais o `flip_x` em pixels (`testDoorPlaygroundFlipPixels`, `SpriteTests.cpp`). `ctest` novos: `pointclick_walkthrough_tests`, `pointclick_exec_room_spawn` (+ `_report`, + `_unknown_spawn`), `pointclick_check_assets_no_warnings`, `pointclick_playground_art` | `testWalkthroughFirstAndGallery`, `testWalkthroughWideCamera`, `testWalkthroughDoorAnimations`, `testWalkthroughLeverCutscene`, `testWalkthroughTalkDialogue`, `testWalkthroughItemsWildcardsAndCounters`, `testWalkthroughIsDeterministic`, `testWalkthroughReportsFailures`, `testDoorPlaygroundFlipPixels`; mutação conferida (um `flip_x` trocado falha no percurso e nos pixels) |
 | F4 | Regras curinga (`[interact *]`, `[use_item * obj]`, `[use_item item *]`, `[use_item * *]`) | ordem fixa por especificidade em `findMatchingRule` | `testWildcardRules`, round-trip em `EditorTests.cpp` |
 | F5 | Contadores: `add_flag`, `flag_at_least`, `flag_equals` | três entradas no catálogo + `ArgType::integer` | `testFlagCounters`; limite no C13 |
 | F6 | `face <direção>` | `ScriptHost::facePlayer` + `ArgType::facing` | `testFaceDirection` |
@@ -197,22 +204,26 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 
 ### 3.2 Estado dos testes
 
-Cerca de 1.500 `REQUIRE` em 76 `TEST_CASE` do doctest, cinco executáveis (`pointclick_tests` 30
-casos, `pointclick_sprite_tests` 8, `pointclick_text_tests` 7, `pointclick_cli_tests` 8,
-`pointclick_editor_tests` 23), mais oito testes de linha de comando/camadas no `ctest` (os três
-`pointclick_exec_*` só com ferramentas). Uma falha nomeia o caso, o arquivo e a linha e os outros
-casos continuam; cada caso roda sozinho (`--test-case=`). Na contagem de 11/11 (1.319 verificações,
-antes do F2), 234 tinham `&&`/`||` e ficam entre parênteses duplos: o relatório delas mostra a
-expressão, não os valores dos dois lados. Os laços de pixels dos testes gráficos passam por
-`REQUIRE` (cerca de 21 milhões de verificações por execução), o que levou o `ctest` de debug de
-~0,8 s para ~3 s (15 s sob ASan). Nenhum teste **joga** os assets reais: `pointclick_check_assets`
-só prova que eles carregam (F3).
+86 `TEST_CASE` do doctest em seis executáveis (`pointclick_tests` 30 casos,
+`pointclick_walkthrough_tests` 8, `pointclick_sprite_tests` 9, `pointclick_text_tests` 7,
+`pointclick_cli_tests` 8, `pointclick_editor_tests` 24), mais doze testes de linha de
+comando/camadas/arte no `ctest` (os cinco `pointclick_exec_*`/`_room_*` só com ferramentas). Os
+executáveis sem laços de pixels somam cerca de 3.000 `REQUIRE` (188 nos percursos). Uma falha
+nomeia o caso, o arquivo e a linha e os outros casos continuam; cada caso roda sozinho
+(`--test-case=`) e em ordem aleatória (`--order-by=rand`). Na contagem de 11/11 (1.319
+verificações, antes do F2), 234 tinham `&&`/`||` e ficam entre parênteses duplos: o relatório delas
+mostra a expressão, não os valores dos dois lados. Os laços de pixels dos testes gráficos passam
+por `REQUIRE` (cerca de 21 milhões de verificações por execução), o que levou o `ctest` de debug de
+~0,8 s para ~3 s (15 s sob ASan). Desde o F3 os **assets reais são jogados**: os percursos clicam,
+andam e conversam nas salas de `assets/rooms` (um caso por sala), em vez de só provar que carregam
+(`pointclick_check_assets`).
 
 ### 3.3 Verificações em aberto dos itens concluídos
 
 Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que ainda não existe:
 
-- **VSync** (D2) e **`flip_x`** (F7) numa janela com GPU real.
+- **VSync** (D2) e **`flip_x`** (F7) numa janela com GPU real. O `flip_x` já é provado em pixels
+  no renderer de software (F3, porta gêmea); falta só a GPU.
 - **Android** (C8): leitura do `player.actor`, das fontes e dos PNGs de dentro do APK.
 - **CI no GitHub Actions** (M17): o workflow nunca rodou. Foi validado só como YAML bem formado
   e pela execução local, no macOS, dos mesmos comandos (presets `debug`, `asan`, `store`, clang e
@@ -228,13 +239,17 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
   - **macOS do runner**: versão do SDL3/SDL3_ttf do Homebrew no dia (se for anterior à de
     referência, o CPM compila o SDL3 e o SDL3_ttf do Homebrew ficaria ligado a outro SDL3).
   - Chaves de cache, `concurrency` e o tempo dos jobs (SDL3 compilado do zero no primeiro run).
-- **`--room <sala> <spawn>`** (F1) com um spawn válido: os assets não têm `[spawn]`.
+- ~~**`--room <sala> <spawn>`** (F1) com um spawn válido~~ ✅ F3: os assets têm `[spawn]`; o
+  percurso começa num spawn (`WalkthroughDriver("wide", "east")`, o mesmo caminho do
+  `Application::startGameplay`) e o `ctest` roda o executável (`--room gallery from_first --exec
+  state`, e um spawn inexistente sai ≠ 0). O que continua sem prova é o caminho do `Application`
+  numa janela.
 - **Autosave de saída com `--no-save`** (F1): o SIGINT não encerra o jogo com o driver `dummy`.
 - **Avisos de arte** (F8) no Android: a leitura do cabeçalho do PNG usa `SDL_IOStream`, mas só
   foi exercitada no desktop; o log de `Application::logArtWarnings` não tem teste (só a função
   de `content/` que ele chama).
-- **`set_animation`** (C4) numa janela real e num playground com porta: os assets ainda não têm
-  objeto com clip (F3).
+- **`set_animation`** (C4) numa janela real. ~~Num playground com porta~~ ✅ F3: a sala `door` é
+  jogada de ponta a ponta (ida e volta entre salas e o save versão 3).
 - **Fuzz dos parsers** (M17): roda à mão no macOS; não está na CI nem em outro compilador.
 - **Comandos de sessão** (F2): conferidos numa janela real (macOS, Metal) em 13/11: painel com
   `help` e `state`, `goto gallery` e `newgame` passando por `Application::processGameEvents`
@@ -243,8 +258,11 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
   (`wrapPanelText`, `testPanelTextRows`). `newgame` com o autosave ligado também foi conferido
   (save real copiado antes e restaurado byte a byte depois): retomando uma partida na `gallery`, o
   `newgame` regravou o `save.slot` no `RoomEntered` com `room = first`, os pés no início e nenhuma
-  flag ou item. Falta: o `undo`/`reset` depois de um `goto` (continuam apontando para a sala de quando o editor
-  abriu, como depois de um `load`). O relatório do `--exec` sai em UTF-8 (falas com acento): no
+  flag ou item. O `undo`/`reset` depois de um `goto` foi corrigido em 13/11: o `CommandConsole`
+  compara `Scene::roomRevision` a cada comando e, se outro carregador trocou a sala (`goto`,
+  `change_room`, `newgame`), recomeça o histórico (`reset` passa a ser a sala recém-carregada e o
+  `undo` esvazia), sem acoplar ao `Application` e valendo também no `--exec`
+  (`testUndoAndResetFollowARoomChange`). O relatório do `--exec` sai em UTF-8 (falas com acento): no
   console do Windows depende da página de código.
 
 ---
@@ -261,22 +279,15 @@ Nenhuma em aberto (D12 foi concluído; seção 3.1).
 
 ### 4.3 Features pequenas de alto valor
 
-- **F3 — Playgrounds por mecânica + teste de percurso:** os assets atuais não exercitam em jogo
-  real `change_room`, `[spawn]`, câmera (as duas salas têm 1280 de largura), sprites/animação de
-  objeto, `walk_to`, `wait`, `wait_animation`, nem nada do que entrou depois: regras curinga,
-  contadores, `face` e `flip_x`. Criar salas pequenas (seção 8) e um teste headless que carrega os
-  assets e joga cada sala com uma lista de cliques até um estado esperado (o `--exec` do F2 já
-  monta estados e confere com `state`; falta um comando de clique/interação para jogar o percurso).
-  Fecha também metade da lista 3.3. *2–3 dias.*
+Nenhuma em aberto (F3 foi concluído; seção 3.1). O `maze` do playground fica para o M14.
 
 ### 4.4 Ordem sugerida
 
 1. Empurrar o M17 e olhar a primeira execução da CI: é o que fecha (ou abre) os riscos de
    Windows/MSVC e Linux da lista 3.3. Custa minutos e vale para tudo o que vier depois.
 2. ~~F2 com o `CommandCatalog`~~ ✅ (seção 3.1).
-3. F3, para as mecânicas prontas terem prova em jogo real; o teste de percurso entra na CI sem
-   trabalho extra, porque ela roda o `ctest` (F8 já avisa da arte ausente e C4 já dá à sala
-   `door` o estado persistente, com o save na versão 3).
+3. ~~F3, para as mecânicas prontas terem prova em jogo real~~ ✅ (seção 3.1): o teste de percurso
+   entra na CI sem trabalho extra, porque ela roda o `ctest`.
 4. Daí em diante, M2 e M3 (seção 5).
 
 ---
@@ -412,7 +423,7 @@ M3–M6 (o núcleo de um point & click), depois o resto.
 M1 texto ✅ ────────────────┬─► M3 hover/verbos ─► M4 inventário ─► M12 menus
 D1 flags de debug ✅ ───────┤                 └─► M13 localização
 M2 fundo/camadas/hotspots ──┘
-D3 ✅ + F2 ✅ (comandos de sessão, --exec) ─► F3 playgrounds + teste de percurso ─► CI (M17 ✅ parcial: falta rodar)
+D3 ✅ + F2 ✅ (comandos de sessão, --exec) ─► F3 playgrounds + teste de percurso ✅ ─► CI (M17 ✅ parcial: falta rodar)
 F8 (aviso de arte no --check) ✅ ───────────────────────────────────────┘
 C4 (estado persistente de objeto) ✅ ─► M15 save
 C13 (limite dos contadores) ✅ ─► add_flag em laço já não estoura o contador
@@ -423,14 +434,16 @@ M10 manifesto ─► L1 engine reutilizável ─► L2 plataformas ─► L3 I/O
 
 ## 8. Playgrounds sugeridos
 
-Uma sala pequena por mecânica, com as regras mínimas, coberta pelo teste de percurso (F3):
+Uma sala pequena por mecânica, com as regras mínimas, coberta pelo teste de percurso (F3 ✅;
+`tests/WalkthroughTests.cpp`). Todas em `assets/rooms/`; `pointclick --rooms assets/rooms --room
+<sala> [spawn]` abre qualquer uma.
 
-| Sala | Exercita |
-| --- | --- |
-| `first` ↔ `gallery` ligadas por uma porta | `change_room`, `[spawn]`, `facing`, autosave em `RoomEntered`, `--room <sala> <spawn>` |
-| `wide` (2560 de largura) | câmera suave e *clamp*, clique convertido com a câmera deslocada |
-| `door` | objeto com sprites, `play_animation`, `wait_animation`, `flip_x`, estado persistente com `set_animation` (C4 ✅) |
-| `lever` | sequência longa: `walk_to`, `face`, `wait`, `say`, modo cutscene, pular fala |
-| `maze` | obstáculos densos, destino inalcançável, custo de rota (M14) |
-| `talk` | diálogo com `once`, `goto`, condições, `change_room` dentro da conversa |
-| `items` | pegar, usar item em objeto (`use` do F2 ✅ até existir inventário), regra curinga (F4), contadores (F5, C13) |
+| Sala | Exercita | Estado |
+| --- | --- | --- |
+| `first` ↔ `gallery` ligadas por uma porta | `change_room`, `[spawn]`, `facing`, autosave em `RoomEntered`, `--room <sala> <spawn>` | ✅ `door_gallery` ↔ `door_first`, `[spawn from_first]` / `[spawn from_gallery]` |
+| `wide` (2560 de largura) | câmera suave e *clamp*, clique convertido com a câmera deslocada | ✅ `[spawn west]` / `[spawn east]` |
+| `door` | objeto com sprites, `play_animation`, `wait_animation`, `flip_x`, estado persistente com `set_animation` (C4 ✅) | ✅ PNGs de `scripts/make_playground_art.py` |
+| `lever` | sequência longa: `walk_to`, `face`, `wait`, `say`, modo cutscene, pular fala | ✅ |
+| `maze` | obstáculos densos, destino inalcançável, custo de rota (M14) | pendente (depende do M14) |
+| `talk` | diálogo com `once`, `goto`, condições, `change_room` dentro da conversa | ✅ leva a `items` (`[spawn from_talk]`) |
+| `items` | pegar, usar item em objeto (`use` do F2 ✅ até existir inventário), regra curinga (F4), contadores (F5, C13) | ✅ |

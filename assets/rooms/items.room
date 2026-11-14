@@ -1,0 +1,67 @@
+# Playground: pegar item, usar item em objeto, regras curinga e contadores (add_flag, flag_at_least).
+# Chega de talk por [spawn from_talk]; ou use --room items.
+[room]
+id = items
+room.wall_y = 280
+room.walkable_y = 300
+room.vanishing_x = 640
+room.ray_spacing = 160
+perspective.far_y = 300
+perspective.near_y = 720
+perspective.far_scale = 0.55
+perspective.near_scale = 1.65
+player.start_x = 640
+player.start_y = 620
+player.width = 48
+player.height = 80
+player.far_speed = 110
+player.near_speed = 330
+collision.padding_x = 40
+collision.padding_y = 8
+wall.color = 130,90,70,255
+floor.color = 50,80,110,255
+wall.trim_color = 80,54,42,255
+floor.guide_color = 70,100,130,255
+floor.lines = 0.18,0.38,0.62,0.85
+
+[object key_crate]
+bounds = 100,420,70,60
+color = 190,150,60,255
+type = decoration
+
+[object feather_stand]
+bounds = 250,420,50,60
+color = 230,230,240,255
+type = decoration
+
+[object red_box]
+bounds = 440,440,110,125
+color = 220,74,68,255
+type = solid
+collision = 14,92,82,33
+
+[object statue]
+bounds = 650,380,90,150
+color = 160,160,170,255
+type = solid
+collision = 20,120,50,25
+
+[object coin_pile]
+bounds = 840,440,60,40
+color = 240,200,60,255
+type = decoration
+
+[object well]
+bounds = 960,390,110,110
+color = 70,90,150,255
+type = solid
+collision = 10,80,90,25
+
+[object vault]
+bounds = 1120,460,70,60
+color = 90,200,140,255
+type = decoration
+
+[spawn from_talk]
+feet = 160,560
+facing = right

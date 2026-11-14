@@ -1,6 +1,7 @@
 // F1: command-line options (parsed without SDL) and the --check content validation.
 // F2: --exec / --exec-file, run by debug/CommandScript in builds with the tools.
 #include "content/ContentCheck.hpp"
+#include "content/TextFormat.hpp"
 #include "core/CommandLine.hpp"
 #if POINTCLICK_TOOLS
 #include "debug/CommandScript.hpp"
@@ -87,11 +88,20 @@ bool hasProblem(const ContentCheckReport& report, const std::string_view file,
     return false;
 }
 
+// How many <id>.room files the folder has: what checkContent has to report as checked.
+std::size_t roomFileCount(const std::filesystem::path& directory) {
+    std::size_t count = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+        if (entry.path().extension() == ".room") ++count;
+    }
+    return count;
+}
+
 TEST_CASE("testCheckShippedAssets") {
     const auto rooms = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
     const ContentCheckReport report = checkContent(rooms);
     REQUIRE(report.ok());
-    REQUIRE(report.roomsChecked == 2);
+    REQUIRE(report.roomsChecked == roomFileCount(rooms)); // the playgrounds are checked too
     REQUIRE(report.warnings.empty()); // every PNG exists and every cut fits it
 
     // F8: a font the game would open and the folder lacks is a warning, never an error.
@@ -125,14 +135,20 @@ TEST_CASE("testCheckReportsErrorsByFileAndLine") {
     const auto rooms = directory / "rooms";
     REQUIRE(checkContent(rooms).ok()); // the copy is as good as the original
 
-    append(rooms / "first.rules", "\n[interact blue_box]\nset_solid red_box 2\n"); // lines 34-35
+    // The bad effect lands on the third appended line (a blank, the trigger, then the effect).
+    const std::size_t badLine
+            = static_cast<std::size_t>(std::ranges::count(
+                      TextFormat::readFile(rooms / "first.rules").text.value_or(""), '\n'))
+              + 3;
+    append(rooms / "first.rules", "\n[interact blue_box]\nset_solid red_box 2\n");
     append(rooms / "gallery.rules", "\n[interact plant]\nchange_room nowhere\n");
     std::ofstream(rooms / "lost.dlg", std::ios::binary) << "[node a]\nsay \"oi\"\n";
 
     const ContentCheckReport report = checkContent(rooms);
     REQUIRE(!report.ok());
-    REQUIRE(report.roomsChecked == 2);
-    REQUIRE(hasProblem(report, "first.rules", "Linha 35: Use set_solid <objeto> <0|1>"));
+    REQUIRE(report.roomsChecked == roomFileCount(rooms));
+    REQUIRE(hasProblem(report, "first.rules",
+                       "Linha " + std::to_string(badLine) + ": Use set_solid <objeto> <0|1>"));
     REQUIRE(hasProblem(report, "gallery.rules/.dlg",
                        "change_room nowhere: Nao foi possivel abrir nowhere.room"));
     REQUIRE(hasProblem(report, "lost.dlg", "Sem lost.room correspondente"));

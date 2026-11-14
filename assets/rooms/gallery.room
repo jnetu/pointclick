@@ -27,3 +27,13 @@ bounds = 1050,260,80,170
 color = 91,157,98,255
 type = solid
 collision = 20,150,40,20
+
+# Porta da esquerda: volta a first (gallery.rules). Quem chega de first entra por [spawn from_first].
+[object door_first]
+bounds = 80,130,110,140
+color = 120,80,50,255
+type = decoration
+
+[spawn from_first]
+feet = 200,300
+facing = right

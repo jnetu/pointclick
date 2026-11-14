@@ -1,0 +1,60 @@
+# Playground items. A resposta padrao vem das regras curinga e a ordem entre elas e fixa
+# (exata, `* objeto`, `item *`, `* *`), nao a do arquivo: as curingas estao de proposito antes.
+
+[use_item * *]
+say "Isso não funciona."
+
+[use_item brass_key *]
+say "A chave não serve aqui."
+
+[use_item * red_box]
+say "A caixa não abre com isso."
+
+[interact *]
+say "Nada de especial."
+
+# Pegar: o item entra no inventario e o objeto some.
+[interact key_crate]
+give_item brass_key
+hide_object key_crate
+say "Peguei a chave de latão."
+
+[interact feather_stand]
+give_item feather
+hide_object feather_stand
+say "Peguei uma pena."
+
+# Usar o item no objeto certo (a regra exata ganha das curingas acima).
+[use_item brass_key red_box]
+take_item brass_key
+set_flag red_box_unlocked
+set_solid red_box 0
+say "A chave abriu a caixa."
+
+[interact red_box]
+flag_set red_box_unlocked
+say "A caixa está aberta."
+
+# Contador que enche: a primeira regra so vale com 3 moedas ou mais.
+[interact coin_pile]
+flag_at_least coins 3
+say "Já peguei todas as moedas."
+
+[interact coin_pile]
+add_flag coins 1
+say "Mais uma moeda."
+
+# Gastar: chegar a zero limpa a flag.
+[interact well]
+flag_at_least coins 1
+add_flag coins -1
+say "Joguei uma moeda no poço."
+
+[interact well]
+say "Sem moedas para jogar."
+
+# Contador no limite: o argumento do add_flag vai ate 1.000.000 e o contador satura em
+# 1.000.000.000 em vez de estourar (o argumento das condicoes tem o mesmo teto de 1.000.000).
+[interact vault]
+add_flag treasure 1000000
+say "Guardei mais um milhão."

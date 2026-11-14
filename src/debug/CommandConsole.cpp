@@ -22,6 +22,11 @@ void CommandConsole::begin(const Game& game) {
     undo_.reset();
     undoInteractions_.reset();
     undoDialogues_.reset();
+    knownRevision_ = game.scene().roomRevision();
+}
+
+void CommandConsole::followGame(const Game& game) {
+    if (baseline_ && game.scene().roomRevision() != knownRevision_) begin(game);
 }
 
 CommandResult CommandConsole::execute(const std::string_view line, Game& game) {
@@ -31,6 +36,7 @@ CommandResult CommandConsole::execute(const std::string_view line, Game& game) {
     input >> verb;
     CommandResult result;
     if (verb.empty()) return result;
+    followGame(game);
     const CommandDescriptor* command = findCommand(verb);
     if (!command) {
         result.ok = false;
@@ -72,6 +78,7 @@ bool CommandConsole::commit(Game& game, Room room, std::string& output, const bo
         std::string dialoguesError;
         (void)game.setDialogues(std::move(*nextDialogues), dialoguesError);
     }
+    knownRevision_ = game.scene().roomRevision();
     undo_ = std::move(previous);
     undoInteractions_ = std::move(previousInteractions);
     undoDialogues_ = std::move(previousDialogues);
@@ -96,6 +103,7 @@ bool CommandConsole::setParameter(Game& game, const std::string_view key, const 
 }
 
 bool CommandConsole::undo(Game& game, std::string& output) {
+    followGame(game);
     if (!undo_) {
         output = "Nenhuma edicao para desfazer";
         return false;
@@ -104,6 +112,7 @@ bool CommandConsole::undo(Game& game, std::string& output) {
 }
 
 bool CommandConsole::reset(Game& game, std::string& output) {
+    followGame(game);
     // begin() always runs first (editor activation, headless start); without it there is no
     // reference room and nothing changes.
     if (!baseline_) return true;

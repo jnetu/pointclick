@@ -1414,11 +1414,11 @@ TEST_CASE("testLayerRect") {
     // Half factor: half of the camera shift, from the authored position.
     RoomLayer hills;
     hills.position = {100.0F, 40.0F};
-    hills.size = {1920.0F, 0.0F}; // 0 height = room height
+    hills.size = {1920.0F, 640.0F};
     hills.scrollFactor = {0.5F, 0.5F};
     rect = layerRect(hills, room, start);
     REQUIRE((near(rect.x, 100.0F) && near(rect.y, 40.0F)));
-    REQUIRE((near(rect.w, 1920.0F) && near(rect.h, 720.0F)));
+    REQUIRE((near(rect.w, 1920.0F) && near(rect.h, 640.0F)));
     rect = layerRect(hills, room, {1280.0F, 80.0F});
     REQUIRE((near(rect.x, 100.0F - 640.0F) && near(rect.y, 0.0F)));
 
@@ -1461,7 +1461,7 @@ TEST_CASE("testLayerCoversViewport") {
 
     // Too short on the vertical axis, or a foreground running past its own end.
     RoomLayer strip;
-    strip.size = {0.0F, 300.0F};
+    strip.size = {2560.0F, 300.0F};
     REQUIRE(!layerCoversViewport(strip, room));
     RoomLayer foliage;
     foliage.scrollFactor = {1.3F, 1.0F};

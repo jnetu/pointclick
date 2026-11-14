@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-04 ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-05 ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -134,7 +134,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
-| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 1/7 |
+| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 2/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
@@ -181,7 +181,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   `cmake/CheckLayerIncludes.cmake`. **Pronto quando:** compila, sem SDL de desenho em `game/`.
   **Teste:** `testLayerRect` (fator 0, 0,5 e 1; câmera em 0 e no máximo; tamanho padrão),
   `testLayerCoversViewport` (a conta do exemplo: 1600 cobre, 1500 não) em `tests/GameTests.cpp`.
-- [ ] **M2-05 · M · Arg. não — Validação das camadas.**
+- [x] **M2-05 · M · Arg. não — Validação das camadas.**
   `Room::validationIssue`: ID válido e único entre camadas; `size` e `scroll_factor` finitos e
   positivos / em `0..4`; `position` finita; clip passa em `SpriteClip::validationError`; clip sem
   `display_width/height/offset_*` (D6); camada sem `image.file` é aviso de arte, não erro (igual

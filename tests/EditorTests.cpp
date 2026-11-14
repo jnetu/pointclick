@@ -27,7 +27,9 @@
 #include <cmath>
 #include <cstdlib>
 #include <fstream>
+#include <functional>
 #include <iterator>
+#include <limits>
 #include <memory>
 #include <set>
 #include <stdexcept>
@@ -313,6 +315,119 @@ TEST_CASE("testRoomObjectErrorsCarryLines") {
         good << box << "type = solid\ncollision = 0, 30, 40, 10\n";
     }
     REQUIRE(RoomFiles::load(directory / "good_object.room", sharedPlayerArt()).room);
+}
+
+// M2-05: each [layer] rule of Room::validationIssue has its own message and points at the key
+// (field) the loader turns into "Linha N:" in M2-06; a whole-block error has an empty field.
+TEST_CASE("testLayerValidation") {
+    using Subject = RoomValidationIssue::Subject;
+    Room base = RoomPresets::defaults();
+    base.width = 2560.0F;
+    RoomLayer ground;
+    ground.id = "ground";
+    ground.image.file = "cenario/ground.png";
+    RoomLayer sky;
+    sky.id = "sky";
+    sky.image.file = "cenario/sky.png";
+    sky.size = {1600.0F, 720.0F};
+    sky.scrollFactor = {0.2F, 0.0F};
+    base.layers = {ground, sky};
+    REQUIRE(base.validationError().empty());
+
+    // The issue of a room whose second layer (sky) went through `change`.
+    const auto issueOf = [&](const std::function<void(RoomLayer&)>& change) {
+        Room room = base;
+        change(room.layers[1]);
+        const RoomValidationIssue issue = room.validationIssue();
+        REQUIRE(!issue.message.empty());
+        REQUIRE(issue.subject == Subject::layer);
+        REQUIRE(issue.index == 1);
+        return issue;
+    };
+    const auto requireIssue = [&](const std::function<void(RoomLayer&)>& change,
+                                  const std::string& message, const std::string_view field) {
+        const RoomValidationIssue issue = issueOf(change);
+        REQUIRE(issue.message == message);
+        REQUIRE(issue.field == field);
+    };
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+
+    // ID: valid identifier, unique among layers (D9). Shared with the header-line check.
+    const std::string idError(Room::layerIdError);
+    requireIssue([](RoomLayer& layer) { layer.id = "ceu azul"; }, idError, {});
+    requireIssue([](RoomLayer& layer) { layer.id = ""; }, idError, {});
+    requireIssue([](RoomLayer& layer) { layer.id = "ground"; }, idError, {});
+    // A layer may share its ID with an object: the spaces are separate.
+    {
+        Room room = base;
+        SceneObject object;
+        object.id = "sky";
+        object.bounds = {10.0F, 300.0F, 40.0F, 40.0F};
+        room.scenery.push_back(object);
+        REQUIRE(room.validationError().empty());
+    }
+
+    // position: any finite value (a layer may start off screen).
+    requireIssue([&](RoomLayer& layer) { layer.position.x = nan; },
+                 "Posicao invalida da camada: sky", "position");
+    requireIssue([&](RoomLayer& layer) { layer.position.y = -inf; },
+                 "Posicao invalida da camada: sky", "position");
+
+    // size: unset (0, 0) = the room (D6); written out, both sides in (0, maxLayerSize].
+    const std::string sizeError
+            = "Tamanho invalido da camada (lados maiores que 0, ate 32768): sky";
+    requireIssue([](RoomLayer& layer) { layer.size.x = -1.0F; }, sizeError, "size");
+    requireIssue([](RoomLayer& layer) { layer.size.x = 0.0F; }, sizeError, "size");
+    requireIssue([](RoomLayer& layer) { layer.size = {0.0F, -1.0F}; }, sizeError, "size");
+    requireIssue([&](RoomLayer& layer) { layer.size.y = inf; }, sizeError, "size");
+    requireIssue([](RoomLayer& layer) { layer.size.x = Room::maxLayerSize + 1.0F; }, sizeError,
+                 "size");
+
+    // scroll_factor: finite, 0 to 4 (D7).
+    const std::string factorError = "scroll_factor da camada fora de 0 a 4: sky";
+    requireIssue([](RoomLayer& layer) { layer.scrollFactor.x = -0.1F; }, factorError,
+                 "scroll_factor");
+    requireIssue([](RoomLayer& layer) { layer.scrollFactor.y = 4.5F; }, factorError,
+                 "scroll_factor");
+    requireIssue([&](RoomLayer& layer) { layer.scrollFactor.x = nan; }, factorError,
+                 "scroll_factor");
+
+    // image: the clip rules of SpriteClip; a bad path points at image.file, the rest at the block.
+    requireIssue([](RoomLayer& layer) { layer.image.file = "/abs/sky.png"; },
+                 "Imagem da camada sky: Use um caminho relativo .png", "image.file");
+    requireIssue([](RoomLayer& layer) { layer.image.file = "../sky.png"; },
+                 "Imagem da camada sky: Caminho de sprite invalido", "image.file");
+    requireIssue([](RoomLayer& layer) { layer.image.frames = 0; },
+                 "Imagem da camada sky: Contagem de quadros invalida", {});
+    requireIssue([](RoomLayer& layer) { layer.image.frameWidth = 64; },
+                 "Imagem da camada sky: Tamanho dos quadros invalido", {});
+
+    // The object/player anchors do not apply to a layer (D6).
+    requireIssue([](RoomLayer& layer) { layer.image.displayWidth = 100.0F; },
+                 "Camada usa size e position, nao display_width: sky", "image.display_width");
+    requireIssue([](RoomLayer& layer) { layer.image.displayHeight = 100.0F; },
+                 "Camada usa size e position, nao display_height: sky", "image.display_height");
+    requireIssue([](RoomLayer& layer) { layer.image.offsetX = 4.0F; },
+                 "Camada usa size e position, nao offset_x: sky", "image.offset_x");
+    requireIssue([](RoomLayer& layer) { layer.image.offsetY = -4.0F; },
+                 "Camada usa size e position, nao offset_y: sky", "image.offset_y");
+
+    // Legal edges: no image.file (an art warning, never an error), the largest size, factors 0
+    // and 4, a cut sheet, a front plane and a position off the room. ground keeps (0, 0).
+    {
+        Room room = base;
+        RoomLayer& layer = room.layers[1];
+        layer.image.file.clear();
+        layer.size = {Room::maxLayerSize, 300.0F};
+        layer.scrollFactor = {0.0F, Room::maxScrollFactor};
+        layer.position = {-500.0F, 9000.0F};
+        layer.plane = LayerPlane::front;
+        layer.image.frameWidth = 64;
+        layer.image.frameHeight = 64;
+        layer.image.frames = 4;
+        REQUIRE(room.validationError().empty());
+    }
 }
 
 void requireSameRect(const SDL_FRect& a, const SDL_FRect& b) {

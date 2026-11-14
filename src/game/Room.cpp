@@ -117,6 +117,60 @@ RoomValidationIssue Room::validationIssue() const {
             return issue("Animacao do player " + name + ": " + problem);
         }
     }
+    std::set<std::string_view> layerIds;
+    for (std::size_t index = 0; index < layers.size(); ++index) {
+        const RoomLayer& layer = layers[index];
+        const auto layerIssue = [&](std::string message, const std::string_view field = {}) {
+            return RoomValidationIssue{std::move(message), Subject::layer, index, field};
+        };
+        if (!validIdentifier(layer.id) || !layerIds.insert(layer.id).second) {
+            return layerIssue(std::string(layerIdError));
+        }
+        if (!std::isfinite(layer.position.x) || !std::isfinite(layer.position.y)) {
+            return layerIssue("Posicao invalida da camada: " + layer.id, "position");
+        }
+        // Unset (0, 0) takes the room's size (D6); a size written out has both sides > 0.
+        const auto validSide = [](const float value) {
+            return std::isfinite(value) && value > 0.0F && value <= maxLayerSize;
+        };
+        const bool defaultSize = layer.size.x == 0.0F && layer.size.y == 0.0F;
+        if (!defaultSize && (!validSide(layer.size.x) || !validSide(layer.size.y))) {
+            return layerIssue("Tamanho invalido da camada (lados maiores que 0, ate "
+                                      + std::to_string(static_cast<int>(maxLayerSize))
+                                      + "): " + layer.id,
+                              "size");
+        }
+        const auto validFactor = [](const float value) {
+            return std::isfinite(value) && value >= 0.0F && value <= maxScrollFactor;
+        };
+        if (!validFactor(layer.scrollFactor.x) || !validFactor(layer.scrollFactor.y)) {
+            return layerIssue("scroll_factor da camada fora de 0 a 4: " + layer.id,
+                              "scroll_factor");
+        }
+        // The path alone is to blame when the clip is valid without it: point at image.file.
+        if (const auto problem = layer.image.validationError(); !problem.empty()) {
+            SpriteClip withoutFile = layer.image;
+            withoutFile.file.clear();
+            const bool pathOnly = withoutFile.validationError().empty();
+            return layerIssue("Imagem da camada " + layer.id + ": " + problem,
+                              pathOnly ? "image.file" : std::string_view{});
+        }
+        // Size and position place a layer (D6); the object/player anchors do not apply.
+        const std::pair<float, std::string_view> anchors[] = {
+            {layer.image.displayWidth, "image.display_width"},
+            {layer.image.displayHeight, "image.display_height"},
+            {layer.image.offsetX, "image.offset_x"},
+            {layer.image.offsetY, "image.offset_y"},
+        };
+        for (const auto& [value, key] : anchors) {
+            if (value != 0.0F) {
+                return layerIssue("Camada usa size e position, nao " + std::string(key.substr(6))
+                                          + ": " + layer.id,
+                                  key);
+            }
+        }
+        // A layer without image.file is legal: missing art is a warning (ArtCheck), not an error.
+    }
     const auto validRect = [](const SDL_FRect r) {
         return std::isfinite(r.x) && std::isfinite(r.y) && std::isfinite(r.w)
                && std::isfinite(r.h) && r.w > 0 && r.h > 0;

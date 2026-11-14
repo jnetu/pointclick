@@ -146,7 +146,10 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     }
     if (const auto issue = room.validationIssue(); !issue.message.empty()) {
         using Subject = RoomValidationIssue::Subject;
-        if (issue.subject == Subject::room) return {{}, issue.message};
+        // [layer] is not read yet (M2-06 maps its errors to lines); never index other blocks.
+        if (issue.subject == Subject::room || issue.subject == Subject::layer) {
+            return {{}, issue.message};
+        }
         // The key that fed the error when the file has it; the block header otherwise.
         const bool isSpawn = issue.subject == Subject::spawn;
         const std::string block = isSpawn ? "spawn." + room.spawns[issue.index].id

@@ -31,15 +31,15 @@ struct RoomSpawn {
 
 // What Room::validationIssue found and where: the loader maps it to the line that declared it.
 struct RoomValidationIssue {
-    enum class Subject : std::uint8_t { room, spawn, object };
+    enum class Subject : std::uint8_t { room, spawn, object, layer };
 
     std::string message; // empty = valid
     Subject subject = Subject::room;
-    // Position in Room::spawns / Room::scenery. Only says where the entry was declared (two
+    // Position in Room::spawns / Room::scenery / Room::layers. Only says where the entry was declared (two
     // entries may share a bad ID); never use it to address an object.
     std::size_t index = 0;
     // The member at fault, by its .room key ("feet", "bounds", "collision",
-    // "animation.initial"); empty when the whole block is to blame.
+    // "animation.initial", "size", "image.file"); empty when the whole block is to blame.
     std::string_view field{};
 };
 
@@ -98,6 +98,11 @@ struct Room {
     // Shared with loaders that refuse a bad ID on the header line itself.
     static constexpr std::string_view spawnIdError = "ID de spawn invalido ou repetido";
     static constexpr std::string_view objectIdError = "ID de objeto invalido ou repetido";
+    static constexpr std::string_view layerIdError = "ID de camada invalido ou repetido";
+    // Largest layer size and parallax factor. 4 x maxDimension is what the widest room with
+    // the fastest foreground needs to cover the screen (1280 + (8192 - 1280) * 4 < 32768).
+    static constexpr float maxScrollFactor = 4.0F;
+    static constexpr float maxLayerSize = maxScrollFactor * maxDimension;
 
     // The single source of the room rules. Empty message means valid. Invalid designer data
     // must never enter the simulation.

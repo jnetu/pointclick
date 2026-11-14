@@ -258,11 +258,11 @@ profundidade e não muda o save. Quem interage com a arte são os objetos e os h
 | Chave | Padrão | Efeito |
 | --- | --- | --- |
 | `plane` | `back` | `back` desenha atrás de objetos e player; `front` desenha por cima deles |
-| `image.file` | (obrigatório) | PNG relativo a `assets/sprites` (como `sprite.file`) |
+| `image.file` | (nenhum) | PNG relativo a `assets/sprites` (como `sprite.file`); sem ele a camada desenha o quadriculado roxo e gera aviso |
 | `image.pixelated` | `1` | `1` = vizinho mais próximo (pixel art); `0` = filtragem suave (pintura) |
 | `image.frame_width`, `image.frame_height`, `image.frames`, `image.columns`, `image.first_frame`, `image.margin_*`, `image.spacing_*` | imagem inteira | corte de spritesheet, igual aos clips; só útil à camada animada (M2-14, opcional) |
 | `position` | `0, 0` | canto superior esquerdo na sala, em coordenadas da sala |
-| `size` | tamanho da sala | tamanho desenhado, em unidades da sala (1 pixel do PNG = 1 unidade quando igual ao PNG) |
+| `size` | tamanho da sala | tamanho desenhado, em unidades da sala (1 pixel do PNG = 1 unidade quando igual ao PNG); os dois lados maiores que `0`, até `32768` |
 | `scroll_factor` | `1, 1` | quanto a camada acompanha a câmera em cada eixo, de `0` a `4` |
 
 - **Posição na tela** = `position - câmera × scroll_factor`. Fator `1` anda com o mundo, `0` fica
@@ -281,7 +281,8 @@ profundidade e não muda o save. Quem interage com a arte são os objetos e os h
   como em qualquer sprite.
 - **Recusado ao carregar** (sempre com a linha da chave ou do cabeçalho): ID de camada inválido ou
   repetido (camadas têm IDs próprios, independentes dos objetos), `plane` diferente de
-  `back`/`front`, `image.file` ausente, `size` com lado ≤ 0, `scroll_factor` fora de `0..4`,
+  `back`/`front`, `image.file` fora de um caminho relativo `.png`, corte inválido, `size` com
+  lado ≤ 0 ou acima de `32768`, `position` não finita, `scroll_factor` fora de `0..4`,
   e `image.display_*`/`image.offset_*` (o tamanho e o deslocamento da camada são `size` e
   `position`).
 

@@ -21,7 +21,7 @@ struct RoomLayer {
     SpriteClip image;
     // Top-left corner in room units, before the parallax shift.
     SDL_FPoint position{0.0F, 0.0F};
-    // 0 on an axis = the room's width or height on that axis, so a plain backdrop needs no key.
+    // (0, 0) = the room's size, so a plain backdrop needs no key; otherwise both sides > 0.
     SDL_FPoint size{0.0F, 0.0F};
     // How much of the camera offset the layer follows: 1 = moves with the world, 0 = fixed on
     // the screen, between 0 and 1 = far parallax, above 1 = near foreground passing faster.
@@ -32,7 +32,7 @@ struct RoomLayer {
 
 // Pure layout shared by the renderer, the content check and the tests (no PNG is opened here).
 // Where the layer lands in the viewport for a camera offset: position - camera * scroll_factor,
-// with a zero size replaced by the room's dimension.
+// with the unset (0, 0) size replaced by the room's size.
 [[nodiscard]] SDL_FRect layerRect(const RoomLayer& layer, const Room& room,
                                   SDL_FPoint cameraOffset);
 // True when the layer fills the whole viewport for every camera offset the room allows

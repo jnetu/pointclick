@@ -32,7 +32,7 @@ struct RoomLayer {
 
 // Pure layout shared by the renderer, the content check and the tests (no PNG is opened here).
 // Where the layer lands in the viewport for a camera offset: position - camera * scroll_factor,
-// with the unset (0, 0) size replaced by the room's size.
+// with the unset (0, 0) size replaced by the room's size. Expects a validated layer.
 [[nodiscard]] SDL_FRect layerRect(const RoomLayer& layer, const Room& room,
                                   SDL_FPoint cameraOffset);
 // True when the layer fills the whole viewport for every camera offset the room allows

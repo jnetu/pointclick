@@ -50,8 +50,10 @@ bool parseLayerField(RoomLayer& layer, const std::string& key, const std::string
     if (key == "position") return parsePoint(value, layer.position);
     if (key == "size") return parsePoint(value, layer.size);
     if (key == "scroll_factor") return parsePoint(value, layer.scrollFactor);
-    if (key.starts_with("image.")) {
-        return SpriteFields::parse(layer.image, std::string_view(key).substr(6), value);
+    constexpr std::string_view imagePrefix = "image.";
+    if (key.starts_with(imagePrefix)) {
+        return SpriteFields::parse(layer.image, std::string_view(key).substr(imagePrefix.size()),
+                                   value);
     }
     return false;
 }

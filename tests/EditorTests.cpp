@@ -23,6 +23,7 @@
 
 #include <doctest/doctest.h>
 #include <SDL3/SDL.h>
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstdlib>
@@ -32,6 +33,7 @@
 #include <limits>
 #include <memory>
 #include <set>
+#include <sstream>
 #include <stdexcept>
 #include <variant>
 
@@ -617,6 +619,14 @@ TEST_CASE("testRoomLayerFiles") {
     // A layer without image.file loads (missing art is a warning, M2-10).
     write("no_image.room", room + "[layer sky]\nsize = 1600, 720\n");
     REQUIRE(RoomFiles::load(directory / "no_image.room", sharedPlayerArt()).room);
+    // size = 0, 0 written out is the same as leaving it out: the room's size, not saved back.
+    write("room_sized.room", room + "[layer sky]\nsize = 0, 0\n");
+    const auto roomSized = RoomFiles::load(directory / "room_sized.room", sharedPlayerArt());
+    REQUIRE(roomSized.room);
+    const SDL_FRect sizedRect = layerRect(roomSized.room->layers[0], *roomSized.room, {0.0F, 0.0F});
+    REQUIRE((sizedRect.w == 2560.0F && sizedRect.h == 720.0F));
+    REQUIRE(RoomFiles::save(savedPath, *roomSized.room, error, sharedPlayerArt()));
+    REQUIRE(TextFormat::readFile(savedPath).text->find("size =") == std::string::npos);
 }
 
 // M2-03: the object fields (bounds, collision, color, type, animation.initial) read and write
@@ -707,6 +717,75 @@ TEST_CASE("testObjectFieldsRoundTripAssets") {
         INFO(entry.text);
         REQUIRE(errorOf(entry.text) == entry.error);
     }
+}
+
+// M2-07 (D8, D10): a room authored without layers gains none by load + save. Checked against
+// the original file in assets/rooms, not the M2-03 goldens, so it holds on its own: the saved
+// text has exactly the original blocks (plus [room]), no layer key, and saving again is stable.
+TEST_CASE("testRoomsWithoutLayersSaveUnchanged") {
+    const TempDirectory testDirectory("pointclick-rooms-without-layers");
+    const auto roomsDirectory = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+    struct Lines {
+        std::set<std::string> headers;
+        std::set<std::string> keys;
+    };
+    const auto linesOf = [](const std::string& text) {
+        Lines lines;
+        std::istringstream input(text);
+        for (std::string line; std::getline(input, line);) {
+            line = TextFormat::trim(line.substr(0, line.find('#')));
+            if (line.starts_with('[')) {
+                lines.headers.insert(line);
+            } else if (const auto equal = line.find('='); equal != std::string::npos) {
+                lines.keys.insert(TextFormat::trim(line.substr(0, equal)));
+            }
+        }
+        return lines;
+    };
+    // Keys that only a [layer] block declares (objects size themselves through bounds).
+    const auto isLayerKey = [](const std::string& key) {
+        return key == "plane" || key == "position" || key == "size" || key == "scroll_factor"
+               || key.starts_with("image.");
+    };
+    std::size_t checked = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(roomsDirectory)) {
+        if (entry.path().extension() != ".room") continue;
+        INFO(entry.path().filename().string());
+        const auto original = TextFormat::readFile(entry.path());
+        REQUIRE(original.text);
+        const Lines authored = linesOf(*original.text);
+        // A shipped room that paints layers (stage, M2-30) is testRoomLayerFiles' business.
+        if (std::any_of(authored.headers.begin(), authored.headers.end(),
+                        [](const std::string& header) { return header.starts_with("[layer"); })) {
+            continue;
+        }
+        const auto loaded = RoomFiles::load(entry.path(), sharedPlayerArt());
+        REQUIRE(loaded.room);
+        REQUIRE(loaded.room->layers.empty());
+
+        std::string error;
+        const auto savedPath = testDirectory.path() / entry.path().filename();
+        REQUIRE(RoomFiles::save(savedPath, *loaded.room, error, sharedPlayerArt()));
+        const auto saved = TextFormat::readFile(savedPath);
+        REQUIRE(saved.text);
+        const Lines written = linesOf(*saved.text);
+        std::set<std::string> expectedHeaders = authored.headers;
+        expectedHeaders.insert("[room]");
+        REQUIRE(written.headers == expectedHeaders);
+        for (const std::string& key : written.keys) {
+            INFO(key);
+            REQUIRE(!isLayerKey(key));
+        }
+
+        // Stable: the reloaded room saves the same text, still with no layer.
+        const auto reloaded = RoomFiles::load(savedPath, sharedPlayerArt());
+        REQUIRE(reloaded.room);
+        REQUIRE(reloaded.room->layers.empty());
+        REQUIRE(RoomFiles::save(savedPath, *reloaded.room, error, sharedPlayerArt()));
+        REQUIRE(TextFormat::readFile(savedPath).text == saved.text);
+        ++checked;
+    }
+    REQUIRE(checked > 0);
 }
 
 // step 1 finds one-pixel lines and text; the default samples large areas quickly.

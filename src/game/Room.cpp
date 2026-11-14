@@ -164,8 +164,9 @@ RoomValidationIssue Room::validationIssue() const {
         };
         for (const auto& [value, key] : anchors) {
             if (value != 0.0F) {
-                return layerIssue("Camada usa size e position, nao " + std::string(key.substr(6))
-                                          + ": " + layer.id,
+                return layerIssue("Camada usa size e position, nao "
+                                          + std::string(key.substr(key.find('.') + 1)) + ": "
+                                          + layer.id,
                                   key);
             }
         }

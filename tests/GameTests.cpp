@@ -1466,7 +1466,7 @@ TEST_CASE("testLayerCoversViewport") {
     RoomLayer foliage;
     foliage.scrollFactor = {1.3F, 1.0F};
     REQUIRE(!layerCoversViewport(foliage, room)); // 2560 - 1280 * 1.3 = 896 < 1280
-    foliage.size.x = 2944.0F;                     // 1280 + 1280 * 1.3
+    foliage.size = {2944.0F, 720.0F};             // 1280 + 1280 * 1.3
     REQUIRE(layerCoversViewport(foliage, room));
 
     // A room the size of the viewport has a single camera position.

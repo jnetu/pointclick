@@ -164,7 +164,7 @@ consome texto e teclas de edição. As alterações passam por `Game::applyRoom`
 ele valida os dados e prepara uma nova navegação (já considerando os overrides de
 visibilidade e `solidOverride` do `SessionState`) antes de substituir o estado.
 Quem lê um `.room` recebe os erros de `Room::validationIssue` já com `Linha N:`:
-`RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]` e de cada chave e só
+`RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]`/`[layer]` e de cada chave e só
 traduz o achado (`RoomValidationIssue`: sujeito, posição, campo) para a linha; as regras
 continuam em `Room`, sem cópia no loader.
 Uma edição rejeitada não altera sala, regras, posição ou rota. Uma edição aceita

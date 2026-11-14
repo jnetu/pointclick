@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-06 ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-07 ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -60,7 +60,7 @@ nenhum desenho de diagnóstico na build de loja.
 | D3 | Hotspot aceita `type = solid` + `collision` (parede invisível sobre a arte) e `baseline`. Não aceita `color`, `sprite.*`, `animation.*`. | Parede invisível é o uso mais comum depois do clique. |
 | D4 | **`baseline`** é relativo ao topo de `bounds` (`depth() = bounds.y + baseline`); ausente = `bounds.h` (comportamento de hoje). Escrito no arquivo só quando definido. | Mover o objeto no editor leva a baseline junto; arquivos antigos salvam idênticos. |
 | D5 | `interactionApproachPoint` de objeto não sólido passa a usar `depth()`, ou seja, a baseline. | Picking, desenho e ponto de chegada concordam sobre "onde o objeto pisa". |
-| D6 | **Tamanho padrão da camada = tamanho da sala**; `size` e `position` explícitos para o resto. O corte do clip não pode usar `display_width/height/offset_*` (validação recusa). | Independe de abrir o PNG no domínio; um fundo do tamanho da sala não precisa de chave nenhuma. |
+| D6 | **Tamanho padrão da camada = tamanho da sala**; `size` e `position` explícitos para o resto. O corte do clip não pode usar `display_width/height/offset_*` (validação recusa). *Fechado na M2-05:* `size` é `0, 0` (= sala) ou tem os dois lados > 0, nunca um eixo só; camada sem `image.file` carrega e é aviso de arte (M2-10), como clip de objeto sem arquivo. | Independe de abrir o PNG no domínio; um fundo do tamanho da sala não precisa de chave nenhuma. |
 | D7 | `scroll_factor = fx, fy`, padrão `1, 1`, intervalo `0 a 4` (maior que 1 = primeiro plano que passa mais rápido). Posição na tela = `position - camera * fator`. | Paralaxe sem estado: só aritmética pura, testável sem janela. |
 | D8 | O fundo procedural (parede, chão, guias) **só desenha quando a sala não tem camada `back`**. | Salas antigas ficam idênticas; sala com arte não precisa de chave para desligar o placeholder. |
 | D9 | Camadas têm IDs próprios (únicos entre camadas, `validIdentifier`). Erros de camada têm linha (`Subject::layer`). | Mesmo padrão do D12 do roadmap. |
@@ -134,7 +134,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
-| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 3/7 |
+| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 4/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
@@ -196,11 +196,12 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   dos objetos**, só com as chaves fora do padrão. **Pronto quando:** erros têm linha e o `save`
   relê igual. **Teste:** `testRoomLayerFiles` em `tests/EditorTests.cpp` (round-trip, linha de cada
   erro, `scroll_factor` com vírgula, `plane` inválido).
-- [ ] **M2-07 · S · Arg. sim — Salas antigas continuam idênticas.**
+- [x] **M2-07 · S · Arg. sim — Salas antigas continuam idênticas.**
   Prova do D10/D8 no formato: `load` + `save` de todas as salas de `assets/rooms` não acrescenta
   nenhuma chave de camada; o `.room` regravado é igual ao que a M2-03 gravava. **Teste:**
   estender `testObjectFieldsRoundTripAssets` (ou `testRoomLayerFiles`) com "nenhum `[layer`" no
-  texto. **Pronto quando:** passa também sem a M2-03 (compara com o texto original).
+  texto. Feito como caso próprio, `testRoomsWithoutLayersSaveUnchanged` (`tests/EditorTests.cpp`),
+  que compara com o `.room` original e não com os goldens da M2-03. **Pronto quando:** passa também sem a M2-03 (compara com o texto original).
 - [ ] **M2-08 · M · Arg. não — `LayerRenderer` e o fundo condicional.**
   `src/graphics/LayerRenderer.hpp/.cpp`: `draw(renderer, sprites, room, plane, cameraOffset)` com
   `layerRect` + `SpriteLibrary::draw`. `SceneRenderer::draw`: se `room.layers` tem alguma `back`,

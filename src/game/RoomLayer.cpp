@@ -13,10 +13,11 @@ bool RoomLayer::operator==(const RoomLayer& other) const {
 }
 
 SDL_FRect layerRect(const RoomLayer& layer, const Room& room, const SDL_FPoint cameraOffset) {
-    const float width = layer.size.x > 0.0F ? layer.size.x : room.width;
-    const float height = layer.size.y > 0.0F ? layer.size.y : room.height;
+    // Unset (0, 0) is the room's size; validation keeps any other size positive on both sides.
+    const bool roomSized = layer.size.x == 0.0F && layer.size.y == 0.0F;
     return {layer.position.x - cameraOffset.x * layer.scrollFactor.x,
-            layer.position.y - cameraOffset.y * layer.scrollFactor.y, width, height};
+            layer.position.y - cameraOffset.y * layer.scrollFactor.y,
+            roomSized ? room.width : layer.size.x, roomSized ? room.height : layer.size.y};
 }
 
 bool layerCoversViewport(const RoomLayer& layer, const Room& room) {

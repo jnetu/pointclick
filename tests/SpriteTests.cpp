@@ -601,51 +601,94 @@ TEST_CASE("testDepthDrawOrderPixels") {
     SDL_Quit();
 }
 
-// M2-08 (D8): a room with a `back` layer draws the PNG instead of the procedural backdrop. The
-// pixels where testBackdropPixelsWithoutLayers finds wall, floor and a guide take the PNG's own
-// colors (read from the file, so the art can be regenerated). The full frame battery is M2-09.
+// M2-09 (D8): frames of a room with painted layers, drawn headless from a sheet written by
+// writeSheetPng (each layer cuts one 4x4 frame, so it is one flat colour). The room without
+// layers is testBackdropPixelsWithoutLayers (M2-02), unchanged; missing layer art is in
+// testRoomWithMissingArtStillRuns.
 TEST_CASE("testBackLayerReplacesBackdrop") {
+    const TempDirectory testDirectory("pointclick-layers");
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
     REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    writeSheetPng(testDirectory.path());
     SDL_Window* window = SDL_CreateWindow("Back layer test", 1280, 720, SDL_WINDOW_HIDDEN);
     REQUIRE(window);
     Renderer renderer;
     REQUIRE(renderer.initialize(window));
-    const std::filesystem::path sprites = std::filesystem::path(POINTCLICK_SOURCE_DIR)
-                                          / "assets/sprites";
-    renderer.setSpriteRoot(sprites);
-
-    const std::string file = "cenario/test_1280x720_ground.png";
-    const std::u8string path = (sprites / file).u8string();
-    SDL_Surface* art = SDL_LoadPNG(reinterpret_cast<const char*>(path.c_str()));
-    REQUIRE((art && art->w == 1280 && art->h == 720));
+    // The player's PNGs are not in this folder: it draws as the checkerboard around its feet
+    // (640, 360), clear of every sample below.
+    renderer.setSpriteRoot(testDirectory.path());
+    const auto layerOfFrame = [](const std::string& id, const int frame, const LayerPlane plane) {
+        RoomLayer layer;
+        layer.id = id;
+        layer.plane = plane;
+        layer.image = {.file = "sheet.png",
+                       .frameWidth = 4,
+                       .frameHeight = 4,
+                       .columns = 2,
+                       .firstFrame = frame,
+                       .marginX = 1,
+                       .marginY = 1,
+                       .spacingX = 1,
+                       .spacingY = 1};
+        return layer;
+    };
+    const auto renderRoom = [&](const Room& room) {
+        REQUIRE(room.validationError().empty());
+        const Game game(room);
+        REQUIRE((game.scene().camera().position().x == 0.0F
+                 && game.scene().camera().position().y == 0.0F));
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+        return frame;
+    };
+    const auto expectAt = [](SDL_Surface* frame, const SDL_Point at, const SDL_Color expected) {
+        const SDL_Color actual = pixel(frame, at.x, at.y);
+        INFO("pixel " << at.x << "," << at.y << " = " << int(actual.r) << "," << int(actual.g)
+                      << "," << int(actual.b));
+        expectColor(actual, expected.r, expected.g, expected.b);
+    };
     Room room;
     room.id = "layered";
     room.playerAnimations = sharedPlayerArt();
-    RoomLayer ground;
-    ground.id = "ground";
-    ground.image.file = file;
-    room.layers.push_back(ground);
-    REQUIRE(room.validationError().empty());
-    const Game game(room);
-    renderer.render(game, 1.0F);
-    SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    REQUIRE((frame && frame->w == 1280 && frame->h == 720));
-    // Wall, floor, the ray at x = 640 and the 0.62 guide; the player (feet at 640,360) is clear.
-    const SDL_Point samples[]{{640, 100}, {700, 520}, {640, 500}, {670, 449}};
-    for (const SDL_Point sample : samples) {
-        const SDL_Color expected = pixel(art, sample.x, sample.y);
-        const SDL_Color actual = pixel(frame, sample.x, sample.y);
-        INFO("pixel " << sample.x << "," << sample.y << " = " << int(actual.r) << ","
-                      << int(actual.g) << "," << int(actual.b));
-        expectColor(actual, expected.r, expected.g, expected.b);
+
+    // (b) One room-sized `back` layer: where the placeholder had wall, floor, the ray at
+    // x = 640 and the 0.62 guide, the frame has the PNG's colour (frame 0, red).
+    room.layers = {layerOfFrame("ground", 0, LayerPlane::back)};
+    SDL_Surface* full = renderRoom(room);
+    for (const SDL_Point at : {SDL_Point{640, 100}, SDL_Point{700, 520}, SDL_Point{640, 500},
+                               SDL_Point{670, 449}, SDL_Point{100, 280}}) {
+        expectAt(full, at, colors[0]);
     }
-    // The PNG is not the procedural wall, so the sample above really changed.
-    const SDL_Color wall = pixel(frame, 640, 100);
-    REQUIRE((wall.r != 171 || wall.g != 62 || wall.b != 67));
-    SDL_DestroySurface(frame);
-    SDL_DestroySurface(art);
+    SDL_DestroySurface(full);
+
+    // (d) A layer over the left half only (frame 2, blue): the right half keeps the Renderer's
+    // clear colour, with no wall, floor or guide from the procedural backdrop.
+    constexpr SDL_Color clear{8, 10, 16, 255};
+    RoomLayer half = layerOfFrame("half", 2, LayerPlane::back);
+    half.size = {640.0F, 720.0F};
+    room.layers = {half};
+    SDL_Surface* halfFrame = renderRoom(room);
+    for (const SDL_Point at : {SDL_Point{320, 100}, SDL_Point{320, 520}, SDL_Point{600, 449}}) {
+        expectAt(halfFrame, at, colors[2]);
+    }
+    for (const SDL_Point at : {SDL_Point{960, 100}, SDL_Point{740, 280}, SDL_Point{960, 520},
+                               SDL_Point{1000, 449}, SDL_Point{1270, 710}}) {
+        expectAt(halfFrame, at, clear);
+    }
+    SDL_DestroySurface(halfFrame);
+
+    // D8 looks only at `back`: a room whose only layer is `front` keeps the procedural wall
+    // and floor (the layer sits in a corner, away from the samples).
+    RoomLayer corner = layerOfFrame("corner", 0, LayerPlane::front);
+    corner.size = {100.0F, 100.0F};
+    room.layers = {corner};
+    SDL_Surface* frontOnly = renderRoom(room);
+    expectAt(frontOnly, {640, 100}, {171, 62, 67, 255});
+    expectAt(frontOnly, {700, 520}, {42, 102, 175, 255});
+    SDL_DestroySurface(frontOnly);
+
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();
@@ -812,6 +855,36 @@ TEST_CASE("testRoomWithMissingArtStillRuns") {
     expectColor(pixel(frame, 618, 406), 10, 7, 17);
     expectColor(pixel(frame, 640, 100), 171, 62, 67); // and the rest of the scene is there
     SDL_DestroySurface(frame);
+
+    // M2-09 (c): the same room with a room-sized `back` layer whose PNG is missing, read from a
+    // .room file. It loads and runs; the layer draws the checkerboard from the screen's corner
+    // in place of the procedural wall, and the ghost still draws over it.
+    const TempDirectory layered("pointclick-missing-layer");
+    std::filesystem::create_directory(layered.path() / "rooms");
+    {
+        std::ifstream original(std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                               / "tests/fixtures/missing_art/rooms/first.room");
+        std::ofstream copy(layered.path() / "rooms/first.room");
+        copy << original.rdbuf() << "\n[layer painted]\nimage.file = painted.png\n";
+    }
+    RoomLibrary layeredLibrary;
+    REQUIRE(layeredLibrary.open(layered.path() / "rooms", error));
+    RoomBundleResult withLayer = layeredLibrary.loadBundle(RoomLibrary::startRoomFile);
+    REQUIRE((withLayer.bundle && withLayer.error.empty()));
+    REQUIRE(withLayer.bundle->room.layers.size() == 1);
+    renderer.setSpriteRoot(layeredLibrary.spritesDirectory());
+    Game layeredGame(std::move(withLayer.bundle->room));
+    layeredGame.tick(0.05F);
+    renderer.render(layeredGame, 1.0F);
+    SDL_Surface* layeredFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+    REQUIRE((layeredFrame && layeredFrame->w == 1280 && layeredFrame->h == 720));
+    expectColor(pixel(layeredFrame, 6, 6), 145, 0, 190);
+    expectColor(pixel(layeredFrame, 18, 6), 10, 7, 17);
+    expectColor(pixel(layeredFrame, 640, 100), 10, 7, 17); // tile (53, 8): no wall any more
+    // The layer's tile at (606, 406) is dark (50 + 33 is odd); the ghost's is purple on top.
+    expectColor(pixel(layeredFrame, 606, 406), 145, 0, 190);
+    expectColor(pixel(layeredFrame, 618, 406), 10, 7, 17);
+    SDL_DestroySurface(layeredFrame);
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

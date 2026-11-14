@@ -56,6 +56,13 @@ public:
     // rebuilds navigation if an object of this room started or stopped blocking the floor, and
     // publishes a cutscene edge.
     void changeSession(const std::function<void(SessionState&)>& change);
+    // Tool commands that leave through the same door as change_room: a RoomChangeRequested the
+    // shell loads (Application::processGameEvents). Ids are not checked here; the shell refuses
+    // a target that does not load, and nothing changes.
+    void requestRoomChange(std::string roomId, std::string spawnId = {});
+    // A new game in place (what --new-game does at startup): ends every sequence and the
+    // conversation, stops the player, clears the progress and asks for roomId as above.
+    void startNewGame(std::string roomId, std::string spawnId = {});
     void onPointerMove(SDL_FPoint position, bool insideViewport = true);
     void onClick(SDL_FPoint position);
     void tick(float deltaSeconds);

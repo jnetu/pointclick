@@ -562,6 +562,45 @@ TEST_CASE("testSessionCommandKeepsNavigation") {
     REQUIRE(!game.scene().navigation().canStandAt(crateCenter));
 }
 
+// F2 (tools' goto and newgame): the requests leave as RoomChangeRequested, like change_room;
+// a new game also ends the sequence in progress and clears the progress through changeSession.
+TEST_CASE("testNewGameAndRoomRequests") {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomPresets::firstRoomInteractions());
+    std::vector<GameEvent> events;
+    game.drainEvents(events);
+    game.requestRoomChange("gallery", "door");
+    REQUIRE(game.pendingEvents().size() == 1);
+    const auto* change = std::get_if<RoomChangeRequested>(&game.pendingEvents()[0]);
+    REQUIRE((change && change->roomId == "gallery" && change->spawnId == "door"));
+    REQUIRE(game.scene().room().id == "first"); // the shell loads the room, not the request
+    game.drainEvents(events);
+
+    const std::string roomId = game.scene().room().id;
+    const SDL_FPoint redBase{860.0F, 575.0F};
+    game.changeSession([&](SessionState& session) {
+        session.setFlag("found_brass_key");
+        (void)session.addItem("brass_key");
+        session.setObjectSolid(roomId, "red_box", false);
+    });
+    REQUIRE(game.scene().navigation().canStandAt(redBase));
+    game.onClick({430.0F, 410.0F}); // blue_box: its rule speaks after the walk
+    for (int i = 0; i < 400 && !game.scene().floatingText().isVisible(); ++i) game.tick(0.05F);
+    REQUIRE(game.scene().floatingText().isVisible());
+    game.drainEvents(events);
+
+    game.startNewGame("first");
+    REQUIRE((!game.inCutscene() && !game.scene().player().moving()));
+    REQUIRE(!game.scene().floatingText().isVisible());
+    REQUIRE(game.session().snapshot() == SessionSnapshot{});
+    REQUIRE(!game.scene().navigation().canStandAt(redBase)); // red_box blocks again at once
+    REQUIRE(std::any_of(
+            game.pendingEvents().begin(), game.pendingEvents().end(), [](const GameEvent& event) {
+                const auto* request = std::get_if<RoomChangeRequested>(&event);
+                return request && request->roomId == "first" && request->spawnId.empty();
+            }));
+}
+
 TEST_CASE("testConditionalNpcPuzzleAndRoomPersistence") {
     Room room = RoomPresets::firstRoom();
     room.id = "courtyard";

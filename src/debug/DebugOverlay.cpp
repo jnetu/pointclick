@@ -1,4 +1,5 @@
 #include "debug/DebugOverlay.hpp"
+#include "debug/CommandCatalog.hpp"
 #include "debug/DiagnosticsOverlay.hpp"
 #include "game/RoomParameters.hpp"
 #include "debug/DebugEditor.hpp"
@@ -6,6 +7,40 @@
 #include "game/World.hpp"
 #include <SDL3/SDL.h>
 #include <algorithm>
+#include <string>
+#include <string_view>
+#include <vector>
+
+std::vector<std::string> wrapPanelText(const std::string_view text, const std::size_t maxRows) {
+    std::vector<std::string> rows;
+    std::size_t start = 0;
+    while (start <= text.size()) {
+        const std::size_t newline = text.find('\n', start);
+        std::string_view line = text.substr(start, newline == std::string_view::npos
+                                                           ? std::string_view::npos
+                                                           : newline - start);
+        do {
+            std::size_t cut = std::min(line.size(), kPanelColumns);
+            if (cut < line.size()) {
+                const std::size_t space = line.rfind(' ', cut);
+                if (space != std::string_view::npos && space > 0) cut = space;
+            }
+            rows.emplace_back(line.substr(0, cut));
+            line.remove_prefix(cut);
+            if (!line.empty() && line.front() == ' ') line.remove_prefix(1);
+        } while (!line.empty());
+        if (newline == std::string_view::npos) break;
+        start = newline + 1;
+    }
+    if (rows.size() > maxRows && maxRows > 0) {
+        // Something did not fit: say so on the last row instead of cutting it silently.
+        rows.resize(maxRows);
+        std::string& last = rows.back();
+        last.resize(std::min(last.size(), kPanelColumns - 3));
+        last += "...";
+    }
+    return rows;
+}
 
 namespace {
 // The route still to walk and a cross on its destination.
@@ -108,24 +143,28 @@ void DebugOverlay::draw(SDL_Renderer* renderer, const Game& game,
     SDL_RenderDebugText(renderer, x, y + 402, selected.description.data());
     SDL_RenderDebugTextFormat(renderer, x, y + 420, "Intervalo: %.2f a %.2f | Passo: %.2f",
                               selected.minimum, selected.maximum, selected.step);
-    SDL_RenderDebugText(renderer, x, y + 450, "set player.far_speed 140   | teleport 640 500");
-    SDL_RenderDebugText(renderer, x, y + 468, "move red_box 850 460       | size red_box 110 125");
-    SDL_RenderDebugText(renderer, x, y + 486, "base red_box 14 92 82 33   | solid red_box 1");
-    SDL_RenderDebugText(renderer, x, y + 504, "save teste.room | load teste.room | reload | undo | reset");
-    SDL_RenderDebugText(renderer, x, y + 522, "show route 0 | show diagnostics 0 | show hint 0");
+    // The command list comes from debug/CommandCatalog; `help <comando>` shows the usage.
+    const std::vector<std::string> commands = wrapPanelText("Comandos: " + commandNames(), 4);
+    for (std::size_t row = 0; row < commands.size(); ++row) {
+        SDL_RenderDebugText(renderer, x, y + 450 + static_cast<float>(row) * 18,
+                            commands[row].c_str());
+    }
+    SDL_RenderDebugText(renderer, x, y + 522, "help <comando>: uso e descricao");
     SDL_SetRenderDrawColor(renderer, 242, 217, 139, 255);
     const auto visibleCommand = editor.command().size() > 60
                                 ? editor.command().substr(editor.command().size() - 60) : editor.command();
     SDL_RenderDebugTextFormat(renderer, x, y + 542, "> %s_", visibleCommand.c_str());
     SDL_RenderDebugText(renderer, x, y + 560, "ENTER: aplicar | BACKSPACE: apagar");
     SDL_SetRenderDrawColor(renderer, 202, 215, 228, 255);
-    for (std::size_t offset = 0; offset < editor.status().size() && offset < 180; offset += 60) {
-        SDL_RenderDebugText(renderer, x, y + 596 + static_cast<float>(offset / 60) * 16,
-                            editor.status().substr(offset, 60).c_str());
+    // Five rows: `state` (sala, flags, itens, objetos, escolhas) fits when its lines are short.
+    const std::vector<std::string> status = wrapPanelText(editor.status(), 5);
+    for (std::size_t row = 0; row < status.size(); ++row) {
+        SDL_RenderDebugText(renderer, x, y + 590 + static_cast<float>(row) * 16,
+                            status[row].c_str());
     }
     const auto utf8 = editor.roomDirectory().u8string();
     std::string directory(reinterpret_cast<const char*>(utf8.data()), utf8.size());
     if (directory.size() > 55) directory = "..." + directory.substr(directory.size() - 52);
     SDL_SetRenderDrawColor(renderer, 142, 161, 180, 255);
-    SDL_RenderDebugTextFormat(renderer, x, y + 654, "Pasta: %s", directory.c_str());
+    SDL_RenderDebugTextFormat(renderer, x, y + 672, "Pasta: %s", directory.c_str());
 }

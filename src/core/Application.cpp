@@ -32,6 +32,10 @@ Application::Application(CommandLineOptions options)
 #if POINTCLICK_TOOLS
     debugEditor_.setLibrary(library_);
     debugEditor_.setArtReloader([this] { renderer_.invalidateTextures(); });
+    // `newgame` starts where this run would start a new game (--room, or first.room).
+    if (!options_.startRoom.empty()) {
+        debugEditor_.setStartRoom(options_.startRoom, options_.startSpawn);
+    }
     inputRouter_.setToolConsumer(&debugEditor_);
     renderer_.addOverlay(&debugOverlay_);
 #endif
@@ -59,10 +63,7 @@ bool Application::loadRoomWithRules(const std::string_view roomFilename,
     if (!gameplay_) return startGameplay(std::move(*loaded.bundle), nullptr, spawnId);
     logArtWarnings(loaded.bundle->room);
     std::string error;
-    Game& game = gameplay_->game;
-    if (!game.applyRoom(std::move(loaded.bundle->room), true, error, spawnId)
-        || !game.setInteractions(std::move(loaded.bundle->interactions), error)
-        || !game.setDialogues(std::move(loaded.bundle->dialogues), error)) {
+    if (!enterRoom(gameplay_->game, std::move(*loaded.bundle), spawnId, error)) {
         SDL_Log("Could not apply room: %s", error.c_str());
         return false;
     }

@@ -7,8 +7,12 @@
 #include "content/ActorFiles.hpp"
 #include "content/RoomLibrary.hpp"
 #include "content/TextFormat.hpp"
+#include "debug/CommandCatalog.hpp"
+#include "debug/CommandConsole.hpp"
+#include "debug/CommandScript.hpp"
 #include "debug/DebugEditor.hpp"
 #include "debug/DebugOverlay.hpp"
+#include "game/Identifier.hpp"
 #include "game/Game.hpp"
 #include "graphics/Renderer.hpp"
 #include "input/InputRouter.hpp"
@@ -24,8 +28,10 @@
 #include <cstdlib>
 #include <fstream>
 #include <iterator>
+#include <memory>
 #include <set>
 #include <stdexcept>
+#include <variant>
 
 namespace {
 // SDL's sentinel ids are C-cast macros: read them once so the file builds under -Wold-style-cast.
@@ -1831,5 +1837,414 @@ TEST_CASE("testRoomSpawnFilesAndTransitions") {
         const RoomBundleResult shipped = assets.loadBundle(name);
         REQUIRE((shipped.bundle && assets.transitionsError(*shipped.bundle).empty()));
     }
+}
+
+// ---- F2: CommandCatalog and the session commands (DEBUG panel and --exec share them) ----
+
+std::filesystem::path shippedRooms() {
+    return std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+}
+
+// A new game in the shipped first.room (read only) with a console over the shipped library,
+// settled the way the headless runner does it. `printed` collects the runner's report.
+struct ShippedGame {
+    RoomLibrary library = openLibrary(shippedRooms());
+    std::unique_ptr<Game> game;
+    CommandConsole console;
+    std::vector<std::string> printed;
+    std::unique_ptr<CommandScript> script;
+
+    ShippedGame() {
+        RoomBundleResult loaded = library.loadBundle("first.room");
+        REQUIRE(loaded.bundle);
+        game = std::make_unique<Game>(std::move(loaded.bundle->room));
+        std::string error;
+        REQUIRE(game->setInteractions(std::move(loaded.bundle->interactions), error));
+        REQUIRE(game->setDialogues(std::move(loaded.bundle->dialogues), error));
+        console.setLibrary(library);
+        console.begin(*game);
+        script = std::make_unique<CommandScript>(
+                *game, console, library,
+                [this](const std::string_view line) { printed.emplace_back(line); });
+        REQUIRE(script->settle());
+        printed.clear();
+    }
+    CommandResult execute(const std::string_view line) { return console.execute(line, *game); }
+    bool printedLine(const std::string_view line) const {
+        return std::find(printed.begin(), printed.end(), line) != printed.end();
+    }
+};
+
+bool pendingRoomChange(const Game& game, const std::string_view roomId,
+                       const std::string_view spawnId) {
+    for (const GameEvent& event : game.pendingEvents()) {
+        const auto* change = std::get_if<RoomChangeRequested>(&event);
+        if (change && change->roomId == roomId && change->spawnId == spawnId) return true;
+    }
+    return false;
+}
+
+bool hasRoomChange(const Game& game) {
+    return std::any_of(game.pendingEvents().begin(), game.pendingEvents().end(),
+                       [](const GameEvent& event) {
+                           return std::holds_alternative<RoomChangeRequested>(event);
+                       });
+}
+
+// Every command has a name, a usage starting with it and a description, all in `help` and in
+// the panel's list; `help <comando>` answers with the same line.
+TEST_CASE("testCommandCatalogHelp") {
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    console.begin(game);
+    const CommandResult help = console.execute("help", game);
+    REQUIRE(help.ok);
+    REQUIRE(help.output.starts_with("Comandos: " + commandNames() + "\n"));
+    const auto printable = [](const std::string_view text) {
+        return std::all_of(text.begin(), text.end(),
+                           [](const char c) { return c >= 32 && c <= 126; });
+    };
+    std::set<std::string_view> names;
+    for (const CommandDescriptor& command : commandCatalog()) {
+        REQUIRE(names.insert(command.name).second);
+        REQUIRE(validIdentifier(command.name));
+        REQUIRE(command.run != nullptr);
+        REQUIRE(findCommand(command.name) == &command);
+        REQUIRE((command.usage == command.name
+                 || command.usage.starts_with(std::string(command.name) + " ")));
+        REQUIRE((!command.description.empty() && printable(command.description)));
+        REQUIRE(printable(command.usage)); // the panel draws with the ASCII debug font
+        const std::string line = std::string(command.usage) + " -- "
+                                 + std::string(command.description);
+        REQUIRE(help.output.find("\n" + line) != std::string::npos);
+        const std::string listed = " " + commandNames() + " ";
+        REQUIRE(listed.find(" " + std::string(command.name) + " ") != std::string::npos);
+        const CommandResult one = console.execute("help " + std::string(command.name), game);
+        REQUIRE((one.ok && one.output == line));
+    }
+    // The old commands and the F2 ones, under these names (`show` stays the debug views).
+    for (const std::string_view name :
+         {"set",     "teleport", "move", "size",    "base",  "solid", "show", "save",
+          "load",    "reload",   "undo", "reset",   "flag",  "give",  "take", "showobj",
+          "hideobj", "use",      "goto", "newgame", "state", "help"}) {
+        REQUIRE(names.contains(name));
+    }
+    REQUIRE(names.size() == 22);
+
+    const CommandResult unknownTopic = console.execute("help nope", game);
+    REQUIRE((!unknownTopic.ok
+             && unknownTopic.output == "Comando desconhecido: nope. Digite help."));
+    const CommandResult unknown = console.execute("nope 1", game);
+    REQUIRE((!unknown.ok && unknown.output == "Comando desconhecido. Digite help."));
+    REQUIRE(console.execute("help a b", game).output == "Use: help [comando]");
+    const CommandResult blank = console.execute("   ", game);
+    REQUIRE((blank.ok && blank.output.empty()));
+
+    // The panel shows the same answer; a blank line keeps the previous status.
+    DebugEditor editor;
+    REQUIRE(editor.onTextInput("DEBUG", game));
+    command(editor, game, "help give");
+    REQUIRE(editor.status() == "give <item> -- Poe o item no inventario");
+    command(editor, game, "   ");
+    REQUIRE(editor.status() == "give <item> -- Poe o item no inventario");
+    command(editor, game, "give brass_key");
+    REQUIRE((editor.status() == "Item recebido: brass_key" && game.session().hasItem("brass_key")));
+}
+
+TEST_CASE("testFlagCommand") {
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    const auto run = [&](const std::string_view line) { return console.execute(line, game); };
+    CommandResult result = run("flag door 3");
+    REQUIRE((result.ok && result.output == "Flag door = 3"
+             && game.session().flagValue("door") == 3));
+    // C13: the command accepts exactly the stored range and refuses beyond it, unchanged.
+    REQUIRE(run("flag door -1000000000").ok);
+    REQUIRE(game.session().flagValue("door") == -kMaxFlagValue);
+    REQUIRE(run("flag door 1000000000").ok);
+    REQUIRE(game.session().flagValue("door") == kMaxFlagValue);
+    for (const char* line :
+         {"flag door 1000000001", "flag door -1000000001", "flag door 99999999999999999999"}) {
+        result = run(line);
+        REQUIRE(!result.ok);
+        REQUIRE(result.output.starts_with("Valor fora do limite de +-1000000000: "));
+        REQUIRE(game.session().flagValue("door") == kMaxFlagValue);
+    }
+    REQUIRE(run("flag door 1000000001").output
+            == "Valor fora do limite de +-1000000000: 1000000001");
+    for (const char* line :
+         {"flag door", "flag door 2x", "flag door 1.5", "flag door 1 2", "flag"}) {
+        result = run(line);
+        REQUIRE((!result.ok && result.output == "Use: flag <id> <n>"));
+    }
+    result = run("flag porta! 1");
+    REQUIRE((!result.ok && result.output == "Flag invalida: porta!"));
+    result = run("flag door 0");
+    REQUIRE((result.ok && result.output == "Flag apagada: door"
+             && !game.session().hasFlag("door")));
+}
+
+TEST_CASE("testItemCommands") {
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    const auto run = [&](const std::string_view line) { return console.execute(line, game); };
+    REQUIRE(run("give brass_key").output == "Item recebido: brass_key");
+    REQUIRE(run("give gem").ok);
+    REQUIRE(game.session().items() == std::vector<std::string>{"brass_key", "gem"});
+    CommandResult result = run("give gem");
+    REQUIRE((!result.ok && result.output == "Item ja esta no inventario: gem"));
+    result = run("take brass_key");
+    REQUIRE((result.ok && result.output == "Item removido: brass_key"));
+    REQUIRE(game.session().items() == std::vector<std::string>{"gem"});
+    result = run("take brass_key");
+    REQUIRE((!result.ok && result.output == "Item fora do inventario: brass_key"));
+    REQUIRE(run("give chave!").output == "Item invalido: chave!");
+    REQUIRE(run("take").output == "Use: take <item>");
+    REQUIRE(run("give a b").output == "Use: give <item>");
+    REQUIRE(game.session().items() == std::vector<std::string>{"gem"});
+}
+
+TEST_CASE("testObjectVisibilityCommands") {
+    const RoomLibrary library = openLibrary(shippedRooms());
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    console.setLibrary(library);
+    const auto run = [&](const std::string_view line) { return console.execute(line, game); };
+    REQUIRE(!game.scene().navigation().canStandAt({860.0F, 575.0F})); // red_box's base
+
+    // An object of the room in play: hidden, it stops blocking the floor (changeSession).
+    CommandResult result = run("hideobj red_box");
+    REQUIRE((result.ok && result.output == "first.red_box: oculto"));
+    REQUIRE(!game.scene().isObjectVisible("red_box"));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F}));
+    result = run("showobj first.red_box");
+    REQUIRE((result.ok && result.output == "first.red_box: visivel"));
+    REQUIRE(game.scene().isObjectVisible("red_box"));
+    REQUIRE(!game.scene().navigation().canStandAt({860.0F, 575.0F}));
+
+    // Another room, checked against its file.
+    result = run("hideobj gallery.plant");
+    REQUIRE((result.ok && !game.session().isObjectVisible("gallery", "plant")));
+    REQUIRE(run("hideobj gallery.nope").output == "Objeto desconhecido: gallery.nope");
+    REQUIRE(run("hideobj nope").output == "Objeto desconhecido: first.nope");
+    result = run("showobj nowhere.lamp");
+    REQUIRE((!result.ok && result.output.starts_with("Sala desconhecida: nowhere (")));
+    REQUIRE(run("hideobj a.b.c").output == "Objeto invalido: a.b.c");
+    REQUIRE(run("hideobj .red_box").output == "Objeto invalido: .red_box");
+    REQUIRE(run("hideobj").output == "Use: hideobj <sala.objeto|objeto>");
+    REQUIRE(run("showobj a b").output == "Use: showobj <sala.objeto|objeto>");
+    // `show` is still the debug views: an object name there is a usage error.
+    REQUIRE(run("show red_box 0").output == "Use: show route|diagnostics|hint 0/1");
+
+    CommandConsole withoutLibrary;
+    REQUIRE(withoutLibrary.execute("hideobj gallery.plant", game).output
+            == "Pasta de salas nao configurada");
+    REQUIRE(withoutLibrary.execute("hideobj blue_box", game).ok); // the room in play needs none
+}
+
+TEST_CASE("testUseCommand") {
+    Game game(RoomPresets::firstRoom());
+    game.setInteractions(RoomPresets::firstRoomInteractions());
+    CommandConsole console;
+    const auto run = [&](const std::string_view line) { return console.execute(line, game); };
+    const auto settle = [&] {
+        for (int i = 0; i < 2000 && (game.inCutscene() || game.scene().player().moving()); ++i) {
+            game.tick(0.05F);
+        }
+    };
+    CommandResult result = run("use brass_key red_box");
+    REQUIRE((!result.ok && result.output == "Item fora do inventario: brass_key (give brass_key)"));
+    REQUIRE(run("give brass_key").ok);
+    REQUIRE(run("use brass_key nope").output == "Objeto desconhecido: nope");
+    REQUIRE(run("use chave! red_box").output == "Item invalido: chave!");
+    REQUIRE(run("use brass_key").output == "Use: use <item> <objeto>");
+    REQUIRE(run("hideobj blue_box").ok);
+    REQUIRE(run("use brass_key blue_box").output == "Objeto oculto: blue_box");
+    REQUIRE(run("showobj blue_box").ok);
+
+    // The [use_item brass_key red_box] rule: the player walks there and the rule runs.
+    result = run("use brass_key red_box");
+    REQUIRE((result.ok && result.output == "Usando brass_key em red_box"));
+    REQUIRE(game.scene().player().moving());
+    settle();
+    REQUIRE((game.session().hasFlag("red_box_unlocked") && !game.session().hasItem("brass_key")));
+    REQUIRE(!game.scene().isObjectSolid(*game.scene().room().findObject("red_box")));
+
+    // While a sequence holds the scene the domain refuses item use; the command says why.
+    RoomInteractions rules = RoomPresets::firstRoomInteractions();
+    rules.rules.push_back({.trigger = InteractionTrigger::useItem("gem", "blue_box"),
+                           .conditions = {},
+                           .effects = {InteractionEffect::make("say", {"Um."}),
+                                       InteractionEffect::make("say", {"Dois."})}});
+    game.setInteractions(rules);
+    REQUIRE((run("give gem").ok && run("give brass_key").ok));
+    REQUIRE(run("use gem blue_box").ok);
+    for (int i = 0; i < 2000 && !game.inCutscene(); ++i) game.tick(0.05F);
+    REQUIRE(game.inCutscene()); // the first say, which is not the last step
+    result = run("use brass_key red_box");
+    REQUIRE((!result.ok && result.output == "Sequencia em andamento; tente de novo depois"));
+    settle();
+
+    // No rule for that pair, and the player is already at blue_box (the gem): nothing ran.
+    result = run("use brass_key blue_box");
+    REQUIRE(!result.ok);
+    REQUIRE(result.output
+            == "Nada aconteceu: nenhuma regra [use_item brass_key blue_box] se aplica, ou o "
+               "objeto esta fora de alcance");
+}
+
+// goto leaves through RoomChangeRequested (the change_room door) and keeps the progress.
+TEST_CASE("testGotoCommandKeepsSession") {
+    ShippedGame shipped;
+    Game& game = *shipped.game;
+    REQUIRE(shipped.execute("give brass_key").ok);
+    REQUIRE(shipped.execute("flag visits 2").ok);
+    REQUIRE(shipped.execute("hideobj blue_box").ok);
+    const SessionSnapshot before = game.session().snapshot();
+
+    const CommandResult result = shipped.execute("goto gallery");
+    REQUIRE((result.ok && result.output == "Indo para gallery"));
+    REQUIRE(pendingRoomChange(game, "gallery", ""));
+    REQUIRE(game.scene().room().id == "first"); // the shell loads it, not the command
+    REQUIRE(shipped.script->settle());
+    REQUIRE(game.scene().room().id == "gallery");
+    REQUIRE(shipped.printedLine("sala: gallery"));
+    REQUIRE(game.session().snapshot() == before);
+    REQUIRE(!game.scene().interactions().rules.empty()); // gallery.rules came with it
+
+    REQUIRE(shipped.script->run("goto first"));
+    REQUIRE((game.scene().room().id == "first" && !game.scene().isObjectVisible("blue_box")));
+    REQUIRE(game.session().snapshot() == before);
+
+    // Refused targets change nothing and ask for nothing.
+    CommandResult refused = shipped.execute("goto nowhere");
+    REQUIRE((!refused.ok && refused.output.starts_with("Sala desconhecida: nowhere (")));
+    refused = shipped.execute("goto gallery window");
+    REQUIRE((!refused.ok && refused.output == "Spawn desconhecido na sala gallery: window"));
+    for (const char* line : {"goto", "goto sala/1", "goto gallery porta!", "goto a b c"}) {
+        REQUIRE(shipped.execute(line).output == "Use: goto <sala> [spawn]");
+    }
+    REQUIRE(!hasRoomChange(game));
+    CommandConsole withoutLibrary;
+    REQUIRE(withoutLibrary.execute("goto gallery", game).output
+            == "Pasta de salas nao configurada");
+    REQUIRE(!hasRoomChange(game));
+    REQUIRE(shipped.script->run("goto first")); // the room in play: re-entered at its start
+    REQUIRE(game.session().snapshot() == before);
+}
+
+// A spawn travels with the request; the room is entered there (Room::entryPoint).
+TEST_CASE("testGotoCommandSpawn") {
+    const TempDirectory testDirectory("pointclick-editor-tests");
+    const std::filesystem::path rooms = testDirectory.path() / "rooms";
+    std::filesystem::create_directory(rooms);
+    const RoomLibrary library = openLibrary(rooms);
+    std::string error;
+    Room hall = RoomPresets::firstRoom();
+    hall.spawns = {{"door_left", {120.0F, 520.0F}, Facing::right}};
+    REQUIRE(library.saveRoom("hall.room", hall, error));
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    console.setLibrary(library);
+    const CommandResult result = console.execute("goto hall door_left", game);
+    REQUIRE((result.ok && result.output == "Indo para hall em door_left"));
+    REQUIRE(pendingRoomChange(game, "hall", "door_left"));
+    RoomBundleResult loaded = library.loadBundle("hall.room");
+    REQUIRE(loaded.bundle);
+    REQUIRE(enterRoom(game, std::move(*loaded.bundle), "door_left", error));
+    REQUIRE(game.scene().player().facing() == Facing::right);
+    REQUIRE(game.scene().player().feet().x == 120.0F);
+}
+
+TEST_CASE("testNewGameCommand") {
+    ShippedGame shipped;
+    Game& game = *shipped.game;
+    REQUIRE(shipped.execute("give brass_key").ok);
+    REQUIRE(shipped.execute("flag visits 2").ok);
+    REQUIRE(shipped.execute("hideobj gallery.plant").ok);
+    REQUIRE(shipped.script->run("use brass_key red_box"));
+    REQUIRE(game.session().hasFlag("red_box_unlocked"));
+    REQUIRE(game.scene().navigation().canStandAt({860.0F, 575.0F})); // the box was unlocked
+    REQUIRE(shipped.script->run("goto gallery"));
+
+    // A start room that does not load costs nothing.
+    shipped.console.setStartRoom("nowhere");
+    CommandResult result = shipped.execute("newgame");
+    REQUIRE((!result.ok && result.output.starts_with("Sala desconhecida: nowhere (")));
+    REQUIRE((game.session().hasFlag("red_box_unlocked") && !hasRoomChange(game)));
+    REQUIRE(shipped.execute("newgame now").output == "Use: newgame");
+
+    // In the middle of a sequence: it ends at once, and the progress is gone.
+    shipped.console.setStartRoom("first");
+    REQUIRE(game.startDialogue("mesa"));
+    REQUIRE(game.inCutscene());
+    result = shipped.execute("newgame");
+    REQUIRE((result.ok && result.output == "Novo jogo: progresso zerado, voltando a first"));
+    REQUIRE(!game.inCutscene());
+    REQUIRE(game.session().snapshot() == SessionSnapshot{});
+    REQUIRE(pendingRoomChange(game, "first", ""));
+    REQUIRE(shipped.script->settle());
+    REQUIRE(game.scene().room().id == "first");
+    REQUIRE(!game.scene().navigation().canStandAt({860.0F, 575.0F})); // locked again
+    REQUIRE(game.scene().player().feet().x == game.scene().room().playerStart.x);
+}
+
+TEST_CASE("testStateCommand") {
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    CommandResult result = console.execute("state", game);
+    REQUIRE((result.ok
+             && result.output == "sala: first\nflags: -\nitens: -\nobjetos: -\nescolhas: -"));
+    // Inserted out of order: flags, overrides and choices print sorted; items keep the
+    // inventory order (the order the game shows them in).
+    game.changeSession([](SessionState& session) {
+        session.setFlag("zeta", -4);
+        session.setFlag("alpha", 1);
+        (void)session.addItem("rope");
+        (void)session.addItem("apple");
+        session.setObjectAnimation("gallery", "door", "open");
+        session.setObjectSolid("first", "red_box", false);
+        session.setObjectVisible("first", "blue_box", false);
+        session.markDialogueChoice("gallery", "mesa", "sair");
+        session.markDialogueChoice("gallery", "mesa", "abrir");
+    });
+    result = console.execute("state", game);
+    REQUIRE(result.ok);
+    REQUIRE(result.output
+            == "sala: first\n"
+               "flags: alpha=1, zeta=-4\n"
+               "itens: rope, apple\n"
+               "objetos: first.blue_box visible=0, first.red_box solid=0, gallery.door "
+               "animation=open\n"
+               "escolhas: gallery/mesa/abrir, gallery/mesa/sair");
+    REQUIRE(console.execute("state", game).output == result.output);
+    REQUIRE(console.execute("state all", game).output == "Use: state");
+}
+
+// Found in a real window: `state` (5 lines) lost its last line and `help` was cut mid-word
+// with no sign. The panel keeps 5 status rows and marks what did not fit.
+TEST_CASE("testPanelTextRows") {
+    const std::vector<std::string> state = wrapPanelText(
+            "sala: first\nflags: -\nitens: -\nobjetos: -\nescolhas: -", 5);
+    REQUIRE(state.size() == 5);
+    REQUIRE((state[0] == "sala: first" && state[4] == "escolhas: -"));
+
+    const std::string longLine = "Comandos: " + commandNames(); // wider than one row
+    const std::vector<std::string> list = wrapPanelText(longLine, 10);
+    REQUIRE(list.size() > 1);
+    std::string joined;
+    for (const std::string& row : list) {
+        REQUIRE(row.size() <= kPanelColumns);
+        joined += (joined.empty() ? "" : " ") + row;
+    }
+    REQUIRE(joined == longLine); // broken at spaces, nothing lost
+
+    Game game(RoomPresets::firstRoom());
+    CommandConsole console;
+    const std::vector<std::string> help = wrapPanelText(console.execute("help", game).output, 5);
+    REQUIRE(help.size() == 5);
+    REQUIRE((help.back().ends_with("...") && help.back().size() <= kPanelColumns));
+    REQUIRE(wrapPanelText("", 5) == std::vector<std::string>{""});
+    REQUIRE(wrapPanelText("a\nb\nc", 2) == std::vector<std::string>{"a", "b..."});
 }
 }

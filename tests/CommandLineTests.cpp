@@ -1,10 +1,15 @@
 // F1: command-line options (parsed without SDL) and the --check content validation.
+// F2: --exec / --exec-file, run by debug/CommandScript in builds with the tools.
 #include "content/ContentCheck.hpp"
 #include "core/CommandLine.hpp"
+#if POINTCLICK_TOOLS
+#include "debug/CommandScript.hpp"
+#endif
 
 #include "support/TempDirectory.hpp"
 
 #include <doctest/doctest.h>
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -145,4 +150,133 @@ TEST_CASE("testCheckReportsErrorsByFileAndLine") {
     std::filesystem::remove_all(directory / "actors");
     REQUIRE(!checkContent(directory / "nao_existe").ok());
 }
+
+#if POINTCLICK_TOOLS
+// F2: --exec / --exec-file keep their order and only go with --rooms and --room.
+TEST_CASE("testParseExecOptions") {
+    const CommandLineResult exec = parse({"--exec", "give brass_key", "--exec-file", "a.txt",
+                                          "--exec", "state", "--room", "gallery", "--no-save"});
+    REQUIRE((exec.options && exec.options->runsCommands()));
+    const std::vector<ExecStep>& steps = exec.options->exec;
+    REQUIRE(steps.size() == 3);
+    REQUIRE((steps[0].command == "give brass_key" && steps[0].file.empty()));
+    REQUIRE((steps[1].command.empty() && steps[1].file == std::filesystem::path("a.txt")));
+    REQUIRE((steps[2].command == "state" && exec.options->startRoom == "gallery"));
+    REQUIRE(!parse({}).options->runsCommands());
+    REQUIRE(commandLineUsage().find("--exec-file <arquivo>") != std::string_view::npos);
+
+    const struct {
+        std::initializer_list<std::string_view> args;
+        const char* error;
+    } invalid[]{
+        {{"--exec"}, "--exec precisa de um comando"},
+        {{"--exec", ""}, "--exec precisa de um comando"},
+        {{"--exec-file"}, "--exec-file precisa de um arquivo"},
+        {{"--check", "--exec", "state"}, "--check aceita apenas --rooms"},
+    };
+    for (const auto& entry : invalid) {
+        const std::vector<std::string_view> list(entry.args);
+        const CommandLineResult result = parseCommandLine(list);
+        REQUIRE((!result.options && result.error == entry.error));
+    }
+}
+
+struct ExecRun {
+    int exitCode = -1;
+    std::vector<std::string> lines;
+
+    [[nodiscard]] bool printed(const std::string_view line) const {
+        return std::find(lines.begin(), lines.end(), line) != lines.end();
+    }
+};
+
+ExecRun exec(const std::filesystem::path& rooms, const std::vector<CommandSource>& sources,
+             const std::string_view startRoom = {}) {
+    ExecRun run;
+    run.exitCode = runCommandScript(
+            rooms, startRoom, {}, sources,
+            [&run](const std::string_view line) { run.lines.emplace_back(line); });
+    return run;
+}
+
+std::filesystem::path shippedRooms() {
+    return std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+}
+
+CommandSource line(std::string command) {
+    return {std::move(command), {}};
+}
+CommandSource file(std::filesystem::path path) {
+    return {{}, std::move(path)};
+}
+
+// Regression: the shipped [use_item brass_key red_box] can be played without an inventory UI.
+TEST_CASE("testExecUsesBrassKeyOnShippedRedBox") {
+    const ExecRun run = exec(
+            shippedRooms(), {line("give brass_key"), line("use brass_key red_box"), line("state")});
+    REQUIRE(run.exitCode == 0);
+    const std::vector<std::string> expected{
+        "sala: first",
+        "> give brass_key",
+        "Item recebido: brass_key",
+        "> use brass_key red_box",
+        "Usando brass_key em red_box",
+        "fala: A chave destravou a caixa vermelha! O caminho está livre.",
+        "> state",
+        "sala: first",
+        "flags: red_box_unlocked=1",
+        "itens: -",
+        "objetos: first.red_box solid=0",
+        "escolhas: -",
+        "3 comando(s), 0 falha(s)",
+    };
+    REQUIRE(run.lines == expected);
+}
+
+// Every command runs even after a failure; any failure makes the exit code 1.
+TEST_CASE("testExecReportsFailures") {
+    const ExecRun run = exec(shippedRooms(), {line("use brass_key red_box"), line("nope"),
+                                              line("give brass_key"), line("goto gallery")});
+    REQUIRE(run.exitCode == 1);
+    REQUIRE(run.printed("erro: Item fora do inventario: brass_key (give brass_key)"));
+    REQUIRE(run.printed("erro: Comando desconhecido. Digite help."));
+    REQUIRE(run.printed("Item recebido: brass_key"));
+    REQUIRE(run.printed("sala: gallery"));
+    REQUIRE(run.lines.back() == "4 comando(s), 2 falha(s)");
+
+    // A start room that does not load: nothing runs.
+    const ExecRun noRoom = exec(shippedRooms(), {line("state")}, "nowhere");
+    REQUIRE((noRoom.exitCode == 1 && noRoom.lines.size() == 1));
+    REQUIRE(noRoom.lines[0].starts_with("erro: nowhere.room: "));
+    // Nothing to run is a success.
+    REQUIRE(exec(shippedRooms(), {}).exitCode == 0);
+}
+
+TEST_CASE("testExecFile") {
+    const TempDirectory testDirectory("pointclick-cli-tests");
+    const std::filesystem::path script = testDirectory.path() / "chave.txt";
+    std::ofstream(script, std::ios::binary)
+            << "# destrava a caixa vermelha\r\n\r\n  give brass_key  \r\nuse brass_key red_box\r\n"
+               "# fim\r\nstate";
+    const ExecRun run = exec(shippedRooms(),
+                             {line("flag visits 1"), file(script), line("take brass_key")});
+    REQUIRE(run.exitCode == 1); // the rule took the key: `take` fails
+    REQUIRE(run.printed("> give brass_key"));
+    REQUIRE(run.printed("flags: red_box_unlocked=1, visits=1"));
+    REQUIRE(run.printed("erro: Item fora do inventario: brass_key"));
+    REQUIRE(run.lines.back() == "5 comando(s), 1 falha(s)");
+    REQUIRE(!run.printed("> # fim"));
+
+    const ExecRun missing = exec(shippedRooms(),
+                                 {line("state"), file(testDirectory.path() / "nao.txt")});
+    REQUIRE((missing.exitCode == 1 && missing.lines.size() == 1));
+    REQUIRE(missing.lines[0] == "erro: Nao foi possivel abrir nao.txt");
+}
+#else
+// A store build has no tools: --exec is not an option there.
+TEST_CASE("testParseExecOptions") {
+    REQUIRE(parse({"--exec", "state"}).error == "Opcao desconhecida: --exec");
+    REQUIRE(commandLineUsage().find("--exec") == std::string_view::npos);
+}
+#endif
 } // namespace

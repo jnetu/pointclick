@@ -21,6 +21,11 @@ fuzz dos parsers como target opcional. **A CI foi escrita e conferida comando a 
 macOS, mas ainda não rodou no GitHub Actions**: Linux, Windows/MSVC e o próprio workflow seguem
 sem prova (seção 3.3).
 
+**Atualização de 13/11/2026:** F2 (comandos de sessão no editor) foi concluído junto com o
+`CommandCatalog` da seção 2.1 e com o modo headless `--exec`/`--exec-file`, sobre `bb818fb`, e
+passou para a seção 3.1. O `ctest` tem 13 testes (9 na build sem ferramentas): debug 13/13,
+ASan + UBSan 13/13, loja 9/9, sem avisos do compilador.
+
 Este projeto é a **engine**; história, personagens e música ficam nos jogos construídos sobre
 ela. Aqui só entram mecânicas e *playgrounds* pequenos para testá-las. As listas abaixo seguem
 esse recorte.
@@ -82,7 +87,7 @@ mexer em tantos arquivos"; nada disso mudou desde a revisão anterior):
 | Gatilho novo (`look`, `talk`, `on_enter`) | enum `InteractionTriggerKind`, `InteractionTrigger::matches`/`wildcardLevel`, `if/else` em `InteractionFiles::parse` ([linhas 62-78](../src/content/InteractionFiles.cpp)) e em `save`, método novo em `Game` | `TriggerCatalog` no modelo do `ActionCatalog` (palavra-chave + assinatura tipada) |
 | Campo novo de objeto (`name`, `approach`, `baseline`) | cadeia de `if` em `RoomFiles::load` ([linhas 147-162](../src/content/RoomFiles.cpp)), escrita manual em `RoomFiles::save`, `Room::validationError`, editor | `ObjectFieldCatalog` (chave, leitura, escrita, validação), como `RoomParameters` |
 | Campo novo de clip (foi o caso do `flip_x`) | `SpriteClip`, cadeia de `if` em `SpriteFields::parse`, lista manual em `SpriteFields::write`, tabela do `GAME_DESIGN.md` | mesma tabela de campos, compartilhada com o catálogo de objeto |
-| Comando novo do editor | cadeia de `if` em `DebugEditor::submit` ([linhas 150-244](../src/debug/DebugEditor.cpp)) + texto de ajuda fixo em `DebugOverlay.cpp` | `CommandCatalog` (nome, uso, função); `help` e a ajuda do painel saem dele |
+| Comando novo do editor | ✅ resolvido no F2: uma entrada + uma função em `kCommands` ([debug/CommandCatalog.cpp](../src/debug/CommandCatalog.cpp)); `DebugEditor::submit` só repassa a linha ao `CommandConsole` | `CommandCatalog` (nome, uso, descrição, função) ✅; `help` e a lista do painel saem dele, e o `--exec` usa o mesmo catálogo |
 | UI de gameplay nova (inventário, menu) | `Renderer::render(..., const DialogueMenu*)` ganha um parâmetro por UI, mais `Application` | registro de desenhistas de UI no `Renderer` (como `RenderOverlay`), ordenados por camada |
 | Campo novo no save | `SessionState`, `SessionSnapshot` (+ `validationError`, `snapshot`, `restore`), `SaveFiles::parse` e `serialize` | tabela de campos do save (chave → ler/gravar) ou, no mínimo, um teste que falha quando um campo do snapshot não é serializado |
 | Ator além do player | `Room` carrega `playerAnimations`, `playerBaseSize`, velocidades e `playerStart` | definição `Actor` própria (M7) |
@@ -181,6 +186,7 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 | D11 | `--no-save` ainda mexia no disco (save recusado virava `.bad`) | `SaveFiles::resume` recebe `RefusedSave` (`quarantine` ou `keep`), sem valor padrão; `Application::resumeSavedGame` passa `keep` com `--no-save` e usa o mesmo valor na quarentena que ele próprio faz; o log diz o que aconteceu com o arquivo | `testBadSaveFiles` em `GameTests.cpp` (os dois modos: arquivo intacto byte a byte e sem `.bad` com `keep`; renomeado com `quarantine`); executável headless nos dois modos |
 | D12 | Erros de sala sem linha (`Room::validationError` só era conferido no fim de `RoomFiles::load`) | `Room::validationIssue` devolve `RoomValidationIssue` (mensagem, sujeito sala/spawn/objeto, posição, campo) e continua sendo a única fonte das regras; `validationError()` é a mensagem dela. `RoomFiles::load` guarda a linha de cada cabeçalho `[object]`/`[spawn]` e de cada chave e prefixa `Linha N:` com a chave que alimentou o erro (`bounds`, `collision`, `animation.initial`, `feet`) ou, sem ela, o cabeçalho; ID inválido ou repetido é recusado no próprio cabeçalho; `Spawn sem feet` também ganhou a linha. Textos iguais, sem chave nova. Erros da sala como um todo continuam sem linha | `testRoomObjectErrorsCarryLines` e os casos de `[spawn]` em `testRoomSpawnFilesAndTransitions` (`EditorTests.cpp`) |
 | F1 | Opções `--new-game`, `--no-save`, `--room <id> [spawn]`, `--check` | `core/CommandLine` (sem SDL) + `content/ContentCheck` | `CommandLineTests.cpp`, `pointclick_check_*` |
+| F2 | Sem comandos de sessão no editor: a regra `[use_item brass_key red_box]` dos assets não podia ser disparada no jogo (não há UI de inventário), e cada comando novo exigia mexer na cadeia de `if` de `DebugEditor::submit` e no texto fixo de `DebugOverlay.cpp` | **`CommandCatalog`** (`debug/CommandCatalog.*`, 2.1): `CommandDescriptor{nome, uso, descrição, função}`; os 12 comandos antigos migraram sem mudar comportamento nem texto de erro (o "Use: show route\|diagnostics\|hint 0/1" agora sai de `kViewSwitches`); `help` (lista + uma linha "uso -- descrição" por comando), `help <comando>` e a lista do painel saem da tabela. **`CommandConsole`** (`debug/CommandConsole.*`) guarda o estado das ferramentas (biblioteca, recarga de arte, `undo`/`reset`, `DebugViews`, sala do `newgame`) e executa uma linha → `CommandResult{ok, output}`, sem UI; o `DebugEditor` virou só entrada e hit-test. **Comandos de sessão**, todos por `Game::changeSession` ou por intenção do `Game`: `flag <id> <n>` (recusa fora de ±1.000.000.000, sem saturar em silêncio; `0` apaga), `give`/`take <item>`, `showobj`/`hideobj <sala.objeto\|objeto>` (nomes espelham `show_object`/`hide_object`, porque `show` já é das visões; outra sala é conferida no arquivo), `use <item> <obj>` (`Game::useItemOnObject`, curingas incluídos), `goto <sala> [spawn]` (`Game::requestRoomChange` → `RoomChangeRequested`, o caminho do `change_room`), `newgame` (`Game::startNewGame`: cancela sequência e diálogo, zera a sessão e pede a sala inicial, `first` ou a do `--room`), `state` (sala, flags e overrides ordenados, itens na ordem do inventário, escolhas de diálogo). **Headless:** `--exec "<comando>"` e `--exec-file <arquivo>` (repetíveis, em ordem; parsing em `core/CommandLine`, só com `POINTCLICK_TOOLS`) rodam em `debug/CommandScript` um jogo novo que nunca lê nem grava o save, assentam a simulação a 60 Hz após cada comando, imprimem `> comando`, resposta (`erro: ` nas falhas), `fala:` e `sala:`, e saem com 1 se algum comando falhar. A carga de sala de um `RoomChangeRequested` virou `enterRoom` (`content/RoomLibrary`), usada pelo `Application` e pelo headless. Formatos e save (versão 3) não mudaram | `testCommandCatalogHelp`, `testPanelTextRows`, `testFlagCommand`, `testItemCommands`, `testObjectVisibilityCommands`, `testUseCommand`, `testGotoCommandKeepsSession`, `testGotoCommandSpawn`, `testNewGameCommand`, `testStateCommand` (`EditorTests.cpp`); `testNewGameAndRoomRequests` (`GameTests.cpp`, roda também na loja); `testParseExecOptions`, `testExecUsesBrassKeyOnShippedRedBox`, `testExecReportsFailures`, `testExecFile` (`CommandLineTests.cpp`); `pointclick_exec_assets`, `pointclick_exec_assets_report` e `pointclick_exec_failure` no `ctest`; binário da loja sem nenhum símbolo de `debug/` e recusando `--exec` |
 | F4 | Regras curinga (`[interact *]`, `[use_item * obj]`, `[use_item item *]`, `[use_item * *]`) | ordem fixa por especificidade em `findMatchingRule` | `testWildcardRules`, round-trip em `EditorTests.cpp` |
 | F5 | Contadores: `add_flag`, `flag_at_least`, `flag_equals` | três entradas no catálogo + `ArgType::integer` | `testFlagCounters`; limite no C13 |
 | F6 | `face <direção>` | `ScriptHost::facePlayer` + `ArgType::facing` | `testFaceDirection` |
@@ -191,15 +197,16 @@ Todos conferidos no código nesta revisão; "teste" é o teste de regressão que
 
 ### 3.2 Estado dos testes
 
-1.319 `REQUIRE` em 62 `TEST_CASE` do doctest, cinco executáveis (`pointclick_tests` 29 casos,
-`pointclick_sprite_tests` 8, `pointclick_text_tests` 7, `pointclick_cli_tests` 4,
-`pointclick_editor_tests` 14), mais cinco testes de linha de comando/camadas no `ctest`. Uma falha
-nomeia o caso, o arquivo e a linha e os outros casos continuam; cada caso roda sozinho
-(`--test-case=`). Das 1.319 verificações, 234 têm `&&`/`||` e ficam entre parênteses duplos: o
-relatório delas mostra a expressão, não os valores dos dois lados. Os laços de pixels dos testes
-gráficos passam por `REQUIRE` (cerca de 21 milhões de verificações por execução), o que levou o
-`ctest` de debug de ~0,8 s para ~3 s (15 s sob ASan). Nenhum teste **joga** os assets reais:
-`pointclick_check_assets` só prova que eles carregam (F3).
+Cerca de 1.500 `REQUIRE` em 76 `TEST_CASE` do doctest, cinco executáveis (`pointclick_tests` 30
+casos, `pointclick_sprite_tests` 8, `pointclick_text_tests` 7, `pointclick_cli_tests` 8,
+`pointclick_editor_tests` 23), mais oito testes de linha de comando/camadas no `ctest` (os três
+`pointclick_exec_*` só com ferramentas). Uma falha nomeia o caso, o arquivo e a linha e os outros
+casos continuam; cada caso roda sozinho (`--test-case=`). Na contagem de 11/11 (1.319 verificações,
+antes do F2), 234 tinham `&&`/`||` e ficam entre parênteses duplos: o relatório delas mostra a
+expressão, não os valores dos dois lados. Os laços de pixels dos testes gráficos passam por
+`REQUIRE` (cerca de 21 milhões de verificações por execução), o que levou o `ctest` de debug de
+~0,8 s para ~3 s (15 s sob ASan). Nenhum teste **joga** os assets reais: `pointclick_check_assets`
+só prova que eles carregam (F3).
 
 ### 3.3 Verificações em aberto dos itens concluídos
 
@@ -229,6 +236,16 @@ Tudo aqui depende de uma janela com GPU, de outra plataforma ou de um asset que 
 - **`set_animation`** (C4) numa janela real e num playground com porta: os assets ainda não têm
   objeto com clip (F3).
 - **Fuzz dos parsers** (M17): roda à mão no macOS; não está na CI nem em outro compilador.
+- **Comandos de sessão** (F2): conferidos numa janela real (macOS, Metal) em 13/11: painel com
+  `help` e `state`, `goto gallery` e `newgame` passando por `Application::processGameEvents`
+  (sala trocada, progresso mantido / zerado, `red_box` sólida de novo) e `use brass_key red_box`
+  rodando a regra pelo loop do jogo. O teste achou e corrigiu o status cortado em silêncio
+  (`wrapPanelText`, `testPanelTextRows`). `newgame` com o autosave ligado também foi conferido
+  (save real copiado antes e restaurado byte a byte depois): retomando uma partida na `gallery`, o
+  `newgame` regravou o `save.slot` no `RoomEntered` com `room = first`, os pés no início e nenhuma
+  flag ou item. Falta: o `undo`/`reset` depois de um `goto` (continuam apontando para a sala de quando o editor
+  abriu, como depois de um `load`). O relatório do `--exec` sai em UTF-8 (falas com acento): no
+  console do Windows depende da página de código.
 
 ---
 
@@ -244,24 +261,19 @@ Nenhuma em aberto (D12 foi concluído; seção 3.1).
 
 ### 4.3 Features pequenas de alto valor
 
-- **F2 — Comandos de sessão no editor:** `flag <id> <n>`, `give`/`take <item>`,
-  `show`/`hide <obj>`, `use <item> <obj>`, `goto <sala> [spawn]`, `newgame`, `state` (lista
-  flags, itens e overrides). Sem isso a regra `[use_item brass_key red_box]` dos assets **não
-  pode ser disparada no jogo**, porque não existe UI de inventário. `Game::changeSession` (D3)
-  já é a porta de entrada. Fazer junto com o `CommandCatalog` (2.1) para o `help` sair da
-  tabela. Atenção ao nome: `show` já é o comando das visões de debug. *1–2 dias.*
 - **F3 — Playgrounds por mecânica + teste de percurso:** os assets atuais não exercitam em jogo
-  real `change_room`, `[spawn]`, câmera (as duas salas têm 1280 de largura), sprites/animação
-  de objeto, `walk_to`, `wait`, `wait_animation`, nem nada do que entrou depois: regras curinga,
-  contadores, `face` e `flip_x`. Criar salas pequenas (seção 8) e um teste headless que carrega
-  os assets e joga cada sala com uma lista de cliques até um estado esperado. Fecha também
-  metade da lista 3.3. *2–3 dias.*
+  real `change_room`, `[spawn]`, câmera (as duas salas têm 1280 de largura), sprites/animação de
+  objeto, `walk_to`, `wait`, `wait_animation`, nem nada do que entrou depois: regras curinga,
+  contadores, `face` e `flip_x`. Criar salas pequenas (seção 8) e um teste headless que carrega os
+  assets e joga cada sala com uma lista de cliques até um estado esperado (o `--exec` do F2 já
+  monta estados e confere com `state`; falta um comando de clique/interação para jogar o percurso).
+  Fecha também metade da lista 3.3. *2–3 dias.*
 
 ### 4.4 Ordem sugerida
 
 1. Empurrar o M17 e olhar a primeira execução da CI: é o que fecha (ou abre) os riscos de
    Windows/MSVC e Linux da lista 3.3. Custa minutos e vale para tudo o que vier depois.
-2. F2 com o `CommandCatalog`, porque destrava testar à mão o que já existe.
+2. ~~F2 com o `CommandCatalog`~~ ✅ (seção 3.1).
 3. F3, para as mecânicas prontas terem prova em jogo real; o teste de percurso entra na CI sem
    trabalho extra, porque ela roda o `ctest` (F8 já avisa da arte ausente e C4 já dá à sala
    `door` o estado persistente, com o save na versão 3).
@@ -400,7 +412,7 @@ M3–M6 (o núcleo de um point & click), depois o resto.
 M1 texto ✅ ────────────────┬─► M3 hover/verbos ─► M4 inventário ─► M12 menus
 D1 flags de debug ✅ ───────┤                 └─► M13 localização
 M2 fundo/camadas/hotspots ──┘
-D3 ✅ + F2 (comandos de sessão) ─► F3 playgrounds + teste de percurso ─► CI (M17 ✅ parcial: falta rodar)
+D3 ✅ + F2 ✅ (comandos de sessão, --exec) ─► F3 playgrounds + teste de percurso ─► CI (M17 ✅ parcial: falta rodar)
 F8 (aviso de arte no --check) ✅ ───────────────────────────────────────┘
 C4 (estado persistente de objeto) ✅ ─► M15 save
 C13 (limite dos contadores) ✅ ─► add_flag em laço já não estoura o contador
@@ -421,4 +433,4 @@ Uma sala pequena por mecânica, com as regras mínimas, coberta pelo teste de pe
 | `lever` | sequência longa: `walk_to`, `face`, `wait`, `say`, modo cutscene, pular fala |
 | `maze` | obstáculos densos, destino inalcançável, custo de rota (M14) |
 | `talk` | diálogo com `once`, `goto`, condições, `change_room` dentro da conversa |
-| `items` | pegar, usar item em objeto (F2 até existir inventário), regra curinga (F4), contadores (F5, C13) |
+| `items` | pegar, usar item em objeto (`use` do F2 ✅ até existir inventário), regra curinga (F4), contadores (F5, C13) |

@@ -191,6 +191,23 @@ void Game::changeSession(const std::function<void(SessionState&)>& change) {
     publishCutsceneChange();
 }
 
+void Game::requestRoomChange(std::string roomId, std::string spawnId) {
+    emit(RoomChangeRequested{std::move(roomId), std::move(spawnId)});
+}
+
+void Game::startNewGame(std::string roomId, std::string spawnId) {
+    script_.cancel();
+    dialogue_.cancel();
+    scriptRoomTarget_.reset();
+    scene_.stopPlayer();
+    scene_.speech().hide();
+    // Through changeSession: an object the old progress had unlocked blocks the floor again.
+    changeSession([](SessionState& session) { session.reset(); });
+    // Loading the start room with its spawn also rebuilds the object clips from the empty
+    // progress, even when it is the room already in play.
+    requestRoomChange(std::move(roomId), std::move(spawnId));
+}
+
 void Game::publishCutsceneChange() {
     const bool now = inCutscene();
     if (now == wasInCutscene_) return;

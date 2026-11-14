@@ -41,7 +41,10 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Player` | Posição atual/anterior e execução dos pontos da rota |
 | `game/Navigation` | Grade dinâmica por sala, obstáculos, A* e simplificação segura das rotas; destino inalcançável = um flood-fill + um A* |
 | `game/StringMap` | Mapa por `std::string` com hash transparente (consulta por `string_view` sem alocar) |
-| `debug/DebugEditor` | Ferramenta opcional (`POINTCLICK_ENABLE_TOOLS`): `ToolInputConsumer` que reconhece DEBUG/F1/Select, faz o hit-test do painel, processa comandos e gerencia edição/undo |
+| `debug/DebugEditor` | Ferramenta opcional (`POINTCLICK_ENABLE_TOOLS`): `ToolInputConsumer` que reconhece DEBUG/F1/Select, faz o hit-test do painel, ajusta parâmetros pelas setas e entrega a linha digitada ao `CommandConsole` (a resposta vira o status) |
+| `debug/CommandCatalog` | Catálogo dos comandos do editor e do `--exec` (`CommandDescriptor`: nome, uso, descrição, função). `help`, a lista do painel e o "Use:" dos comandos novos saem daqui |
+| `debug/CommandConsole` | Lado de comando das ferramentas, sem entrada nem desenho: estado compartilhado (biblioteca de salas, recarga de arte, pontos de `undo`/`reset`, `DebugViews`, sala do `newgame`) e `execute(linha, game)` → `CommandResult{ok, output}` |
+| `debug/CommandScript` | Execução headless (`--exec`/`--exec-file`): o mesmo console sobre um jogo novo, assentando a simulação a 60 Hz depois de cada comando e carregando as salas pedidas por `RoomChangeRequested` com `enterRoom` |
 | `debug/DebugOverlay` | `RenderOverlay` da ferramenta: com o editor ativo, guias de objetos, rota e cruz de destino, painel técnico e painel do editor (`DebugEditor::panelRect()`); fechado, só a dica de como abrir. Cada visão liga/desliga por `DebugViews` (`show <visão> <0\|1>`) |
 | `debug/DiagnosticsOverlay` | Textos técnicos de posição, sala, câmera e viewport fixa, desenhados pelo `DebugOverlay` |
 | `input/InputSystem` | Traduz mouse/teclado, toque (sem duplicação sintética), gamepad (hotplug, `moveAxis` com *deadzone* e cursor virtual) e ciclo de vida |
@@ -131,6 +134,24 @@ teleportar o player, a câmera faz *snap* imediato ao alvo; em edições ao vivo
 preserva a continuidade respeitando os novos limites. O render usa posições interpoladas
 tanto para o `Player` quanto para a `Camera`.
 
+Comandos do editor: Enter → `DebugEditor::submit` → `CommandConsole::execute` → entrada do
+`CommandCatalog` pelo verbo. O `DebugEditor` não conhece nenhum comando: comando novo é uma
+entrada + uma função em `debug/CommandCatalog.cpp`, e o `help` e a lista do painel aparecem
+sozinhos. Comandos que mudam a definição (`set`, `move`, `load`, `undo`...) passam por
+`CommandConsole::commit` → `Game::applyRoom`; comandos que mudam o progresso (`flag`, `give`,
+`take`, `showobj`, `hideobj`) passam por `Game::changeSession`, e os que pedem algo ao jogo usam
+as intenções do `Game` (`use` → `useItemOnObject`; `goto` → `requestRoomChange`; `newgame` →
+`startNewGame`). `goto` e `newgame` não carregam a sala: emitem `RoomChangeRequested`, a mesma
+porta do `change_room`, e quem carrega é `Application::processGameEvents` (ou o
+`CommandScript`, sem janela), pela mesma função `enterRoom` de `content/RoomLibrary`. Nenhum
+deles devolve `SessionState&` mutável. O `--exec` (`debug/CommandScript`) usa o mesmo
+`CommandConsole`; depois de cada comando ele roda `Game::tick` em passos de 1/60 s até o player
+parar e nenhuma sequência rodar (no máximo 300 s simulados), e relata falas (`LineSpoken`) e
+salas (`RoomEntered`). No painel a resposta ocupa até 5 linhas de 60 colunas (`wrapPanelText`
+em `debug/DebugOverlay`); o que não cabe termina em "...", e o texto inteiro continua no
+`--exec`. A build de loja não tem nada disso: `--exec` nem é opção ali
+(`POINTCLICK_TOOLS` também vale para `pointclick_cli`).
+
 Texto → `InputRouter` → `DebugEditor::onTextInput` → ativação por DEBUG →
 `ViewportUiConsumer::onTextInput`. O mundo não recebe texto livre: o que ninguém
 consome é descartado, então digitar nunca vira fala nem atrasa uma cutscene. Builds
@@ -219,7 +240,8 @@ da ligação entre elas:
   pelo adaptador `Game::Host` (`ScriptHost`).
 
 Para dentro, o `Game` recebe intenções (`onClick`, `useItemOnObject`, `startDialogue`,
-`chooseDialogueOption`, `tick`). Para fora, emite `GameEvent` (`std::variant`) numa fila
+`chooseDialogueOption`, `tick`, e, das ferramentas, `requestRoomChange` e `startNewGame`, que
+saem como `RoomChangeRequested`). Para fora, emite `GameEvent` (`std::variant`) numa fila
 em ordem. `Application` esvazia a fila com `drainEvents(buffer)` (troca de vetores, o
 buffer é reaproveitado) e encaminha cada evento. Sistemas novos (áudio, fade de transição,
 autosave, legendas) assinam ali, sem o domínio conhecê-los. Não crie campo + `consumeX()`
@@ -228,7 +250,7 @@ na fachada; crie um tipo de evento em `game/GameEvent.hpp` e emita no `Game`.
 | Evento | Quando |
 | --- | --- |
 | `RoomEntered{roomId, spawnId}` | uma carga com spawn foi aplicada (`spawnId` vazio = `playerStart`) (`loadRoom`/`applyRoom(..., true, ...)`); edições ao vivo não emitem |
-| `RoomChangeRequested{roomId, spawnId}` | uma sequência com `change_room` terminou; é descartado se outra sala entrar antes de a fila ser esvaziada |
+| `RoomChangeRequested{roomId, spawnId}` | uma sequência com `change_room` terminou, ou uma ferramenta pediu (`goto`, `newgame`); é descartado se outra sala entrar antes de a fila ser esvaziada |
 | `LineSpoken{text}` | um `say` começou |
 | `CutsceneStarted` / `CutsceneEnded` | `inCutscene()` mudou |
 
@@ -489,7 +511,10 @@ coleta de itens, diálogos com escolhas condicionais (`once`, `goto`, retomada d
 menu por clique/setas/gamepad e round-trip do `.dlg`), puzzles/NPCs condicionais com desbloqueio dinâmico de `Navigation`,
 save/load (round-trip determinístico, retomada do puzzle da chave, arquivos ruins com linha,
 quarentena `.bad`, escrita atômica e autosave uma vez por ida ao background), persistência de `SessionState` entre salas e durante edições do `DebugEditor` (`set`,
-`move`, `undo`, `reset`), parser/serialização/validação por linha de `.rules`,
+`move`, `undo`, `reset`), o catálogo de comandos (todo comando no `help`, com uso e descrição) e
+cada comando de sessão com seus erros (`flag` no limite do C13, `give`/`take`, `showobj`/`hideobj`,
+`use` disparando `[use_item brass_key red_box]`, `goto` mantendo a sessão, `newgame` zerando,
+`state` ordenado), o `--exec`/`--exec-file` sem janela (relatório e código de saída), parser/serialização/validação por linha de `.rules`,
 configurações inválidas, entrada multiplataforma e independência de resolução (720p,
 1080p, 2K, 4K e Ultrawide). Os testes de sprites cobrem cortes, animação, seleção de
 direção, persistência e imagem de substituição. Os testes gráficos usam o driver

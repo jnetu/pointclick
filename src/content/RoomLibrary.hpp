@@ -11,6 +11,8 @@
 #include <string>
 #include <string_view>
 
+class Game;
+
 // A room ready to apply: definition plus its optional .rules and .dlg companions, validated
 // against each other (rule objects, start_dialogue targets).
 struct RoomBundle {
@@ -63,3 +65,9 @@ private:
     std::filesystem::path roomsDirectory_;
     AnimationSet playerArt_;
 };
+
+// Enters a loaded bundle in a running game: the room at spawnId (empty = playerStart), then its
+// rules and dialogues. The answer to a RoomChangeRequested, shared by Application and the
+// headless command runner (debug/CommandScript).
+[[nodiscard]] bool enterRoom(Game& game, RoomBundle bundle, std::string_view spawnId,
+                             std::string& error);

@@ -87,6 +87,29 @@ tocados pelo `save`. Para definir onde ele nasce, edite `player.start_x`
 e `player.start_y`. Use ponto como separador decimal. Os nomes de arquivos
 aceitam letras, números, `_` e `-`, com a extensão `.room`.
 
+Os comandos acima mudam a **definição** da sala. Os de baixo mudam o **progresso** da partida
+(`SessionState`: flags, inventário, objetos, sala atual), o mesmo que as regras dos `.rules`
+mudam, e servem para testar um puzzle sem jogá-lo do começo nem ter UI de inventário. Eles
+passam pela mesma porta das regras (`Game::changeSession`): ocultar ou destravar um objeto
+reconstrói a navegação na hora.
+
+| Comando | Resultado |
+| --- | --- |
+| `flag red_box_unlocked 1` | Define a flag/contador (`0` apaga). Aceita de `-1000000000` a `1000000000`, o mesmo limite das regras; fora disso é recusado sem mudar nada |
+| `give brass_key` / `take brass_key` | Põe/tira o item do inventário (recusa item que já está / que não está lá) |
+| `hideobj red_box` / `showobj red_box` | Oculta/mostra um objeto da sala atual, como `hide_object`/`show_object` |
+| `hideobj gallery.plant` | O mesmo para um objeto de outra sala (`<sala>.<objeto>`, conferido no arquivo da sala) |
+| `use brass_key red_box` | Usa um item do inventário no objeto: o personagem anda até ele e roda a primeira regra `[use_item ...]` que servir, curingas incluídos. Recusado se o item não estiver no inventário, se o objeto estiver oculto ou durante uma sequência |
+| `goto gallery` / `goto gallery porta_esquerda` | Troca de sala exatamente como `change_room` (pelo `[spawn]`, se dado), mantendo todo o progresso |
+| `newgame` | Recomeça do zero: apaga o progresso, encerra sequência ou diálogo e volta à sala inicial (`first`, ou a do `--room`). Com o autosave ligado, o save passa a ser o do jogo novo |
+| `state` | Lista sala, flags (por nome), itens (na ordem do inventário), objetos alterados (por sala e objeto: `visible`, `solid`, `animation`) e escolhas de diálogo já feitas |
+| `help` / `help use` | Lista os comandos / mostra o uso de um |
+
+`show` continua sendo o comando das visões de debug; por isso os de objeto se chamam
+`showobj`/`hideobj` (como os efeitos `show_object`/`hide_object`). Os mesmos comandos rodam
+sem janela com `pointclick --exec "<comando>"` (ver o README), o que permite a um script ou
+agente montar um estado e conferir o resultado com `state`.
+
 ## Criar outra sala
 
 Copie `assets/rooms/first.room`, dê outro nome ao arquivo e altere `id`.

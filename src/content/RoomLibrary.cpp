@@ -4,6 +4,7 @@
 #include "content/DialogueFiles.hpp"
 #include "content/InteractionFiles.hpp"
 #include "content/TextFormat.hpp"
+#include "game/Game.hpp"
 
 #include <utility>
 
@@ -109,4 +110,10 @@ bool RoomLibrary::saveRoom(const std::string_view filename, const Room& room,
     named.id = roomIdFor(filename);
     return RoomFiles::save(roomsDirectory_ / std::filesystem::path(filename), named, error,
                            playerArt_.empty() ? nullptr : &playerArt_);
+}
+
+bool enterRoom(Game& game, RoomBundle bundle, const std::string_view spawnId, std::string& error) {
+    return game.applyRoom(std::move(bundle.room), true, error, spawnId)
+           && game.setInteractions(std::move(bundle.interactions), error)
+           && game.setDialogues(std::move(bundle.dialogues), error);
 }

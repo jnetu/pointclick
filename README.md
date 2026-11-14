@@ -33,6 +33,22 @@ save minha_sala.room
 load gallery.room
 ```
 
+e comandos que mexem no progresso da partida (sempre por `Game::changeSession`), para testar
+regras sem UI de inventário:
+
+```text
+give brass_key
+use brass_key red_box
+flag red_box_unlocked 1
+hideobj gallery.plant
+goto gallery
+state
+newgame
+```
+
+`help` lista todos os comandos; `help <comando>` mostra o uso. A lista completa, com o efeito de
+cada um, está no [guia de game design](docs/GAME_DESIGN.md#editar-durante-o-jogo).
+
 Os arquivos de sala ficam em [assets/rooms](assets/rooms). O argumento `--rooms`
 permite editar e salvar diretamente no projeto, sem recompilar. Alterações
 feitas durante o jogo persistem após fechar somente quando se usa `save`.
@@ -49,15 +65,47 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 | `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`). Um save recusado (corrompido ou de versão desconhecida) também fica onde está, sem virar `save.slot.bad`: o jogo avisa no log e começa do zero |
 | `--room <sala> [spawn]` | Começa um jogo **novo** em `<sala>.room`, no `[spawn]` indicado (sem ele: `player.start`). Não retoma o save; combine com `--no-save` para não sobrescrevê-lo |
 | `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Arte ausente (PNG, corte que não cabe na imagem, fonte) sai como aviso e não muda o código de saída. Só aceita `--rooms` |
+| `--exec <comando>` | Roda um comando do editor DEBUG sem janela (repetível; em ordem). Só em builds com ferramentas |
+| `--exec-file <arquivo>` | O mesmo, lendo um comando por linha (linhas vazias e começadas por `#` são ignoradas). Pode ser misturado com `--exec` |
 
 ```sh
 ./build/debug/pointclick --rooms assets/rooms --check
 ./build/debug/pointclick --rooms assets/rooms --no-save --room gallery
+./build/debug/pointclick --rooms assets/rooms --exec "give brass_key" --exec "use brass_key red_box" --exec state
 ```
 
 O `--check` imprime cada erro como `<arquivo>: Linha N: <motivo>` na saída de erro, um resumo
 na saída padrão, e sai com `0` (tudo válido) ou `1` (algum erro); serve a CI. Opção inválida
 sai com `2` e mostra o uso.
+
+`--exec`/`--exec-file` é o modo para agentes e scripts: começa um jogo **novo** em `first.room`
+(ou na `--room <sala> [spawn]`), **nunca lê nem grava o save** (`--new-game` e `--no-save` são
+aceitos e não mudam nada), roda os comandos com o mesmo catálogo do painel e imprime na saída
+padrão um relatório linha a linha: `> <comando>`, a resposta (com `erro: ` na frente quando o
+comando falha), as falas (`fala: ...`) e as salas em que entrou (`sala: ...`). Depois de cada
+comando o jogo anda em passos de 1/60 s, como no loop principal, até o player parar e nenhuma
+sequência rodar; assim `use` caminha até o objeto e a regra roda antes do próximo comando. Todos
+os comandos rodam mesmo depois de uma falha; a última linha é `N comando(s), M falha(s)` e o
+código de saída é `0` sem falhas e `1` com alguma (também se a sala inicial ou um arquivo de
+`--exec-file` não carregar). Com `--check` é recusado. `save` funciona aqui também e grava na
+pasta de `--rooms`.
+
+```text
+$ pointclick --rooms assets/rooms --exec "give brass_key" --exec "use brass_key red_box" --exec state
+sala: first
+> give brass_key
+Item recebido: brass_key
+> use brass_key red_box
+Usando brass_key em red_box
+fala: A chave destravou a caixa vermelha! O caminho está livre.
+> state
+sala: first
+flags: red_box_unlocked=1
+itens: -
+objetos: first.red_box solid=0
+escolhas: -
+3 comando(s), 0 falha(s)
+```
 
 Arte que o jogo consegue substituir não é erro: PNG ausente ou ilegível, corte de spritesheet
 que não cabe na imagem, clip sem arquivo e fonte ausente saem como
@@ -78,7 +126,8 @@ ctest --preset debug
 
 O `ctest` roda um teste por executável (`pointclick_tests`, `pointclick_sprite_tests`,
 `pointclick_text_tests`, `pointclick_cli_tests`, `pointclick_editor_tests`), mais o `--check` dos
-assets e a checagem de camadas. Os executáveis usam o [doctest](https://github.com/doctest/doctest)
+assets, o `--exec` nos assets (a chave destrava a caixa vermelha; um comando que falha sai com
+código ≠ 0) e a checagem de camadas. Os executáveis usam o [doctest](https://github.com/doctest/doctest)
 (baixado pelo CPM na versão fixada em `cmake/Dependencies.cmake`): cada função de teste é um
 `TEST_CASE`, uma falha diz o caso, o arquivo, a linha e os valores comparados, e os outros casos
 continuam rodando. Para escolher casos, chame o executável com as opções do doctest:

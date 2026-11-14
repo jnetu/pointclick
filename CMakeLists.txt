@@ -112,6 +112,9 @@ set(POINTCLICK_LAYER_TARGETS pointclick_game pointclick_content pointclick_input
 if(POINTCLICK_ENABLE_TOOLS)
     # Optional editor: another input consumer and another render overlay.
     add_library(pointclick_tools STATIC
+            src/debug/CommandCatalog.cpp
+            src/debug/CommandConsole.cpp
+            src/debug/CommandScript.cpp
             src/debug/DebugEditor.cpp
             src/debug/DebugOverlay.cpp
             src/debug/DiagnosticsOverlay.cpp)
@@ -123,6 +126,10 @@ endif()
 # Command-line parsing without SDL, so tests can link it apart from Application.
 add_library(pointclick_cli STATIC src/core/CommandLine.cpp)
 target_link_libraries(pointclick_cli PUBLIC pointclick_game)
+if(POINTCLICK_ENABLE_TOOLS)
+    # --exec / --exec-file are tool options: a store build neither parses nor documents them.
+    target_compile_definitions(pointclick_cli PUBLIC POINTCLICK_TOOLS=1)
+endif()
 
 add_executable(pointclick src/main.cpp src/core/Application.cpp)
 target_link_libraries(pointclick PRIVATE pointclick_cli)
@@ -163,7 +170,13 @@ if(BUILD_TESTING)
     add_executable(pointclick_text_tests tests/TextLayoutTests.cpp)
     target_link_libraries(pointclick_text_tests PRIVATE pointclick_ui)
     add_executable(pointclick_cli_tests tests/CommandLineTests.cpp)
-    target_link_libraries(pointclick_cli_tests PRIVATE pointclick_cli pointclick_content)
+    if(POINTCLICK_ENABLE_TOOLS)
+        # The --exec runner (debug/CommandScript) is tested with the options that start it;
+        # pointclick_tools brings content.
+        target_link_libraries(pointclick_cli_tests PRIVATE pointclick_cli pointclick_tools)
+    else()
+        target_link_libraries(pointclick_cli_tests PRIVATE pointclick_cli pointclick_content)
+    endif()
     target_compile_definitions(pointclick_cli_tests PRIVATE
             POINTCLICK_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
     set(POINTCLICK_TEST_TARGETS pointclick_tests pointclick_sprite_tests pointclick_text_tests
@@ -199,6 +212,21 @@ if(BUILD_TESTING)
             COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/missing_art/rooms --check)
     set_tests_properties(pointclick_check_missing_art_report PROPERTIES
             PASS_REGULAR_EXPRESSION "aviso: first.room: sprites/ghost.png: PNG ausente")
+    if(POINTCLICK_ENABLE_TOOLS)
+        # F2: --exec with no window on the shipped rooms. The brass key unlocks red_box (exit 0,
+        # and a second run for the text, since PASS_REGULAR_EXPRESSION ignores the exit code);
+        # a failing command exits non-zero.
+        set(POINTCLICK_EXEC_KEY_ARGS --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms
+                --exec "give brass_key" --exec "use brass_key red_box" --exec state)
+        add_test(NAME pointclick_exec_assets COMMAND pointclick ${POINTCLICK_EXEC_KEY_ARGS})
+        add_test(NAME pointclick_exec_assets_report COMMAND pointclick ${POINTCLICK_EXEC_KEY_ARGS})
+        set_tests_properties(pointclick_exec_assets_report PROPERTIES
+                PASS_REGULAR_EXPRESSION "flags: red_box_unlocked=1")
+        add_test(NAME pointclick_exec_failure
+                COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms
+                        --exec "use brass_key red_box")
+        set_tests_properties(pointclick_exec_failure PROPERTIES WILL_FAIL TRUE)
+    endif()
     add_test(NAME pointclick_layer_includes
             COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
                     -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckLayerIncludes.cmake)

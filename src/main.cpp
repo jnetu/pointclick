@@ -5,6 +5,10 @@
 #include "core/CommandLine.hpp"
 #include "graphics/FontLibrary.hpp"
 
+#if POINTCLICK_TOOLS
+#include "debug/CommandScript.hpp"
+#endif
+
 #include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_stdinc.h>
 
@@ -15,18 +19,24 @@
 #include <vector>
 
 namespace {
+// <base>/assets/rooms when --rooms is not given; empty (and a message) when SDL cannot say
+// where the executable is.
+std::filesystem::path roomsDirectoryOr(std::filesystem::path roomsDirectory) {
+    if (!roomsDirectory.empty()) return roomsDirectory;
+    const char* base = SDL_GetBasePath();
+    if (!base) {
+        std::fprintf(stderr, "Nao foi possivel localizar os assets: %s\n", SDL_GetError());
+        return {};
+    }
+    const std::u8string basePath(base, base + SDL_strlen(base));
+    return std::filesystem::path(basePath) / "assets" / "rooms";
+}
+
 // --check: no window, no SDL subsystem; errors on stderr as "<arquivo>: Linha N: ...".
 // Missing art is "aviso: <sala>: <arquivo>: ..." on stderr too: counted, never the exit code.
 int runContentCheck(std::filesystem::path roomsDirectory) {
-    if (roomsDirectory.empty()) {
-        const char* base = SDL_GetBasePath();
-        if (!base) {
-            std::fprintf(stderr, "Nao foi possivel localizar os assets: %s\n", SDL_GetError());
-            return 1;
-        }
-        const std::u8string basePath(base, base + SDL_strlen(base));
-        roomsDirectory = std::filesystem::path(basePath) / "assets" / "rooms";
-    }
+    roomsDirectory = roomsDirectoryOr(std::move(roomsDirectory));
+    if (roomsDirectory.empty()) return 1;
     const auto fonts = FontLibrary::files();
     const ContentCheckReport report = checkContent(roomsDirectory, fonts);
     for (const ContentProblem& warning : report.warnings) {
@@ -39,6 +49,21 @@ int runContentCheck(std::filesystem::path roomsDirectory) {
                 report.problems.size(), report.warnings.size());
     return report.ok() ? 0 : 1;
 }
+
+#if POINTCLICK_TOOLS
+// --exec / --exec-file: the DEBUG commands with no window (debug/CommandScript), one report
+// line per stdout line.
+int runCommands(const CommandLineOptions& options) {
+    const std::filesystem::path roomsDirectory = roomsDirectoryOr(options.roomsDirectory);
+    if (roomsDirectory.empty()) return 1;
+    std::vector<CommandSource> sources;
+    for (const ExecStep& step : options.exec) sources.push_back({step.command, step.file});
+    return runCommandScript(roomsDirectory, options.startRoom, options.startSpawn, sources,
+                            [](const std::string_view line) {
+                                std::printf("%.*s\n", static_cast<int>(line.size()), line.data());
+                            });
+}
+#endif
 } // namespace
 
 int main(int argc, char* argv[]) {
@@ -51,6 +76,9 @@ int main(int argc, char* argv[]) {
         return 2;
     }
     if (parsed.options->check) return runContentCheck(parsed.options->roomsDirectory);
+#if POINTCLICK_TOOLS
+    if (parsed.options->runsCommands()) return runCommands(*parsed.options);
+#endif
     Application application(std::move(*parsed.options));
     return application.run();
 }

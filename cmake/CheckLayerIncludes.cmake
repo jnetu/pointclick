@@ -29,7 +29,7 @@ foreach(layer game content input ui graphics debug)
 endforeach()
 
 # Authored definitions stay independent of the classes that simulate or keep progress.
-set(definition_files Room SceneObject SpriteClip RoomParameters PlayerClips Facing)
+set(definition_files Room RoomLayer SceneObject SpriteClip RoomParameters PlayerClips Facing)
 set(runtime_headers Player Scene Game Navigation Camera ScriptRunner SessionState)
 foreach(name IN LISTS definition_files)
     file(GLOB sources "${SOURCE_DIR}/src/game/${name}.hpp" "${SOURCE_DIR}/src/game/${name}.cpp")

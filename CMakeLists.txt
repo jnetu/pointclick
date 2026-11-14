@@ -57,6 +57,7 @@ add_library(pointclick_game STATIC
         src/game/ObjectAnimations.cpp
         src/game/Player.cpp
         src/game/Room.cpp
+        src/game/RoomLayer.cpp
         src/game/Scene.cpp
         src/game/ScriptRunner.cpp
         src/game/SessionState.cpp

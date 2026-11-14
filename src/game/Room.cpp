@@ -52,6 +52,12 @@ const RoomSpawn* Room::findSpawn(const std::string_view spawnId) const {
     return found == spawns.end() ? nullptr : &(*found);
 }
 
+const RoomLayer* Room::findLayer(const std::string_view layerId) const {
+    const auto found = std::find_if(layers.begin(), layers.end(),
+                                    [&](const RoomLayer& layer) { return layer.id == layerId; });
+    return found == layers.end() ? nullptr : &(*found);
+}
+
 std::optional<RoomSpawn> Room::entryPoint(const std::string_view spawnId) const {
     if (spawnId.empty()) return RoomSpawn{{}, playerStart, Facing::down};
     if (const RoomSpawn* spawn = findSpawn(spawnId)) return *spawn;

@@ -1395,6 +1395,87 @@ TEST_CASE("testCameraTargetFor") {
     REQUIRE(near(target.y, 0.0F));
 }
 
+// M2-04: where a layer lands on the screen is pure arithmetic (D6, D7), no window needed.
+TEST_CASE("testLayerRect") {
+    Room room;
+    room.width = 2560.0F;
+    room.height = 720.0F;
+    const SDL_FPoint start{0.0F, 0.0F};
+    const SDL_FPoint end{room.width - static_cast<float>(World::width), 0.0F}; // 1280
+
+    // Default size = the room; factor 1 moves with the world.
+    RoomLayer ground;
+    SDL_FRect rect = layerRect(ground, room, start);
+    REQUIRE((near(rect.x, 0.0F) && near(rect.y, 0.0F)));
+    REQUIRE((near(rect.w, 2560.0F) && near(rect.h, 720.0F)));
+    rect = layerRect(ground, room, end);
+    REQUIRE(near(rect.x, -1280.0F));
+
+    // Half factor: half of the camera shift, from the authored position.
+    RoomLayer hills;
+    hills.position = {100.0F, 40.0F};
+    hills.size = {1920.0F, 0.0F}; // 0 height = room height
+    hills.scrollFactor = {0.5F, 0.5F};
+    rect = layerRect(hills, room, start);
+    REQUIRE((near(rect.x, 100.0F) && near(rect.y, 40.0F)));
+    REQUIRE((near(rect.w, 1920.0F) && near(rect.h, 720.0F)));
+    rect = layerRect(hills, room, {1280.0F, 80.0F});
+    REQUIRE((near(rect.x, 100.0F - 640.0F) && near(rect.y, 0.0F)));
+
+    // Factor 0: fixed on the screen at any camera.
+    RoomLayer sky;
+    sky.size = {1280.0F, 720.0F};
+    sky.scrollFactor = {0.0F, 0.0F};
+    rect = layerRect(sky, room, end);
+    REQUIRE((near(rect.x, 0.0F) && near(rect.y, 0.0F)));
+    REQUIRE((near(rect.w, 1280.0F) && near(rect.h, 720.0F)));
+
+    // The room on the layer is only read for the default size; findLayer looks up by ID.
+    room.layers = {ground, sky};
+    room.layers[0].id = "ground";
+    room.layers[1].id = "sky";
+    REQUIRE(room.findLayer("sky") == &room.layers[1]);
+    REQUIRE(room.findLayer("hills") == nullptr);
+}
+
+TEST_CASE("testLayerCoversViewport") {
+    Room room;
+    room.width = 2560.0F;
+    room.height = 720.0F;
+
+    // The GAME_DESIGN example: factor 0.2 needs 1280 + 1280 * 0.2 = 1536 px.
+    RoomLayer sky;
+    sky.size = {1600.0F, 720.0F};
+    sky.scrollFactor = {0.2F, 0.0F};
+    REQUIRE(layerCoversViewport(sky, room));
+    sky.size.x = 1500.0F;
+    REQUIRE(!layerCoversViewport(sky, room));
+    sky.size.x = 1536.0F;
+    REQUIRE(layerCoversViewport(sky, room));
+
+    // A default-size layer with factor 1 always covers; one starting inside the screen does not.
+    RoomLayer ground;
+    REQUIRE(layerCoversViewport(ground, room));
+    ground.position.x = 10.0F;
+    REQUIRE(!layerCoversViewport(ground, room));
+
+    // Too short on the vertical axis, or a foreground running past its own end.
+    RoomLayer strip;
+    strip.size = {0.0F, 300.0F};
+    REQUIRE(!layerCoversViewport(strip, room));
+    RoomLayer foliage;
+    foliage.scrollFactor = {1.3F, 1.0F};
+    REQUIRE(!layerCoversViewport(foliage, room)); // 2560 - 1280 * 1.3 = 896 < 1280
+    foliage.size.x = 2944.0F;                     // 1280 + 1280 * 1.3
+    REQUIRE(layerCoversViewport(foliage, room));
+
+    // A room the size of the viewport has a single camera position.
+    Room small;
+    RoomLayer still;
+    still.scrollFactor = {0.0F, 0.0F};
+    REQUIRE(layerCoversViewport(still, small));
+}
+
 std::string readAll(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(in), {}};

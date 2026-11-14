@@ -3,6 +3,7 @@
 #include "game/SceneObject.hpp"
 #include "game/Animation.hpp"
 #include "game/Facing.hpp"
+#include "game/RoomLayer.hpp"
 #include "game/World.hpp"
 
 #include <SDL3/SDL_rect.h>
@@ -79,6 +80,8 @@ struct Room {
     float collisionPaddingX = 40.0F;
     float collisionPaddingY = 8.0F;
     std::vector<SceneObject> scenery;
+    // Painted images, drawn in file order within each plane (later = on top).
+    std::vector<RoomLayer> layers;
 
     [[nodiscard]] float scaleAt(float feetY) const;
     [[nodiscard]] float speedAt(float feetY) const;
@@ -88,6 +91,7 @@ struct Room {
     // Single lookup by stable ID; never address objects by vector position.
     [[nodiscard]] const SceneObject* findObject(std::string_view objectId) const;
     [[nodiscard]] const RoomSpawn* findSpawn(std::string_view spawnId) const;
+    [[nodiscard]] const RoomLayer* findLayer(std::string_view layerId) const;
     // The entry for change_room: empty id = playerStart facing down; unknown id = nullopt.
     [[nodiscard]] std::optional<RoomSpawn> entryPoint(std::string_view spawnId) const;
 

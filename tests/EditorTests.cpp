@@ -339,6 +339,7 @@ void requireSameRoom(const Room& a, const Room& b) {
     requireSameColor(a.playerOutlineColor, b.playerOutlineColor);
     REQUIRE(a.floorGuideFractions == b.floorGuideFractions);
     REQUIRE(a.spawns == b.spawns);
+    REQUIRE(a.layers == b.layers);
     REQUIRE(a.playerAnimations == b.playerAnimations);
     REQUIRE(a.scenery.size() == b.scenery.size());
     for (std::size_t index = 0; index < a.scenery.size(); ++index) {

@@ -24,6 +24,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `game/Room` | Dados da sala, validação, escala, velocidade e limites |
 | `game/SceneObject` | Identidade, desenho, tipo e base local de colisão |
 | `game/SpriteClip` | Definição de arquivo, corte, tempo e âncora visual de um sprite |
+| `game/RoomLayer` | Camada pintada da sala (`[layer]`, M2): imagem, plano `back`/`front`, posição, tamanho e `scroll_factor`; contas puras `layerRect` e `layerCoversViewport` |
 | `game/Animation` | Clips nomeados e reprodução por entidade |
 | `game/ObjectAnimations` | Estado de reprodução dos objetos, por ID, preservado nas edições |
 | `game/SessionState` | Progresso persistente da partida: flags/contadores, inventário e overrides por sala/objeto; `snapshot()`/`restore()` por valor (`SessionSnapshot`) para o save |
@@ -85,8 +86,8 @@ ferramenta se registra como `ToolInputConsumer` no `InputRouter` e como `RenderO
 `Renderer`. `pointclick_tests` linka só `content` + `game`, provando que o jogo roda sem
 renderização. O teste `pointclick_layer_includes` (`cmake/CheckLayerIncludes.cmake`) falha
 se uma pasta incluir uma camada proibida, se `game/` incluir SDL além de `SDL_rect.h` e
-`SDL_pixels.h`, ou se uma definição autorada de `game/` (`Room`, `SceneObject`, `SpriteClip`,
-`RoomParameters`, `PlayerClips`, `Facing`) incluir simulação ou sessão (`Player`, `Scene`,
+`SDL_pixels.h`, ou se uma definição autorada de `game/` (`Room`, `RoomLayer`, `SceneObject`,
+`SpriteClip`, `RoomParameters`, `PlayerClips`, `Facing`) incluir simulação ou sessão (`Player`, `Scene`,
 `Game`, `Navigation`, `Camera`, `ScriptRunner`, `SessionState`). Os nomes dos clips do player
 ficam em `game/PlayerClips.hpp` justamente para `Room` validar a sala sem conhecer `Player`.
 

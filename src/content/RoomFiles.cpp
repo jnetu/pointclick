@@ -8,7 +8,10 @@
 #include <locale>
 #include <map>
 #include <optional>
+#include <ostream>
 #include <sstream>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -30,6 +33,48 @@ bool parsePoint(const std::string& text, SDL_FPoint& point) {
     point = {values[0], values[1]};
     return true;
 }
+
+std::optional<LayerPlane> parsePlane(const std::string_view text) {
+    if (text == "back") return LayerPlane::back;
+    if (text == "front") return LayerPlane::front;
+    return std::nullopt;
+}
+
+// The keys of a [layer] block besides image.*; plain data, validated by Room::validationIssue.
+bool parseLayerField(RoomLayer& layer, const std::string& key, const std::string& value) {
+    if (key == "plane") {
+        const auto plane = parsePlane(value);
+        if (plane) layer.plane = *plane;
+        return plane.has_value();
+    }
+    if (key == "position") return parsePoint(value, layer.position);
+    if (key == "size") return parsePoint(value, layer.size);
+    if (key == "scroll_factor") return parsePoint(value, layer.scrollFactor);
+    if (key.starts_with("image.")) {
+        return SpriteFields::parse(layer.image, std::string_view(key).substr(6), value);
+    }
+    return false;
+}
+
+void writePoint(std::ostream& out, const std::string_view key, const SDL_FPoint point) {
+    out << key << " = " << number(point.x) << ", " << number(point.y) << '\n';
+}
+
+// Only the keys a designer changed from the defaults (D6: a full-room backdrop is image.file).
+void writeLayer(std::ostream& out, const RoomLayer& layer) {
+    const RoomLayer defaults;
+    out << "\n[layer " << layer.id << "]\n";
+    if (layer.plane != defaults.plane) out << "plane = front\n";
+    SpriteFields::write(out, "image.", layer.image, SpriteFields::ClipKeys::changed);
+    const auto same = [](const SDL_FPoint a, const SDL_FPoint b) {
+        return a.x == b.x && a.y == b.y;
+    };
+    if (!same(layer.position, defaults.position)) writePoint(out, "position", layer.position);
+    if (!same(layer.size, defaults.size)) writePoint(out, "size", layer.size);
+    if (!same(layer.scrollFactor, defaults.scrollFactor)) {
+        writePoint(out, "scroll_factor", layer.scrollFactor);
+    }
+}
 }
 
 RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
@@ -43,14 +88,16 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     room.id = pathToUtf8(path.stem());
     if (inheritedPlayerArt) room.playerAnimations = *inheritedPlayerArt;
     SceneObject* object = nullptr;
-    // Index, not pointer: spawns is a vector that grows with each [spawn] header.
+    // Index, not pointer: spawns and layers are vectors that grow with each header.
     std::optional<std::size_t> spawn;
+    std::optional<std::size_t> layer;
     std::string section = "room";
-    // Where each key and each [spawn]/[object] header was declared: Room::validationIssue stays
+    // Where each key and each [spawn]/[layer]/[object] header was declared: Room::validationIssue stays
     // the single source of the rules and this only turns its answer into a line number.
     std::map<std::string, std::size_t> keys;
     std::vector<std::size_t> spawnLines;
     std::vector<std::size_t> objectLines;
+    std::vector<std::size_t> layerLines;
     std::size_t lineNumber = 0;
     const auto failAt = [](const std::size_t line, const std::string& reason) -> RoomLoadResult {
         return {{}, "Linha " + std::to_string(line) + ": " + reason};
@@ -60,20 +107,41 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
         ++lineNumber;
         line = trim(line.substr(0, line.find('#')));
         if (line.empty()) continue;
-        if (line == "[room]") { object = nullptr; spawn.reset(); section = "room"; continue; }
+        if (line == "[room]") {
+            object = nullptr;
+            spawn.reset();
+            layer.reset();
+            section = "room";
+            continue;
+        }
         if (line.starts_with("[spawn ") && line.ends_with(']')) {
             const auto id = trim(line.substr(7, line.size() - 8));
             if (!validIdentifier(id) || room.findSpawn(id))
                 return fail(std::string(Room::spawnIdError));
             object = nullptr;
+            layer.reset();
             spawn = room.spawns.size();
             spawnLines.push_back(lineNumber);
             room.spawns.push_back({id, {}, Facing::down});
             section = "spawn." + id;
             continue;
         }
+        if (line.starts_with("[layer ") && line.ends_with(']')) {
+            const auto id = trim(line.substr(7, line.size() - 8));
+            if (!validIdentifier(id) || room.findLayer(id))
+                return fail(std::string(Room::layerIdError));
+            object = nullptr;
+            spawn.reset();
+            layer = room.layers.size();
+            layerLines.push_back(lineNumber);
+            room.layers.push_back({});
+            room.layers.back().id = id;
+            section = "layer." + id;
+            continue;
+        }
         if (line.starts_with("[object ") && line.ends_with(']')) {
             spawn.reset();
+            layer.reset();
             const auto id = trim(line.substr(8, line.size() - 9));
             if (!validIdentifier(id) || room.findObject(id))
                 return fail(std::string(Room::objectIdError));
@@ -103,6 +171,8 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
                 parsed = facing.has_value();
                 if (parsed) target.facing = *facing;
             }
+        } else if (layer) {
+            parsed = parseLayerField(room.layers[*layer], key, value);
         } else if (object) {
             if (const ObjectField* field = ObjectFields::find(key)) {
                 parsed = field->read(value, *object);
@@ -146,19 +216,22 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
     }
     if (const auto issue = room.validationIssue(); !issue.message.empty()) {
         using Subject = RoomValidationIssue::Subject;
-        // [layer] is not read yet (M2-06 maps its errors to lines); never index other blocks.
-        if (issue.subject == Subject::room || issue.subject == Subject::layer) {
-            return {{}, issue.message};
-        }
+        if (issue.subject == Subject::room) return {{}, issue.message};
         // The key that fed the error when the file has it; the block header otherwise.
-        const bool isSpawn = issue.subject == Subject::spawn;
-        const std::string block = isSpawn ? "spawn." + room.spawns[issue.index].id
-                                          : "object." + room.scenery[issue.index].id;
+        const auto [block, header] = [&]() -> std::pair<std::string, std::size_t> {
+            switch (issue.subject) {
+            case Subject::spawn:
+                return {"spawn." + room.spawns[issue.index].id, spawnLines[issue.index]};
+            case Subject::layer:
+                return {"layer." + room.layers[issue.index].id, layerLines[issue.index]};
+            case Subject::object:
+            case Subject::room:
+                break;
+            }
+            return {"object." + room.scenery[issue.index].id, objectLines[issue.index]};
+        }();
         const auto declared = keys.find(block + ":" + std::string(issue.field));
-        return failAt(declared != keys.end() ? declared->second
-                      : isSpawn              ? spawnLines[issue.index]
-                                             : objectLines[issue.index],
-                      issue.message);
+        return failAt(declared != keys.end() ? declared->second : header, issue.message);
     }
     return {std::move(room), {}};
 }
@@ -196,6 +269,8 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
         out << "\n[spawn " << entry.id << "]\nfeet = " << number(entry.feet.x) << ", "
             << number(entry.feet.y) << "\nfacing = " << facingName(entry.facing) << '\n';
     }
+    // Layers between the spawns and the objects, in file order (it is the drawing order).
+    for (const RoomLayer& entry : room.layers) writeLayer(out, entry);
     for (const auto& object : room.scenery) {
         out << "\n[object " << object.id << "]\n";
         ObjectFields::write(out, object);

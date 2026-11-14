@@ -53,27 +53,35 @@ bool SpriteFields::parse(SpriteClip& clip, const std::string_view field,
     return false;
 }
 
-void SpriteFields::write(std::ostream& out, const std::string_view prefix,
-                         const SpriteClip& clip) {
-    out << prefix << "file = " << clip.file << '\n';
-    out << prefix << "frame_width = " << clip.frameWidth << '\n';
-    out << prefix << "frame_height = " << clip.frameHeight << '\n';
-    out << prefix << "frames = " << clip.frames << '\n';
-    out << prefix << "columns = " << clip.columns << '\n';
-    out << prefix << "first_frame = " << clip.firstFrame << '\n';
-    out << prefix << "margin_x = " << clip.marginX << '\n';
-    out << prefix << "margin_y = " << clip.marginY << '\n';
-    out << prefix << "spacing_x = " << clip.spacingX << '\n';
-    out << prefix << "spacing_y = " << clip.spacingY << '\n';
-    out << prefix << "fps = " << TextFormat::number(clip.fps) << '\n';
-    out << prefix << "loop = " << (clip.loop ? 1 : 0) << '\n';
-    out << prefix << "pixelated = " << (clip.pixelated ? 1 : 0) << '\n';
+void SpriteFields::write(std::ostream& out, const std::string_view prefix, const SpriteClip& clip,
+                         const ClipKeys keys) {
+    const SpriteClip defaults;
+    // ClipKeys::all writes the key unconditionally (the historical layout of objects and player).
+    const auto put = [&](const std::string_view name, const auto& value, const bool isDefault) {
+        if (keys == ClipKeys::all || !isDefault) out << prefix << name << " = " << value << '\n';
+    };
+    const auto real = [&](const std::string_view name, const float value, const float fallback) {
+        put(name, TextFormat::number(value), value == fallback);
+    };
+    put("file", clip.file, clip.file == defaults.file);
+    put("frame_width", clip.frameWidth, clip.frameWidth == defaults.frameWidth);
+    put("frame_height", clip.frameHeight, clip.frameHeight == defaults.frameHeight);
+    put("frames", clip.frames, clip.frames == defaults.frames);
+    put("columns", clip.columns, clip.columns == defaults.columns);
+    put("first_frame", clip.firstFrame, clip.firstFrame == defaults.firstFrame);
+    put("margin_x", clip.marginX, clip.marginX == defaults.marginX);
+    put("margin_y", clip.marginY, clip.marginY == defaults.marginY);
+    put("spacing_x", clip.spacingX, clip.spacingX == defaults.spacingX);
+    put("spacing_y", clip.spacingY, clip.spacingY == defaults.spacingY);
+    real("fps", clip.fps, defaults.fps);
+    put("loop", clip.loop ? 1 : 0, clip.loop == defaults.loop);
+    put("pixelated", clip.pixelated ? 1 : 0, clip.pixelated == defaults.pixelated);
     // Written only when set, so files authored before flip_x existed save unchanged.
     if (clip.flipX) out << prefix << "flip_x = 1\n";
-    out << prefix << "display_width = " << TextFormat::number(clip.displayWidth) << '\n';
-    out << prefix << "display_height = " << TextFormat::number(clip.displayHeight) << '\n';
-    out << prefix << "offset_x = " << TextFormat::number(clip.offsetX) << '\n';
-    out << prefix << "offset_y = " << TextFormat::number(clip.offsetY) << '\n';
+    real("display_width", clip.displayWidth, defaults.displayWidth);
+    real("display_height", clip.displayHeight, defaults.displayHeight);
+    real("offset_x", clip.offsetX, defaults.offsetX);
+    real("offset_y", clip.offsetY, defaults.offsetY);
 }
 
 bool SpriteFields::parseNamed(AnimationSet& animations, const std::string_view key,

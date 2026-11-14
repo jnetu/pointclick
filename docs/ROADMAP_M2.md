@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-05 ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-06 ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -134,7 +134,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
-| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 2/7 |
+| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 3/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
@@ -188,7 +188,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   clip sem arquivo hoje). Novo `RoomValidationIssue::Subject::layer`. **Pronto quando:** cada regra
   tem mensagem própria e `field` ("image.file", "size", "scroll_factor"...). **Teste:**
   `testLayerValidation` em `tests/EditorTests.cpp`, um caso por regra.
-- [ ] **M2-06 · M · Arg. não — Leitura e gravação de `[layer]` no `.room`.**
+- [x] **M2-06 · M · Arg. não — Leitura e gravação de `[layer]` no `.room`.**
   `RoomFiles::load`: cabeçalho `[layer <id>]`, chaves `plane`, `position`, `size`,
   `scroll_factor` e `image.*` (reaproveita `SpriteFields::parse` com o prefixo); `layerLines`
   para o número de linha (`Linha N:`), ID repetido recusado no cabeçalho, chave repetida e chave

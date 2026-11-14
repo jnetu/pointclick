@@ -471,6 +471,154 @@ void requireSameRoom(const Room& a, const Room& b) {
     }
 }
 
+// M2-06: [layer <id>] in the .room. Every error carries "Linha N:" (the key at fault or the
+// header), and save writes the layers between spawns and objects with only non-default keys.
+TEST_CASE("testRoomLayerFiles") {
+    const TempDirectory testDirectory("pointclick-layer-files");
+    const std::filesystem::path& directory = testDirectory.path();
+    const auto write = [&](const std::string& name, const std::string& text) {
+        std::ofstream out(directory / name, std::ios::binary);
+        out << text;
+    };
+    const std::string room = "[room]\nroom.width = 2560\n";
+    const std::string layers = "[layer ground]\n"
+                               "image.file = cenario/ground.png\n"
+                               "\n"
+                               "[layer sky]\n"
+                               "plane = back\n"
+                               "image.file = cenario/sky.png\n"
+                               "image.pixelated = 0\n"
+                               "position = 0, 0\n"
+                               "size = 1600, 720\n"
+                               "scroll_factor = 0.2,0\n"
+                               "\n"
+                               "[layer foliage]\n"
+                               "plane = front\n"
+                               "image.file = cenario/foliage.png\n"
+                               "image.frame_width = 256\n"
+                               "image.frame_height = 128\n"
+                               "image.frames = 4\n"
+                               "position = -40, 500\n"
+                               "scroll_factor = 1.3, 1\n";
+    write("stage.room", room + "[spawn west]\nfeet = 100, 600\n\n" + layers
+                                + "\n[object pillar]\nbounds = 900, 240, 96, 300\n");
+
+    // Read: plane, position, size, scroll_factor (with or without a space after the comma)
+    // and image.* through the clip fields; defaults for every key left out.
+    const auto loaded = RoomFiles::load(directory / "stage.room", sharedPlayerArt());
+    INFO(loaded.error);
+    REQUIRE(loaded.room);
+    const Room& stage = *loaded.room;
+    REQUIRE(stage.layers.size() == 3);
+    const RoomLayer* ground = stage.findLayer("ground");
+    REQUIRE(ground == &stage.layers[0]);
+    REQUIRE(ground->plane == LayerPlane::back);
+    REQUIRE(ground->image.file == "cenario/ground.png");
+    REQUIRE((ground->size.x == 0.0F && ground->size.y == 0.0F));
+    REQUIRE((ground->scrollFactor.x == 1.0F && ground->scrollFactor.y == 1.0F));
+    const RoomLayer& sky = stage.layers[1];
+    REQUIRE(sky.id == "sky");
+    REQUIRE(!sky.image.pixelated);
+    REQUIRE((sky.size.x == 1600.0F && sky.size.y == 720.0F));
+    REQUIRE((sky.scrollFactor.x == 0.2F && sky.scrollFactor.y == 0.0F));
+    const RoomLayer& foliage = stage.layers[2];
+    REQUIRE(foliage.plane == LayerPlane::front);
+    REQUIRE((foliage.image.frameWidth == 256 && foliage.image.frames == 4));
+    REQUIRE((foliage.position.x == -40.0F && foliage.position.y == 500.0F));
+    REQUIRE((foliage.scrollFactor.x == 1.3F && foliage.scrollFactor.y == 1.0F));
+    // A layer and an object may share an ID; the object block still reads as before.
+    REQUIRE(stage.findObject("pillar"));
+
+    // Save: after the spawns, before the objects, file order kept, only non-default keys.
+    std::string error;
+    const auto savedPath = directory / "saved.room";
+    REQUIRE(RoomFiles::save(savedPath, stage, error, sharedPlayerArt()));
+    const auto saved = TextFormat::readFile(savedPath);
+    REQUIRE(saved.text);
+    const std::string expectedLayers = "\n[layer ground]\n"
+                                       "image.file = cenario/ground.png\n"
+                                       "\n[layer sky]\n"
+                                       "image.file = cenario/sky.png\n"
+                                       "image.pixelated = 0\n"
+                                       "size = 1600, 720\n"
+                                       "scroll_factor = 0.2, 0\n"
+                                       "\n[layer foliage]\n"
+                                       "plane = front\n"
+                                       "image.file = cenario/foliage.png\n"
+                                       "image.frame_width = 256\n"
+                                       "image.frame_height = 128\n"
+                                       "image.frames = 4\n"
+                                       "position = -40, 500\n"
+                                       "scroll_factor = 1.3, 1\n"
+                                       "\n[object pillar]\n";
+    REQUIRE(saved.text->find(expectedLayers) != std::string::npos);
+    REQUIRE(saved.text->find("[spawn west]") < saved.text->find("[layer ground]"));
+    const auto reloaded = RoomFiles::load(savedPath, sharedPlayerArt());
+    REQUIRE(reloaded.room);
+    requireSameRoom(stage, *reloaded.room);
+    // Saving again writes the same text.
+    REQUIRE(RoomFiles::save(savedPath, *reloaded.room, error, sharedPlayerArt()));
+    REQUIRE(TextFormat::readFile(savedPath).text == saved.text);
+    // The default layer is just a header.
+    {
+        Room plain = stage;
+        plain.layers = {RoomLayer{}};
+        plain.layers[0].id = "empty";
+        REQUIRE(RoomFiles::save(savedPath, plain, error, sharedPlayerArt()));
+        const auto text = TextFormat::readFile(savedPath);
+        REQUIRE(text.text->find("\n[layer empty]\n\n[object pillar]\n") != std::string::npos);
+    }
+
+    // Errors: each one with the line of the key at fault, or of the header.
+    const auto errorOf = [&](const std::string& text) {
+        write("bad_layer.room", text);
+        const auto result = RoomFiles::load(directory / "bad_layer.room", sharedPlayerArt());
+        REQUIRE(!result.room);
+        return result.error;
+    };
+    const std::string sky2 = room + "[layer sky]\nimage.file = cenario/sky.png\n"; // lines 3-4
+    // ID: invalid or repeated on the header itself.
+    REQUIRE(errorOf(room + "[layer ceu azul]\n") == "Linha 3: ID de camada invalido ou repetido");
+    REQUIRE(errorOf(sky2 + "[layer sky]\n") == "Linha 5: ID de camada invalido ou repetido");
+    // Repeated key and unknown key, as in the other blocks.
+    REQUIRE(errorOf(sky2 + "image.file = cenario/other.png\n")
+            == "Linha 5: Chave repetida: image.file");
+    REQUIRE(errorOf(sky2 + "depth = 3\n") == "Linha 5: Chave ou valor invalido: depth");
+    REQUIRE(errorOf(sky2 + "image.display_size = 3\n")
+            == "Linha 5: Chave ou valor invalido: image.display_size");
+    // plane: back or front only.
+    REQUIRE(errorOf(sky2 + "plane = middle\n") == "Linha 5: Chave ou valor invalido: plane");
+    // Points need exactly two finite numbers: a decimal comma reads as a third one.
+    REQUIRE(errorOf(sky2 + "scroll_factor = 0,2, 0\n")
+            == "Linha 5: Chave ou valor invalido: scroll_factor");
+    REQUIRE(errorOf(sky2 + "size = 1600\n") == "Linha 5: Chave ou valor invalido: size");
+    REQUIRE(errorOf(sky2 + "position = nan, 0\n") == "Linha 5: Chave ou valor invalido: position");
+    // Room::validationIssue: the line of the key named in its field.
+    REQUIRE(errorOf(sky2 + "position = 0, 0\nscroll_factor = 5, 1\n")
+            == "Linha 6: scroll_factor da camada fora de 0 a 4: sky");
+    REQUIRE(errorOf(sky2 + "size = 0, 720\n")
+            == "Linha 5: Tamanho invalido da camada (lados maiores que 0, ate 32768): sky");
+    REQUIRE(errorOf(room + "[layer sky]\nplane = front\nimage.file = ../sky.png\n")
+            == "Linha 5: Imagem da camada sky: Caminho de sprite invalido");
+    REQUIRE(errorOf(sky2 + "image.offset_y = 12\n")
+            == "Linha 5: Camada usa size e position, nao offset_y: sky");
+    // ...or of the header when the error has no single key (a half-declared cut).
+    REQUIRE(errorOf(sky2 + "image.frame_width = 64\n")
+            == "Linha 3: Imagem da camada sky: Tamanho dos quadros invalido");
+    // A second layer's error points at its own block.
+    REQUIRE(errorOf(sky2 + "\n[layer hills]\nsize = -1, 720\n")
+            == "Linha 7: Tamanho invalido da camada (lados maiores que 0, ate 32768): hills");
+    // Keys after a [layer] go back to the room when [room] reopens it.
+    write("reopen.room", sky2 + "[room]\nroom.height = 800\n");
+    const auto reopened = RoomFiles::load(directory / "reopen.room", sharedPlayerArt());
+    INFO(reopened.error);
+    REQUIRE(reopened.room);
+    REQUIRE(reopened.room->height == 800.0F);
+    // A layer without image.file loads (missing art is a warning, M2-10).
+    write("no_image.room", room + "[layer sky]\nsize = 1600, 720\n");
+    REQUIRE(RoomFiles::load(directory / "no_image.room", sharedPlayerArt()).room);
+}
+
 // M2-03: the object fields (bounds, collision, color, type, animation.initial) read and write
 // through one table. Every shipped room survives load + save as the same Room and as the exact
 // text the code wrote before the table (tests/fixtures/object_fields/<sala>.room). A room added

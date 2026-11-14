@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento (M2-01 feita) ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento (M2-01 e M2-02 feitas) ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -133,7 +133,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
-| F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 1/3 |
+| F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 2/3 |
 | F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 0/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
@@ -152,7 +152,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   Seção "Camadas, hotspots e profundidade" com o esboço da seção 4 e a lista de chaves, marcada
   "em implementação". **Toca:** `docs/GAME_DESIGN.md`. **Pronto quando:** as decisões D1–D11 estão
   contestadas ou aceitas por você; a seção vira a especificação que as tarefas seguintes cumprem.
-- [ ] **M2-02 · M · Arg. sim — Testes de caracterização do que vai mudar.**
+- [x] **M2-02 · M · Arg. sim — Testes de caracterização do que vai mudar.**
   Trava o comportamento de hoje antes de mexer: (a) um frame headless de uma sala sem camadas
   (pixel do centro da parede e do chão, linha de guia); (b) ordem de desenho e de picking de dois
   objetos sobrepostos e do player; (c) `interactionApproachPoint` de objeto não sólido. **Toca:**

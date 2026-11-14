@@ -1991,3 +1991,151 @@ TEST_CASE("testAutosavePolicy") {
     game.changeSession([](SessionState& session) { session.setFlag("no_meio"); });
     REQUIRE(!autosave.checkpoint(game));
 }
+
+// M2-02 (caracterização): trava a profundidade e o picking de hoje antes do `baseline` (M2 F3).
+// A ordem de desenho em si é privada ao SceneRenderer (std::stable_sort ascendente por depth(),
+// o player entra com feet.y); aqui fica o critério público que ela usa, e os pixels da ordem
+// ficam em testDepthDrawOrderPixels (tests/SpriteTests.cpp).
+TEST_CASE("testDepthOrderAndPickingOverlap") {
+    Room room;
+    room.id = "depth";
+    // Ordem do vetor diferente da ordem de profundidade: back tem a base mais acima.
+    const SceneObject front{{500.0F, 350.0F, 200.0F, 200.0F},
+                            {40, 200, 40, 255},
+                            SceneObjectType::decoration,
+                            {},
+                            "front",
+                            {},
+                            "idle"};
+    const SceneObject back{{400.0F, 300.0F, 200.0F, 200.0F},
+                           {200, 40, 40, 255},
+                           SceneObjectType::decoration,
+                           {},
+                           "back",
+                           {},
+                           "idle"};
+    // Mesma base de front (empate), declarado depois dele no vetor.
+    const SceneObject tie{{550.0F, 400.0F, 100.0F, 150.0F},
+                          {40, 40, 200, 255},
+                          SceneObjectType::decoration,
+                          {},
+                          "tie",
+                          {},
+                          "idle"};
+    room.scenery = {front, back, tie};
+    // Valor de hoje: depth() = bounds.y + bounds.h, o pé do retângulo.
+    REQUIRE(near(back.depth(), 500.0F));
+    REQUIRE(near(front.depth(), 550.0F));
+    REQUIRE(near(tie.depth(), 550.0F));
+
+    // (1) A mesma ordenação do SceneRenderer, sobre o critério público depth() e feet.y.
+    struct DrawItem {
+        float depth;
+        std::string id;
+    };
+    const auto drawOrder = [&](const float feetY) {
+        std::vector<DrawItem> items;
+        for (const SceneObject& object : room.scenery) items.push_back({object.depth(), object.id});
+        items.push_back({feetY, "player"});
+        std::stable_sort(items.begin(), items.end(),
+                         [](const DrawItem& a, const DrawItem& b) { return a.depth < b.depth; });
+        std::vector<std::string> ids;
+        for (const DrawItem& item : items) ids.push_back(item.id);
+        return ids;
+    };
+    REQUIRE(drawOrder(520.0F) == std::vector<std::string>{"back", "player", "front", "tie"});
+    // Pé empatado com a base: o player entra por último, então desenha por cima.
+    REQUIRE(drawOrder(550.0F) == std::vector<std::string>{"back", "front", "tie", "player"});
+    REQUIRE(drawOrder(400.0F) == std::vector<std::string>{"player", "back", "front", "tie"});
+
+    // (2) O picking escolhe o de maior depth() no ponto sobreposto.
+    const auto rule = [](std::string objectId) {
+        return InteractionRule{.trigger = InteractionTrigger::interact(std::move(objectId))};
+    };
+    const RoomInteractions all{{rule("front"), rule("back"), rule("tie")}};
+    SessionState session;
+    const SDL_FPoint backAndFront{520.0F, 380.0F};
+    // x = 620: fora de back, cuja borda direita (600) ainda conta no SDL_PointInRectFloat.
+    const SDL_FPoint frontAndTie{620.0F, 450.0F};
+    const SDL_FPoint backOnly{450.0F, 320.0F};
+    const auto picked = [&](const SessionState& progress, const RoomInteractions& rules,
+                            const SDL_FPoint point) {
+        const SceneObject* object = pickInteractiveObject(room, progress, rules, point);
+        return object ? object->id : std::string{};
+    };
+    REQUIRE(picked(session, all, backAndFront) == "front");
+    REQUIRE(picked(session, all, backOnly) == "back");
+    REQUIRE(picked(session, all, {900.0F, 600.0F}).empty());
+    // (3) Empate de depth(): vence o último do vetor, o mesmo que desenha por cima.
+    REQUIRE(picked(session, all, frontAndTie) == "tie");
+
+    // Só conta objeto com regra: sem regra, front fica de fora e back aparece por baixo.
+    const RoomInteractions withoutFront{{rule("back"), rule("tie")}};
+    REQUIRE(picked(session, withoutFront, backAndFront) == "back");
+    REQUIRE(picked(session, withoutFront, frontAndTie) == "tie");
+    // O curinga dá regra a todo objeto visível.
+    const RoomInteractions wildcard{{rule(std::string(InteractionTrigger::wildcard))}};
+    REQUIRE(picked(session, wildcard, backAndFront) == "front");
+    // Só conta objeto visível: escondido pela sessão, o de trás é escolhido.
+    session.setObjectVisible(room.id, "front", false);
+    REQUIRE(picked(session, all, backAndFront) == "back");
+    session.setObjectVisible(room.id, "tie", false);
+    REQUIRE(picked(session, all, frontAndTie).empty());
+}
+
+// M2-02 (caracterização): o ponto de chegada de hoje, antes do `baseline` (M2 F3).
+TEST_CASE("testApproachPointNonSolid") {
+    Room room;
+    room.id = "approach";
+    // Não sólido: centro da base de bounds, mesmo com uma base de colisão declarada.
+    const SceneObject lamp{{300.0F, 350.0F, 80.0F, 150.0F},
+                           {200, 200, 80, 255},
+                           SceneObjectType::decoration,
+                           {10.0F, 120.0F, 40.0F, 20.0F},
+                           "lamp",
+                           {},
+                           "idle"};
+    // Sólido com collisionFootprint: centro da base da colisão (não muda no M2).
+    const SceneObject desk{{700.0F, 380.0F, 200.0F, 160.0F},
+                           {120, 80, 40, 255},
+                           SceneObjectType::solid,
+                           {20.0F, 100.0F, 120.0F, 40.0F},
+                           "desk",
+                           {},
+                           "idle"};
+    // Sólido sem collisionFootprint: a colisão é bounds inteiro, chegada no pé de bounds.
+    const SceneObject crate{{1000.0F, 400.0F, 100.0F, 100.0F},
+                            {90, 90, 90, 255},
+                            SceneObjectType::solid,
+                            {},
+                            "crate",
+                            {},
+                            "idle"};
+    room.scenery = {lamp, desk, crate};
+    SessionState session;
+
+    const auto expectPoint = [](const SDL_FPoint actual, const float x, const float y) {
+        INFO("chegada em " << actual.x << "," << actual.y);
+        REQUIRE((near(actual.x, x) && near(actual.y, y)));
+    };
+    expectPoint(interactionApproachPoint(room, lamp, session), 340.0F, 500.0F);
+    expectPoint(interactionApproachPoint(room, desk, session), 780.0F, 520.0F);
+    expectPoint(interactionApproachPoint(room, crate, session), 1050.0F, 500.0F);
+
+    // A regra segue a colisão da sessão, não o tipo autorado.
+    session.setObjectSolid(room.id, "desk", false);
+    expectPoint(interactionApproachPoint(room, desk, session), 800.0F, 540.0F);
+    session.setObjectSolid(room.id, "lamp", true);
+    expectPoint(interactionApproachPoint(room, lamp, session), 330.0F, 490.0F);
+
+    // A chegada passa por Room::clampDestination: base acima do chão andável (y = 300) desce
+    // para ele.
+    const SceneObject shelf{{100.0F, 100.0F, 60.0F, 120.0F},
+                            {60, 60, 60, 255},
+                            SceneObjectType::decoration,
+                            {},
+                            "shelf",
+                            {},
+                            "idle"};
+    expectPoint(interactionApproachPoint(room, shelf, session), 130.0F, 300.0F);
+}

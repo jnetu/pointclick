@@ -446,6 +446,161 @@ TEST_CASE("testGameFrameHasNoDebugDrawing") {
     SDL_Quit();
 }
 
+// M2-02 (caracterização): o fundo procedural de hoje, sala sem camadas e sem objetos. Valores de
+// hoje, travam o fundo procedural (M2 D8); vêm de Room::wallColor etc. e da geometria de
+// RoomBackdropRenderer::draw (raios do ponto de fuga a cada floorRaySpacing, guias em
+// wallBottomY + f² * (height - wallBottomY), friso em wallBottomY). A parede (640,100) já está
+// em testGameFrameHasNoDebugDrawing.
+TEST_CASE("testBackdropPixelsWithoutLayers") {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Backdrop test", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    renderer.setSpriteRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/sprites");
+    const auto frameColor = [&](const Game& game, const int x, const int y) {
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+        const SDL_Color color = pixel(frame, x, y);
+        SDL_DestroySurface(frame);
+        INFO("pixel " << x << "," << y << " = " << int(color.r) << "," << int(color.g) << ","
+                      << int(color.b));
+        return color;
+    };
+
+    // Sala padrão 1280 x 720, câmera parada em (0, 0). O player (pé em 640,360) fica longe das
+    // amostras.
+    Room room;
+    room.id = "backdrop";
+    room.playerAnimations = sharedPlayerArt();
+    const Game standard(room);
+    REQUIRE((standard.scene().camera().position().x == 0.0F
+             && standard.scene().camera().position().y == 0.0F));
+    // Centro do chão, longe dos raios (x = 640 e 727 nessa altura) e das guias (y 449 e 598).
+    expectColor(frameColor(standard, 700, 520), 42, 102, 175);
+    // O raio que vai do ponto de fuga (640, 280) a (640, 720) é a coluna x = 640 do chão.
+    expectColor(frameColor(standard, 640, 500), 68, 124, 190);
+    // Guia de fração 0.62: y = 280 + 0.3844 * 440 = 449.1.
+    expectColor(frameColor(standard, 670, 449), 68, 124, 190);
+    // O friso entre parede e chão, desenhado por último, longe do ponto de fuga.
+    expectColor(frameColor(standard, 100, 280), 109, 39, 48);
+
+    // Sala 2560 x 1440 com o player no canto: a câmera vai a (1280, 720), o limite da sala.
+    room.width = 2560.0F;
+    room.height = 1440.0F;
+    room.vanishingPointX = 1920.0F;
+    room.playerStart = {2200.0F, 1300.0F};
+    const Game scrolled(room);
+    REQUIRE((scrolled.scene().camera().position().x == 1280.0F
+             && scrolled.scene().camera().position().y == 720.0F));
+    // O topo da tela é chão (y de mundo 720 > wallBottomY 280): a parede ficou para cima.
+    expectColor(frameColor(scrolled, 700, 60), 42, 102, 175);
+    // O raio vertical do ponto de fuga (x de mundo 1920) aparece na coluna x = 640 da tela.
+    expectColor(frameColor(scrolled, 640, 400), 68, 124, 190);
+    expectColor(frameColor(scrolled, 660, 400), 42, 102, 175);
+    // Guia de fração 0.85: y de mundo 280 + 0.7225 * 1160 = 1118.1, na tela y = 398.1. Longe do
+    // raio vertical, ela atravessa a tela na linha 398.
+    expectColor(frameColor(scrolled, 900, 398), 68, 124, 190);
+
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+// M2-02 (caracterização): a ordem de desenho de hoje, por pixels, antes do `baseline` (M2 F3).
+// SceneRenderer ordena por depth() = bounds.y + bounds.h (std::stable_sort ascendente, o player
+// entra com feet.y); a mesma ordem pública está em testDepthOrderAndPickingOverlap.
+TEST_CASE("testDepthDrawOrderPixels") {
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Window* window = SDL_CreateWindow("Depth order test", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    renderer.setSpriteRoot(std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/sprites");
+
+    Room room;
+    room.id = "depth";
+    room.playerAnimations = sharedPlayerArt();
+    // Placeholders sem clip; a ordem do vetor (front, back, tie) não é a de profundidade.
+    room.scenery = {
+        {{500.0F, 350.0F, 200.0F, 200.0F},
+         {40, 200, 40, 255},
+         SceneObjectType::decoration,
+         {},
+         "front",
+         {},
+         "idle"},
+        {{400.0F, 300.0F, 200.0F, 200.0F},
+         {200, 40, 40, 255},
+         SceneObjectType::decoration,
+         {},
+         "back",
+         {},
+         "idle"},
+        // Mesma base de front (550), declarado depois: no empate desenha por cima.
+        {{550.0F, 400.0F, 100.0F, 150.0F},
+         {40, 40, 200, 255},
+         SceneObjectType::decoration,
+         {},
+         "tie",
+         {},
+         "idle"},
+    };
+    const SceneObject& front = room.scenery[0];
+    // Pixels de front dentro de rect (na tela, câmera em 0) que não têm a cor de front.
+    const auto coveredByOthers = [&](SDL_Surface* frame, const SDL_FRect& rect) {
+        int count = 0;
+        for (int y = static_cast<int>(rect.y) + 2; y < static_cast<int>(rect.y + rect.h) - 2; ++y) {
+            for (int x = static_cast<int>(rect.x) + 2; x < static_cast<int>(rect.x + rect.w) - 2;
+                 ++x) {
+                const SDL_FPoint point{static_cast<float>(x), static_cast<float>(y)};
+                const SDL_FRect inner{front.bounds.x + 1.0F, front.bounds.y + 1.0F,
+                                      front.bounds.w - 2.0F, front.bounds.h - 2.0F};
+                if (!SDL_PointInRectFloat(&point, &inner) || point.x >= 550.0F) continue;
+                const SDL_Color color = pixel(frame, x, y);
+                if (color.r != 40 || color.g != 200 || color.b != 40) ++count;
+            }
+        }
+        return count;
+    };
+    const auto renderWithPlayerAt = [&](const SDL_FPoint feet, SDL_FRect& playerRect) {
+        room.playerStart = feet;
+        const Game game(room);
+        REQUIRE(game.scene().camera().position().x == 0.0F);
+        playerRect = EntityRenderer::playerRect(game.scene().room(), game.scene().player(), feet,
+                                                {0.0F, 0.0F});
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+        return frame;
+    };
+
+    // Pé em 520: entre back (500) e front (550). front cobre o player inteiro.
+    SDL_FRect playerRect{};
+    SDL_Surface* behind = renderWithPlayerAt({525.0F, 520.0F}, playerRect);
+    // Sobreposição back x front: front (550) desenha por cima de back (500).
+    expectColor(pixel(behind, 520, 380), 40, 200, 40);
+    expectColor(pixel(behind, 450, 320), 200, 40, 40);
+    // Empate front x tie (550): vale a ordem do vetor, tie por cima.
+    expectColor(pixel(behind, 620, 450), 40, 40, 200);
+    REQUIRE(coveredByOthers(behind, playerRect) == 0);
+    SDL_DestroySurface(behind);
+
+    // Pé em 600: abaixo de todas as bases, o player desenha por cima de front.
+    SDL_Surface* inFront = renderWithPlayerAt({525.0F, 600.0F}, playerRect);
+    REQUIRE(coveredByOthers(inFront, playerRect) > 0);
+    SDL_DestroySurface(inFront);
+
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
 // F3: the door playground, played from the shipped files and drawn headless. The twin door uses
 // the same sheet as the first with flip_x, so the blue hinge post that sits on the left of the
 // first door is on the right of the twin, both closed and open.

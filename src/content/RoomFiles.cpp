@@ -1,13 +1,10 @@
 #include "content/RoomFiles.hpp"
+#include "content/ObjectFields.hpp"
 #include "content/SpriteFields.hpp"
 #include "content/TextFormat.hpp"
 #include "game/Identifier.hpp"
 #include "game/RoomParameters.hpp"
 
-#include <SDL3/SDL_stdinc.h>
-
-#include <algorithm>
-#include <cmath>
 #include <locale>
 #include <map>
 #include <optional>
@@ -15,20 +12,10 @@
 #include <vector>
 
 namespace {
+using RoomFieldValues::numbers;
 using TextFormat::number;
 using TextFormat::pathToUtf8;
 using TextFormat::trim;
-
-bool numbers(std::string text, const std::span<float> values) {
-    std::replace(text.begin(), text.end(), ',', ' ');
-    std::istringstream input(text);
-    input.imbue(std::locale::classic());
-    for (float& value : values) {
-        if (!(input >> value) || !std::isfinite(value)) return false;
-    }
-    input >> std::ws;
-    return input.eof();
-}
 
 struct ColorField { const char* key; SDL_Color Room::* member; };
 constexpr ColorField colors[]{
@@ -37,40 +24,11 @@ constexpr ColorField colors[]{
     {"player.color", &Room::playerColor}, {"player.outline_color", &Room::playerOutlineColor},
 };
 
-bool parseColor(const std::string& text, SDL_Color& color) {
-    float values[4];
-    if (!numbers(text, values)) return false;
-    for (float value : values) {
-        if (value < 0 || value > 255 || std::floor(value) != value) return false;
-    }
-    color = {static_cast<Uint8>(values[0]), static_cast<Uint8>(values[1]),
-             static_cast<Uint8>(values[2]), static_cast<Uint8>(values[3])};
-    return true;
-}
-
 bool parsePoint(const std::string& text, SDL_FPoint& point) {
     float values[2];
     if (!numbers(text, values)) return false;
     point = {values[0], values[1]};
     return true;
-}
-
-bool parseRect(const std::string& text, SDL_FRect& rect) {
-    float values[4];
-    if (!numbers(text, values)) return false;
-    rect = {values[0], values[1], values[2], values[3]};
-    return true;
-}
-
-
-void writeColor(std::ostream& out, const SDL_Color color) {
-    out << static_cast<int>(color.r) << ", " << static_cast<int>(color.g) << ", "
-        << static_cast<int>(color.b) << ", " << static_cast<int>(color.a) << '\n';
-}
-
-void writeRect(std::ostream& out, const SDL_FRect rect) {
-    out << number(rect.x) << ", " << number(rect.y) << ", " << number(rect.w) << ", "
-        << number(rect.h) << '\n';
 }
 }
 
@@ -146,15 +104,8 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
                 if (parsed) target.facing = *facing;
             }
         } else if (object) {
-            if (key == "bounds") parsed = parseRect(value, object->bounds);
-            else if (key == "collision") parsed = parseRect(value, object->collisionFootprint);
-            else if (key == "color") parsed = parseColor(value, object->color);
-            else if (key == "type" && (value == "solid" || value == "decoration")) {
-                object->type = value == "solid" ? SceneObjectType::solid : SceneObjectType::decoration;
-                parsed = true;
-            } else if (key == "animation.initial") {
-                object->initialAnimation = value;
-                parsed = true;
+            if (const ObjectField* field = ObjectFields::find(key)) {
+                parsed = field->read(value, *object);
             } else if (key.starts_with("sprite.")) {
                 // Existing rooms used one unnamed sprite; it is the idle clip.
                 parsed = SpriteFields::parse(object->animations["idle"],
@@ -178,7 +129,7 @@ RoomLoadResult RoomFiles::load(const std::filesystem::path& path,
             parsed = numbers(value, room.floorGuideFractions);
         } else {
             for (const auto& color : colors) {
-                if (key == color.key) parsed = parseColor(value, room.*(color.member));
+                if (key == color.key) parsed = RoomFieldValues::color(value, room.*(color.member));
             }
             if (!parsed && key.starts_with("player.")) {
                 parsed = SpriteFields::parseNamed(room.playerAnimations, key, "player.", value);
@@ -219,7 +170,11 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
     for (const auto& parameter : roomParameters()) {
         out << parameter.key << " = " << number(parameter.read(room)) << '\n';
     }
-    for (const auto& color : colors) { out << color.key << " = "; writeColor(out, room.*(color.member)); }
+    for (const auto& color : colors) {
+        out << color.key << " = ";
+        RoomFieldValues::writeColor(out, room.*(color.member));
+        out << '\n';
+    }
     for (const auto& [name, clip] : room.playerAnimations) {
         if (inheritedPlayerArt) {
             if (const SpriteClip* shared = findAnimation(*inheritedPlayerArt, name);
@@ -239,15 +194,10 @@ bool RoomFiles::save(const std::filesystem::path& path, const Room& room, std::s
             << number(entry.feet.y) << "\nfacing = " << facingName(entry.facing) << '\n';
     }
     for (const auto& object : room.scenery) {
-        out << "\n[object " << object.id << "]\nbounds = "; writeRect(out, object.bounds);
-        out << "color = "; writeColor(out, object.color);
-        out << "type = " << (object.type == SceneObjectType::solid ? "solid" : "decoration") << '\n';
-        out << "collision = "; writeRect(out, object.collisionFootprint);
-        if (!object.animations.empty()) {
-            out << "animation.initial = " << object.initialAnimation << '\n';
-            for (const auto& [name, clip] : object.animations) {
-                SpriteFields::write(out, "animation." + name + ".", clip);
-            }
+        out << "\n[object " << object.id << "]\n";
+        ObjectFields::write(out, object);
+        for (const auto& [name, clip] : object.animations) {
+            SpriteFields::write(out, "animation." + name + ".", clip);
         }
     }
     return TextFormat::writeTextAtomic(path, out.str(), "sala", error);

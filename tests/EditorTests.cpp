@@ -315,6 +315,136 @@ TEST_CASE("testRoomObjectErrorsCarryLines") {
     REQUIRE(RoomFiles::load(directory / "good_object.room", sharedPlayerArt()).room);
 }
 
+void requireSameRect(const SDL_FRect& a, const SDL_FRect& b) {
+    REQUIRE((a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h));
+}
+
+void requireSameColor(const SDL_Color& a, const SDL_Color& b) {
+    REQUIRE((a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a));
+}
+
+// Room has no operator== (game/ is a definition): compare every member the .room format carries.
+void requireSameRoom(const Room& a, const Room& b) {
+    REQUIRE(a.id == b.id);
+    for (const auto& parameter : roomParameters()) {
+        INFO(parameter.key);
+        REQUIRE(parameter.read(a) == parameter.read(b));
+    }
+    REQUIRE((a.width == b.width && a.height == b.height));
+    requireSameColor(a.wallColor, b.wallColor);
+    requireSameColor(a.floorColor, b.floorColor);
+    requireSameColor(a.wallTrimColor, b.wallTrimColor);
+    requireSameColor(a.floorGuideColor, b.floorGuideColor);
+    requireSameColor(a.playerColor, b.playerColor);
+    requireSameColor(a.playerOutlineColor, b.playerOutlineColor);
+    REQUIRE(a.floorGuideFractions == b.floorGuideFractions);
+    REQUIRE(a.spawns == b.spawns);
+    REQUIRE(a.playerAnimations == b.playerAnimations);
+    REQUIRE(a.scenery.size() == b.scenery.size());
+    for (std::size_t index = 0; index < a.scenery.size(); ++index) {
+        const SceneObject& left = a.scenery[index];
+        const SceneObject& right = b.scenery[index];
+        INFO(left.id);
+        REQUIRE(left.id == right.id);
+        requireSameRect(left.bounds, right.bounds);
+        requireSameColor(left.color, right.color);
+        REQUIRE(left.type == right.type);
+        requireSameRect(left.collisionFootprint, right.collisionFootprint);
+        REQUIRE(left.initialAnimation == right.initialAnimation);
+        REQUIRE(left.animations == right.animations);
+    }
+}
+
+// M2-03: the object fields (bounds, collision, color, type, animation.initial) read and write
+// through one table. Every shipped room survives load + save as the same Room and as the exact
+// text the code wrote before the table (tests/fixtures/object_fields/<sala>.room). A room added
+// to assets/rooms needs its golden: POINTCLICK_WRITE_OBJECT_FIELDS_GOLDENS=1 writes the missing
+// or changed ones from the current code (review the diff before keeping them).
+TEST_CASE("testObjectFieldsRoundTripAssets") {
+    const TempDirectory testDirectory("pointclick-object-fields");
+    const auto roomsDirectory = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets/rooms";
+    const auto goldenDirectory = std::filesystem::path(POINTCLICK_SOURCE_DIR)
+                                 / "tests/fixtures/object_fields";
+    const bool writeGoldens = std::getenv("POINTCLICK_WRITE_OBJECT_FIELDS_GOLDENS") != nullptr;
+    const auto roomFiles = [](const std::filesystem::path& directory) {
+        std::set<std::string> names;
+        for (const auto& entry : std::filesystem::directory_iterator(directory)) {
+            if (entry.path().extension() == ".room") names.insert(entry.path().filename().string());
+        }
+        return names;
+    };
+    const auto rooms = roomFiles(roomsDirectory);
+    REQUIRE(!rooms.empty());
+    for (const auto& name : rooms) {
+        INFO(name);
+        const auto loaded = RoomFiles::load(roomsDirectory / name, sharedPlayerArt());
+        REQUIRE(loaded.room);
+        std::string error;
+        const auto saved = testDirectory.path() / name;
+        REQUIRE(RoomFiles::save(saved, *loaded.room, error, sharedPlayerArt()));
+        const auto text = TextFormat::readFile(saved);
+        REQUIRE(text.text);
+        if (writeGoldens) {
+            std::filesystem::create_directories(goldenDirectory);
+            std::ofstream golden(goldenDirectory / name, std::ios::binary);
+            golden << *text.text;
+        }
+        const auto golden = TextFormat::readFile(goldenDirectory / name);
+        REQUIRE(golden.text);
+        REQUIRE(*text.text == *golden.text);
+        const auto reloaded = RoomFiles::load(saved, sharedPlayerArt());
+        REQUIRE(reloaded.room);
+        requireSameRoom(*loaded.room, *reloaded.room);
+    }
+    // No stale golden: each one is a room that still ships.
+    REQUIRE(roomFiles(goldenDirectory) == rooms);
+
+    // Errors of the five fields keep their text and line.
+    const auto errorOf = [&](const std::string& text) {
+        const auto path = testDirectory.path() / "bad_fields.room";
+        {
+            std::ofstream bad(path, std::ios::binary);
+            bad << text;
+        }
+        const auto result = RoomFiles::load(path, sharedPlayerArt());
+        REQUIRE(!result.room);
+        return result.error;
+    };
+    const std::string box = "# caixa\n[object box]\nbounds = 10, 300, 40, 40\n";
+    const struct {
+        std::string text;
+        const char* error;
+    } invalid[]{
+        {"[room]\n[object box]\nbounds = 10, 300, 40\n",
+         "Linha 3: Chave ou valor invalido: bounds"},
+        {"[object box]\nbounds = 10, 300, 40, 40, 5\n", "Linha 2: Chave ou valor invalido: bounds"},
+        {"[object box]\nbounds = 10, 300, 40, inf\n", "Linha 2: Chave ou valor invalido: bounds"},
+        {box + "collision = 0, 30, 40, nan\n", "Linha 4: Chave ou valor invalido: collision"},
+        {box + "collision = 0 30 40 x\n", "Linha 4: Chave ou valor invalido: collision"},
+        {box + "color = 1, 2, 3, 256\n", "Linha 4: Chave ou valor invalido: color"},
+        {box + "color = 1.5, 2, 3, 255\n", "Linha 4: Chave ou valor invalido: color"},
+        {box + "color = 1, 2, 3\n", "Linha 4: Chave ou valor invalido: color"},
+        {box + "type = sold\n", "Linha 4: Chave ou valor invalido: type"},
+        {box + "type = Solid\n", "Linha 4: Chave ou valor invalido: type"},
+        {box + "type = hotspot\n", "Linha 4: Chave ou valor invalido: type"},
+        {box + "type =\n", "Linha 4: Chave ou valor invalido: type"},
+        {box + "animation.initial = caixa azul\n", "Linha 4: Animacao inicial invalida: box"},
+        {box + "animation.initial =\n", "Linha 4: Animacao inicial invalida: box"},
+        {box + "animation.idle.file = box.png\nanimation.initial = open\n",
+         "Linha 5: Animacao inicial ausente: box"},
+        {box + "type = solid\ntype = solid\n", "Linha 5: Chave repetida: type"},
+        {box + "bounds = 10, 300, 40, 40\n", "Linha 4: Chave repetida: bounds"},
+        {box + "colour = 1, 2, 3, 255\n", "Linha 4: Chave ou valor invalido: colour"},
+        // Object keys mean nothing outside an [object] block.
+        {"[room]\nbounds = 1, 2, 3, 4\n", "Linha 2: Chave ou valor invalido: bounds"},
+        {"[spawn s]\nfeet = 10, 400\ntype = solid\n", "Linha 3: Chave ou valor invalido: type"},
+    };
+    for (const auto& entry : invalid) {
+        INFO(entry.text);
+        REQUIRE(errorOf(entry.text) == entry.error);
+    }
+}
+
 // step 1 finds one-pixel lines and text; the default samples large areas quickly.
 bool surfaceContainsColor(SDL_Surface* surface, const SDL_Color target, const int step = 8) {
     for (int y = 0; y < surface->h; y += step) {

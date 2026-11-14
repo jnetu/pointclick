@@ -74,6 +74,7 @@ add_library(pointclick_content STATIC
         src/content/ContentCheck.cpp
         src/content/DialogueFiles.cpp
         src/content/InteractionFiles.cpp
+        src/content/ObjectFields.cpp
         src/content/RoomFiles.cpp
         src/content/RoomLibrary.cpp
         src/content/SaveFiles.cpp

@@ -6,7 +6,7 @@ os contratos e `docs/GAME_DESIGN.md` para o formato editável das salas.
 | Mudança | Comece por | Depois confira |
 | --- | --- | --- |
 | Parâmetro de sala | `src/game/Room.hpp`, `src/game/RoomParameters.cpp` | `Room::validationError`, `docs/GAME_DESIGN.md` |
-| Chave nova do formato `.room` | `src/content/RoomFiles.cpp` | `tests/EditorTests.cpp` |
+| Chave nova do formato `.room` (campo novo de objeto: uma entrada na tabela de `src/content/ObjectFields.cpp`) | `src/content/RoomFiles.cpp` (sala e blocos); `src/content/ObjectFields.*` (campos escalares do `[object]`; clips em `SpriteFields`) | `tests/EditorTests.cpp` (`testObjectFieldsRoundTripAssets`: goldens em `tests/fixtures/object_fields/`, um por sala de `assets/rooms`) |
 | Campo de corte de spritesheet | `src/game/SpriteClip.hpp`, `src/content/SpriteFields.cpp` | `src/graphics/SpriteLibrary.cpp`, `tests/SpriteTests.cpp` |
 | Novo clip de player | `assets/actors/player.actor` (ou `player.<clip>.*` numa sala, para sobrescrever) | `assets/sprites`, `docs/GAME_DESIGN.md`; `src/content/ActorFiles.*`, `src/content/RoomLibrary.*` |
 | Novo clip de objeto | `assets/rooms/*.room` | `assets/sprites`, `docs/GAME_DESIGN.md` |

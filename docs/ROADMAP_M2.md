@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento (M2-01 e M2-02 feitas) ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03) ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -133,7 +133,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
-| F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 2/3 |
+| F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
 | F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 0/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
@@ -159,7 +159,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   `tests/SpriteTests.cpp`, `tests/GameTests.cpp`. **Pronto quando:** os testes passam **antes** de
   qualquer mudança de `src/` e são o critério de "salas antigas não mudaram" das fases seguintes.
   Conferir antes o que `testGameFrameHasNoDebugDrawing` já cobre, para não duplicar.
-- [ ] **M2-03 · M · Arg. não — `ObjectFields`: tabela de campos escalares do objeto.**
+- [x] **M2-03 · M · Arg. não — `ObjectFields`: tabela de campos escalares do objeto.**
   Refatoração que **não muda comportamento**: tira da cadeia de `if` de `RoomFiles::load` e do
   `RoomFiles::save` as chaves `bounds`, `collision`, `color`, `type` e `animation.initial`, em
   uma tabela `{chave, ler(valor, objeto), escrever(out, objeto)}` em `src/content/ObjectFields.*`

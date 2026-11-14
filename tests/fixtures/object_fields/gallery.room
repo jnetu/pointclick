@@ -1,0 +1,50 @@
+# PointClick: coordenadas logicas; cores RGBA; retangulos x,y,w,h
+[room]
+id = gallery
+player.far_speed = 140
+player.near_speed = 280
+player.width = 48
+player.height = 80
+player.start_x = 220
+player.start_y = 460
+perspective.far_scale = 0.7
+perspective.near_scale = 1.4
+perspective.far_y = 270
+perspective.near_y = 720
+room.width = 1280
+room.height = 720
+room.wall_y = 240
+room.walkable_y = 270
+room.vanishing_x = 640
+collision.padding_x = 40
+collision.padding_y = 8
+room.ray_spacing = 160
+wall.color = 73, 82, 102, 255
+floor.color = 68, 111, 121, 255
+wall.trim_color = 38, 48, 62, 255
+floor.guide_color = 85, 131, 139, 255
+player.color = 245, 194, 102, 255
+player.outline_color = 255, 239, 205, 255
+floor.lines = 0.18, 0.38, 0.62, 0.85
+
+[spawn from_first]
+feet = 200, 300
+facing = right
+
+[object table]
+bounds = 600, 370, 200, 140
+color = 164, 109, 71, 255
+type = solid
+collision = 10, 105, 180, 35
+
+[object plant]
+bounds = 1050, 260, 80, 170
+color = 91, 157, 98, 255
+type = solid
+collision = 20, 150, 40, 20
+
+[object door_first]
+bounds = 80, 130, 110, 140
+color = 120, 80, 50, 255
+type = decoration
+collision = 0, 0, 0, 0

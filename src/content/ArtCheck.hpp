@@ -36,10 +36,13 @@ struct PngHeader {
 // assets inside an APK and never decodes the pixels.
 [[nodiscard]] PngHeader readPngHeader(const std::filesystem::path& path);
 
-// Every PNG the room's clips name (player and objects): missing or unreadable file (once per
-// file), each cut that does not fit its image and each clip that names no file. Then every font of fontFiles that cannot be
-// opened in fontsDirectory; the caller supplies that list (FontLibrary::files), so content/
-// does not depend on graphics/. Each file is opened once per call.
+// Every PNG the room's clips name, in the order of the saved file (player, layers as
+// "<layer>.image", objects): missing or unreadable file (once per file), each cut that does not
+// fit its image and each clip that names no file. Then one warning when the room has `back`
+// layers and none of them covers the viewport at every camera position (layerCoversViewport),
+// naming the first one and its minimum size (layerCoverSize). Then every font of fontFiles that
+// cannot be opened in fontsDirectory; the caller supplies that list (FontLibrary::files), so
+// content/ does not depend on graphics/. Each file is opened once per call.
 [[nodiscard]] std::vector<ArtWarning> warnings(const Room& room,
                                                const std::filesystem::path& spritesDirectory,
                                                const std::filesystem::path& fontsDirectory = {},

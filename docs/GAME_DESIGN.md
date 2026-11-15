@@ -205,8 +205,8 @@ usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.a
 > **Em implementação (M2, `docs/ROADMAP_M2.md`).** Esta seção é a especificação que as tarefas
 > M2-04 a M2-28 cumprem. **Já existe:** o bloco `[layer]` é lido, validado (erros com `Linha N:`) e
 > gravado (M2-04 a M2-07), e as camadas `back` já são desenhadas no lugar do fundo procedural
-> (M2-08). As camadas `front` **ainda não** são desenhadas (M2-12), e o `--check` ainda não confere
-> a arte das camadas (M2-10). `[hotspot]` e `baseline` ainda são recusados até a tarefa
+> (M2-08), com a arte conferida pelo `--check` (M2-10). As camadas `front` **ainda não** são
+> desenhadas (M2-12). `[hotspot]` e `baseline` ainda são recusados até a tarefa
 > correspondente. Quando cada parte ficar pronta, o texto "ainda não" some e o guia vira a referência final (M2-34).
 
 Hoje a sala é cor chapada com guias (`RoomBackdropRenderer`) e objeto sem sprite vira um
@@ -272,8 +272,14 @@ profundidade e não muda o save. Quem interage com a arte são os objetos e os h
   passa mais rápido que o chão.
 - **Cobertura.** Para não aparecer borda vazia ao rolar até o fim, com a camada em `0, 0`:
   `size.x ≥ 1280 + (largura_da_sala − 1280) × fx` e `size.y ≥ 720 + (altura_da_sala − 720) × fy`
-  (1280 × 720 é a viewport). Uma camada de fator `1` precisa ter o tamanho da sala. Camada que
-  não cobre a tela gera **aviso** (`--check` e log), nunca erro.
+  (1280 × 720 é a viewport). Uma camada de fator `1` precisa ter o tamanho da sala. Quando a sala
+  tem camada `back` e **nenhuma** delas cobre a tela em todas as posições da câmera, sai **um
+  aviso** por sala (`--check` e log), nunca erro, com o ID da primeira `back` e o tamanho mínimo
+  em `0, 0`, por exemplo `Camada sky nao cobre a tela em todas as posicoes da camera (minimo
+  1536x720 em 0,0)`. Camadas `front` parciais são o normal e não avisam, nem uma faixa `back`
+  parcial quando outra `back` já cobre a tela.
+- **Arte da camada:** o PNG e o corte da camada são conferidos como qualquer clip, com o nome
+  `<camada>.image` (`Clip sky.image sem arquivo PNG`, `Corte de sky.image nao cabe na imagem ...`).
 - **Ordem de desenho:** camadas `back` na ordem do arquivo → objetos e player por profundidade →
   camadas `front` na ordem do arquivo → fala e menus.
 - **Fundo procedural.** A parede, o chão e as guias coloridas só desenham quando a sala **não**
@@ -347,7 +353,8 @@ procura os sprites ao carregar a sala. Se o arquivo faltar ou o corte não coube
 na imagem, ele desenha um quadriculado roxo e preto no lugar. Isso nunca é erro: a sala
 carrega e o jogo roda. O que existe é um **aviso**, antes de o problema aparecer na tela:
 ao carregar a sala o jogo registra no log, uma vez por execução, cada PNG ausente ou ilegível,
-cada corte que não cabe na imagem e cada clip sem arquivo, e o `pointclick --check` lista os
+cada corte que não cabe na imagem e cada clip sem arquivo (inclusive o `image` das camadas, além
+da camada `back` que não cobre a tela), e o `pointclick --check` lista os
 mesmos casos (mais as fontes ausentes) com o prefixo `aviso:`, sem mudar o código de saída.
 
 ### Arte do jogador (`assets/actors/player.actor`)

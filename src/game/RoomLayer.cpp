@@ -32,6 +32,15 @@ bool layerCoversViewport(const RoomLayer& layer, const Room& room) {
     return covers({0.0F, 0.0F}) && covers(farthest);
 }
 
+SDL_FPoint layerCoverSize(const RoomLayer& layer, const Room& room) {
+    const auto side = [](const float roomSide, const int viewSide, const float factor) {
+        const auto view = static_cast<float>(viewSide);
+        return view + std::max(roomSide - view, 0.0F) * factor;
+    };
+    return {side(room.width, World::width, layer.scrollFactor.x),
+            side(room.height, World::height, layer.scrollFactor.y)};
+}
+
 bool hasLayers(const Room& room, const LayerPlane plane) {
     return std::ranges::any_of(room.layers,
                                [plane](const RoomLayer& layer) { return layer.plane == plane; });

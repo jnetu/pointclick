@@ -3,3 +3,6 @@ build/
 cmake-build-*/
 .DS_Store
 .argon/
+
+# Capturas do --screenshot rodadas da raiz do projeto
+/frame.png

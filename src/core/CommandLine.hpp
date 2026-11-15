@@ -24,10 +24,16 @@ struct CommandLineOptions {
     // --exec / --exec-file (builds with tools only): run DEBUG commands with no window, on a new
     // game that never touches the save, and exit.
     std::vector<ExecStep> exec;
+    // --screenshot <arquivo.png> [--frames N]: no window on screen (SDL's dummy video driver and
+    // the software renderer), N fixed 60 Hz ticks of the start room, one frame saved as PNG, exit.
+    // Never writes the autosave.
+    std::filesystem::path screenshot;
+    int screenshotFrames = 1;
 
     // --room starts from scratch too: a saved progress belongs to another starting point.
     [[nodiscard]] bool resumesSave() const { return !newGame && startRoom.empty(); }
     [[nodiscard]] bool runsCommands() const { return !exec.empty(); }
+    [[nodiscard]] bool takesScreenshot() const { return !screenshot.empty(); }
 };
 
 struct CommandLineResult {

@@ -1,6 +1,7 @@
 #include "content/ArtCheck.hpp"
 
 #include "content/TextFormat.hpp"
+#include "game/RoomLayer.hpp"
 
 #include <SDL3/SDL_iostream.h>
 
@@ -88,6 +89,23 @@ std::vector<ArtWarning> ArtCheck::warnings(const Room& room,
         }
     };
     for (const auto& [name, clip] : room.playerAnimations) checkClip("player", name, clip);
+    // Layers come before the objects, as in the saved file.
+    for (const RoomLayer& layer : room.layers) checkClip(layer.id, "image", layer.image);
+    // Only `back` layers replace the backdrop (D8): when none of them covers the screen at every
+    // camera position, part of it shows the clear colour. A partial `front` is the normal case.
+    const auto firstBack = std::ranges::find(room.layers, LayerPlane::back, &RoomLayer::plane);
+    if (firstBack != room.layers.end()
+        && std::ranges::none_of(room.layers, [&room](const RoomLayer& layer) {
+               return layer.plane == LayerPlane::back && layerCoversViewport(layer, room);
+           })) {
+        const SDL_FPoint minimum = layerCoverSize(*firstBack, room);
+        found.push_back(
+                {firstBack->image.file.empty() ? "sprites" : "sprites/" + firstBack->image.file,
+                 "Camada " + firstBack->id
+                         + " nao cobre a tela em todas as posicoes da camera (minimo "
+                         + TextFormat::number(minimum.x) + "x" + TextFormat::number(minimum.y)
+                         + " em 0,0)"});
+    }
     for (const SceneObject& object : room.scenery) {
         for (const auto& [name, clip] : object.animations) checkClip(object.id, name, clip);
     }

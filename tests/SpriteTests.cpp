@@ -817,6 +817,53 @@ TEST_CASE("testArtWarnings") {
                  {"sprites/text.png", "PNG ilegivel"},
                  {"sprites", "Clip " + object + ".void sem arquivo PNG"}}));
 
+    // M2-10: each layer's image is a clip owned by the layer ("<id>.image"), checked after the
+    // player and before the objects. A PNG shared with an object still warns once.
+    const auto layer = [](const std::string& id, const SpriteClip& image,
+                          const LayerPlane plane = LayerPlane::back) {
+        RoomLayer made;
+        made.id = id;
+        made.plane = plane;
+        made.image = image;
+        return made;
+    };
+    room.scenery[0].animations = {{"idle", SpriteClip{.file = "future.png"}}};
+    room.layers = {layer("painted", SpriteClip{.file = "future.png"}), layer("cut", tooMany),
+                   layer("bare", SpriteClip{})};
+    REQUIRE(room.validationError().empty());
+    REQUIRE((ArtCheck::warnings(room, directory)
+             == std::vector<ArtWarning>{
+                 {"sprites/future.png", "PNG ausente"},
+                 {"sprites/sheet.png", "Corte de cut.image nao cabe na imagem 11x11"},
+                 {"sprites", "Clip bare.image sem arquivo PNG"}})); // room-sized: they cover
+
+    // Coverage: only when the room has `back` layers and none covers every camera position.
+    room.scenery[0].animations = {{"idle", fits}};
+    room.width = 2560.0F;
+    RoomLayer sky = layer("sky", fits);
+    sky.size = {1500.0F, 720.0F};
+    sky.scrollFactor = {0.2F, 0.0F};
+    room.layers = {sky};
+    REQUIRE(room.validationError().empty());
+    const std::string skyShort = "Camada sky nao cobre a tela em todas as posicoes da camera "
+                                 "(minimo 1536x720 em 0,0)";
+    REQUIRE((ArtCheck::warnings(room, directory)
+             == std::vector<ArtWarning>{{"sprites/sheet.png", skyShort}}));
+    room.layers.push_back(layer("ground", fits)); // a room-sized `back` covers the screen
+    REQUIRE(ArtCheck::warnings(room, directory).empty());
+    sky.plane = LayerPlane::front; // a partial foreground is the normal case
+    room.layers = {sky};
+    REQUIRE(ArtCheck::warnings(room, directory).empty());
+    // Faster than the world with no size: it runs past its own end. No file: "sprites".
+    RoomLayer near = layer("near", SpriteClip{});
+    near.scrollFactor = {1.3F, 1.0F};
+    room.layers = {near};
+    REQUIRE((ArtCheck::warnings(room, directory)
+             == std::vector<ArtWarning>{
+                 {"sprites", "Clip near.image sem arquivo PNG"},
+                 {"sprites", "Camada near nao cobre a tela em todas as posicoes da camera "
+                             "(minimo 2944x720 em 0,0)"}}));
+
     // Fonts: the list comes from FontLibrary, the files from <assets>/fonts.
     const auto fonts = FontLibrary::files();
     const auto assets = std::filesystem::path(POINTCLICK_SOURCE_DIR) / "assets";
@@ -835,7 +882,9 @@ TEST_CASE("testRoomWithMissingArtStillRuns") {
                          error));
     RoomBundleResult loaded = library.loadBundle(RoomLibrary::startRoomFile);
     REQUIRE((loaded.bundle && loaded.error.empty()));
-    REQUIRE(ArtCheck::warnings(loaded.bundle->room, library.spritesDirectory()).size() == 2);
+    // player.png, painted.png (the layer), ghost.png: the layer covers the screen.
+    REQUIRE(ArtCheck::warnings(loaded.bundle->room, library.spritesDirectory()).size() == 3);
+    REQUIRE(loaded.bundle->room.layers.size() == 1);
 
     SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
     SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
@@ -850,41 +899,16 @@ TEST_CASE("testRoomWithMissingArtStillRuns") {
     renderer.render(game, 1.0F);
     SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
     REQUIRE((frame && frame->w == 1280 && frame->h == 720));
-    // ghost: bounds 600,400 96x96, tiles of 12 px starting purple at its top-left corner.
+    // M2-09 (c): the fixture's room-sized `back` layer has no PNG. The room loads and runs; the
+    // layer draws the checkerboard from the screen's corner in place of the procedural wall.
+    expectColor(pixel(frame, 6, 6), 145, 0, 190);
+    expectColor(pixel(frame, 18, 6), 10, 7, 17);
+    expectColor(pixel(frame, 640, 100), 10, 7, 17); // tile (53, 8): no wall
+    // ghost: bounds 600,400 96x96, tiles of 12 px starting purple at its top-left corner. The
+    // layer's tile at (606, 406) is dark (50 + 33 is odd), so the purple is the ghost on top.
     expectColor(pixel(frame, 606, 406), 145, 0, 190);
     expectColor(pixel(frame, 618, 406), 10, 7, 17);
-    expectColor(pixel(frame, 640, 100), 171, 62, 67); // and the rest of the scene is there
     SDL_DestroySurface(frame);
-
-    // M2-09 (c): the same room with a room-sized `back` layer whose PNG is missing, read from a
-    // .room file. It loads and runs; the layer draws the checkerboard from the screen's corner
-    // in place of the procedural wall, and the ghost still draws over it.
-    const TempDirectory layered("pointclick-missing-layer");
-    std::filesystem::create_directory(layered.path() / "rooms");
-    {
-        std::ifstream original(std::filesystem::path(POINTCLICK_SOURCE_DIR)
-                               / "tests/fixtures/missing_art/rooms/first.room");
-        std::ofstream copy(layered.path() / "rooms/first.room");
-        copy << original.rdbuf() << "\n[layer painted]\nimage.file = painted.png\n";
-    }
-    RoomLibrary layeredLibrary;
-    REQUIRE(layeredLibrary.open(layered.path() / "rooms", error));
-    RoomBundleResult withLayer = layeredLibrary.loadBundle(RoomLibrary::startRoomFile);
-    REQUIRE((withLayer.bundle && withLayer.error.empty()));
-    REQUIRE(withLayer.bundle->room.layers.size() == 1);
-    renderer.setSpriteRoot(layeredLibrary.spritesDirectory());
-    Game layeredGame(std::move(withLayer.bundle->room));
-    layeredGame.tick(0.05F);
-    renderer.render(layeredGame, 1.0F);
-    SDL_Surface* layeredFrame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
-    REQUIRE((layeredFrame && layeredFrame->w == 1280 && layeredFrame->h == 720));
-    expectColor(pixel(layeredFrame, 6, 6), 145, 0, 190);
-    expectColor(pixel(layeredFrame, 18, 6), 10, 7, 17);
-    expectColor(pixel(layeredFrame, 640, 100), 10, 7, 17); // tile (53, 8): no wall any more
-    // The layer's tile at (606, 406) is dark (50 + 33 is odd); the ghost's is purple on top.
-    expectColor(pixel(layeredFrame, 606, 406), 145, 0, 190);
-    expectColor(pixel(layeredFrame, 618, 406), 10, 7, 17);
-    SDL_DestroySurface(layeredFrame);
     renderer.shutdown();
     SDL_DestroyWindow(window);
     SDL_Quit();

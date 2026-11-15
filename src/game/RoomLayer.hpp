@@ -38,6 +38,9 @@ struct RoomLayer {
 // True when the layer fills the whole viewport for every camera offset the room allows
 // ([0, room - World] on each axis). The rect is affine in the camera, so both ends suffice.
 [[nodiscard]] bool layerCoversViewport(const RoomLayer& layer, const Room& room);
+// The smallest size that covers the viewport for every camera offset with the layer at 0, 0:
+// World + max(room - World, 0) * scroll_factor on each axis (the ArtCheck coverage warning).
+[[nodiscard]] SDL_FPoint layerCoverSize(const RoomLayer& layer, const Room& room);
 // True when the room declares at least one layer on that plane (a `back` one replaces the
 // procedural backdrop, D8).
 [[nodiscard]] bool hasLayers(const Room& room, LayerPlane plane);

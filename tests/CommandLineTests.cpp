@@ -52,6 +52,15 @@ TEST_CASE("testParseCommandLine") {
     const CommandLineResult check = parse({"--check", "--rooms", "x"});
     REQUIRE((check.options && check.options->check));
 
+    // --screenshot plays like the game (any start option) and --frames defaults to 1.
+    const CommandLineResult shot = parse({"--room", "gallery", "--screenshot", "frame.png"});
+    REQUIRE((shot.options && shot.options->takesScreenshot()));
+    REQUIRE((shot.options->screenshot == std::filesystem::path("frame.png")
+             && shot.options->screenshotFrames == 1));
+    const CommandLineResult frames = parse({"--frames", "120", "--screenshot", "a/b.png"});
+    REQUIRE((frames.options && frames.options->screenshotFrames == 120));
+    REQUIRE(!none.options->takesScreenshot());
+
     const struct {
         std::initializer_list<std::string_view> args;
         const char* error;
@@ -65,6 +74,16 @@ TEST_CASE("testParseCommandLine") {
         {{"--no-save", "--no-save"}, "Opcao repetida: --no-save"},
         {{"--rooms", "a", "--rooms", "b"}, "Opcao repetida: --rooms"},
         {{"--check", "--new-game"}, "--check aceita apenas --rooms"},
+        {{"--screenshot"}, "--screenshot precisa de um arquivo .png"},
+        {{"--screenshot", "frame.bmp"}, "--screenshot precisa de um arquivo .png"},
+        {{"--screenshot", "a.png", "--screenshot", "b.png"}, "Opcao repetida: --screenshot"},
+        {{"--frames", "10"}, "--frames exige --screenshot"},
+        {{"--screenshot", "a.png", "--frames"}, "--frames precisa de um numero de 1 a 36000"},
+        {{"--screenshot", "a.png", "--frames", "0"}, "--frames precisa de um numero de 1 a 36000"},
+        {{"--screenshot", "a.png", "--frames", "10x"},
+         "--frames precisa de um numero de 1 a 36000"},
+        {{"--screenshot", "a.png", "--frames", "1", "--frames", "2"}, "Opcao repetida: --frames"},
+        {{"--screenshot", "a.png", "--check"}, "--screenshot nao combina com --check nem --exec"},
         {{"--fast"}, "Opcao desconhecida: --fast"},
         {{"assets/rooms"}, "Opcao desconhecida: assets/rooms"},
     };
@@ -119,11 +138,13 @@ TEST_CASE("testCheckWarnsAboutMissingArt") {
     const ContentCheckReport report = checkContent(rooms);
     REQUIRE((report.ok() && report.problems.empty()));
     REQUIRE(report.roomsChecked == 1);
-    // One warning per file, however many clips use it.
-    REQUIRE(report.warnings.size() == 2);
+    // One warning per file, however many clips use it; layers come before the objects. The
+    // room-sized layer covers the screen, so it has no coverage warning.
+    REQUIRE(report.warnings.size() == 3);
     REQUIRE(report.warnings[0].file == "first.room");
     REQUIRE(report.warnings[0].message == "sprites/player.png: PNG ausente");
-    REQUIRE(report.warnings[1].message == "sprites/ghost.png: PNG ausente");
+    REQUIRE(report.warnings[1].message == "sprites/painted.png: PNG ausente");
+    REQUIRE(report.warnings[2].message == "sprites/ghost.png: PNG ausente");
 }
 
 TEST_CASE("testCheckReportsErrorsByFileAndLine") {

@@ -1,6 +1,8 @@
 # Arte ausente de proposito (F8): a sala e valida e o jogo roda, desenhando o quadriculado roxo.
 # O teste pointclick_check_missing_art espera que --check avise ("aviso:") e saia com 0.
 # Esta pasta nao tem sprites/, fonts/ nem actors/: os clips do player ficam aqui.
+# A camada painted (M2-10) tem o tamanho da sala: cobre a tela, entao so avisa do PNG ausente,
+# e desenha o quadriculado no lugar do fundo procedural (M2-09 (c)).
 [room]
 id = first
 player.idle.file = player.png
@@ -8,6 +10,10 @@ player.left.file = player.png
 player.right.file = player.png
 player.up.file = player.png
 player.down.file = player.png
+
+[layer painted]
+plane = back
+image.file = painted.png
 
 [object ghost]
 bounds = 600, 400, 96, 96

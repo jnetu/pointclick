@@ -53,6 +53,8 @@ private:
     // that handling inside an event watch. Same thread as the loop on iOS/Android.
     static bool lifecycleWatch(void* userdata, SDL_Event* event);
     void mainLoop();
+    // --screenshot: fixed ticks, one frame read back from the renderer and written as PNG.
+    bool captureScreenshot();
     void processEvents();
     void syncTextInputState();
     void shutdown();

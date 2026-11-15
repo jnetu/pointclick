@@ -254,6 +254,10 @@ if(BUILD_TESTING)
                         --exec "use brass_key red_box")
         set_tests_properties(pointclick_exec_failure PROPERTIES WILL_FAIL TRUE)
     endif()
+    # --screenshot: no window on screen, the start room's frame written as PNG (exit 0).
+    add_test(NAME pointclick_screenshot
+            COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms --new-game
+                    --screenshot ${CMAKE_CURRENT_BINARY_DIR}/pointclick_screenshot.png --frames 10)
     # F3: the shipped rooms (playgrounds included) have no art warning: the generated PNGs exist.
     add_test(NAME pointclick_check_assets_no_warnings
             COMMAND pointclick --rooms ${CMAKE_CURRENT_SOURCE_DIR}/assets/rooms --check)

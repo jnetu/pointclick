@@ -46,6 +46,11 @@ int Application::run() {
         shutdown();
         return 1;
     }
+    if (options_.takesScreenshot()) {
+        const bool saved = captureScreenshot();
+        shutdown();
+        return saved ? 0 : 1;
+    }
 
     mainLoop();
     shutdown();
@@ -221,18 +226,23 @@ bool Application::lifecycleWatch(void* userdata, SDL_Event* event) {
 bool Application::initialize() {
     // Audio is initialized by its own module when there is one: a machine without an audio
     // driver must still run the game.
+    if (options_.takesScreenshot()) {
+        // Nothing on the user's screen and no screen-recording permission needed: the frame is
+        // read back from the software renderer, as in the headless tests.
+        options_.noSave = true;
+        SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+        SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    }
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         SDL_Log("Could not initialize SDL: %s", SDL_GetError());
         return false;
     }
     inputSystem_.initialize();
 
-    window_ = SDL_CreateWindow(
-            "Point & Click",
-            1280,
-            720,
-            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY
-    );
+    window_ = SDL_CreateWindow("Point & Click", 1280, 720,
+                               options_.takesScreenshot()
+                                       ? SDL_WINDOW_HIDDEN
+                                       : SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
 
     if (window_ == nullptr) {
         SDL_Log("Could not create the window: %s", SDL_GetError());
@@ -355,6 +365,24 @@ void Application::mainLoop() {
             std::this_thread::sleep_until(nextRenderTime);
         }
     }
+}
+
+bool Application::captureScreenshot() {
+    Game& game = gameplay_->game;
+    for (int frame = 0; frame < options_.screenshotFrames; ++frame) {
+        game.tick(static_cast<float>(kTickSeconds));
+        processGameEvents(); // a change_room on entry is followed, as in the loop
+    }
+    renderer_.render(game, 1.0F, &inputSystem_, &gameplay_->dialogueMenu);
+    SDL_Surface* image = SDL_RenderReadPixels(SDL_GetRenderer(window_), nullptr);
+    if (!image) {
+        SDL_Log("Could not read the frame: %s", SDL_GetError());
+        return false;
+    }
+    const bool saved = SDL_SavePNG(image, TextFormat::pathToUtf8(options_.screenshot).c_str());
+    if (!saved) SDL_Log("Could not write the screenshot: %s", SDL_GetError());
+    SDL_DestroySurface(image);
+    return saved;
 }
 
 void Application::processEvents() {

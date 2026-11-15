@@ -1489,6 +1489,26 @@ TEST_CASE("testLayerCoversViewport") {
     RoomLayer still;
     still.scrollFactor = {0.0F, 0.0F};
     REQUIRE(layerCoversViewport(still, small));
+
+    // layerCoverSize agrees: at 0, 0, the minimum covers and one unit less on either side does
+    // not (the ArtCheck warning quotes it).
+    const auto agrees = [](RoomLayer layer, const Room& in) {
+        layer.position = {0.0F, 0.0F};
+        const SDL_FPoint minimum = layerCoverSize(layer, in);
+        layer.size = minimum;
+        const bool covers = layerCoversViewport(layer, in);
+        layer.size = {minimum.x - 1.0F, minimum.y};
+        const bool narrower = layerCoversViewport(layer, in);
+        layer.size = {minimum.x, minimum.y - 1.0F};
+        return covers && !narrower && !layerCoversViewport(layer, in);
+    };
+    REQUIRE((layerCoverSize(sky, room).x == 1536.0F && layerCoverSize(sky, room).y == 720.0F));
+    REQUIRE((layerCoverSize(foliage, room).x == 2944.0F
+             && layerCoverSize(ground, room).x == 2560.0F));
+    REQUIRE((layerCoverSize(still, small).x == 1280.0F
+             && layerCoverSize(still, small).y == 720.0F));
+    for (const RoomLayer& example : {sky, ground, strip, foliage}) REQUIRE(agrees(example, room));
+    REQUIRE(agrees(still, small));
 }
 
 std::string readAll(const std::filesystem::path& path) {

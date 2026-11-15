@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 feita (M2-01 a M2-03), F1 em M2-10 ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 e F1 feitas (M2-01 a M2-10), próxima F2 (M2-11) ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -134,7 +134,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | Fase | Tarefas | Resultado | Feito |
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
-| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 6/7 |
+| F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 7/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
@@ -221,13 +221,23 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
   (cada camada corta um quadro da folha); (c) em `testRoomWithMissingArtStillRuns`, com a camada
   lida de um `.room` copiado do fixture para um `TempDirectory` (o fixture não mudou, então o
   `pointclick_check_missing_art` e a contagem de avisos seguem para a M2-10).
-- [ ] **M2-10 · M · Arg. não — `ArtCheck` e `--check` para camadas.**
+- [x] **M2-10 · M · Arg. não — `ArtCheck` e `--check` para camadas.**
   `ArtCheck::warnings` confere o clip de cada camada (PNG ausente, ilegível, corte que não cabe,
   clip sem arquivo; dono = ID da camada) e **avisa quando a camada não cobre a tela em todas as
   posições da câmera** (`layerCoversViewport`, mensagem com o tamanho mínimo). Continua sendo
   `aviso:` e sai 0. **Toca:** `src/content/ArtCheck.cpp`, `tests/fixtures/missing_art`.
   **Teste:** `testArtWarnings` (camadas) em `tests/SpriteTests.cpp`, `testCheckWarnsAboutMissingArt`
   em `tests/CommandLineTests.cpp`. **Marco A:** abrir o jogo com uma sala de teste e ver o fundo.
+  Feito: cada camada passa pelo mesmo `checkClip` dos clips, como `<camada>.image`, na ordem do
+  arquivo (player → camadas → objetos → fontes). **Regra de cobertura:** um aviso por sala, só
+  quando ela tem camada `back` e **nenhuma** `back` passa em `layerCoversViewport` (aí parte da
+  tela mostra a cor de limpeza, M2-09 (d)); `front` nunca avisa, e uma faixa `back` parcial não
+  avisa se outra `back` cobre a tela. O aviso cita a primeira `back` (`file` =
+  `sprites/<arquivo>` ou `sprites`) e o mínimo em `0, 0` de `layerCoverSize` (`game/RoomLayer`,
+  `World + max(sala - World, 0) × fator`; concorda com `layerCoversViewport` em
+  `testLayerCoversViewport`). O fixture `missing_art` ganhou `[layer painted]` (PNG ausente, do
+  tamanho da sala): 3 avisos de sala, e o caso (c) da M2-09 lê o fixture direto. O aviso de PNG
+  de camada acima de 4096 px (tabela de riscos) ainda não foi feito.
 
 ### F2 — Paralaxe e primeiro plano (marco B)
 

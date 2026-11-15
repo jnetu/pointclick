@@ -65,12 +65,15 @@ faltar ou tiver um corte inválido, ele aparece como um quadriculado roxo e pret
 | `--no-save` | Não grava o autosave; o save existente fica intacto (ainda é lido, se não houver `--new-game`). Um save recusado (corrompido ou de versão desconhecida) também fica onde está, sem virar `save.slot.bad`: o jogo avisa no log e começa do zero |
 | `--room <sala> [spawn]` | Começa um jogo **novo** em `<sala>.room`, no `[spawn]` indicado (sem ele: `player.start`). Não retoma o save; combine com `--no-save` para não sobrescrevê-lo |
 | `--check` | Valida todas as salas, `.rules`, `.dlg`, o `player.actor` e os alvos de `change_room`, sem abrir janela. Arte ausente (PNG, corte que não cabe na imagem, fonte) sai como aviso e não muda o código de saída. Só aceita `--rooms` |
+| `--screenshot <arquivo.png>` | Roda o jogo sem mostrar janela (driver de vídeo `dummy`, renderer de software), avança `--frames` ticks de 60 Hz, salva o frame em PNG e sai. Nunca grava o autosave; aceita `--rooms`, `--new-game` e `--room`. Não precisa de permissão de gravação de tela |
+| `--frames N` | Ticks antes da captura do `--screenshot` (padrão `1`, até `36000`) |
 | `--exec <comando>` | Roda um comando do editor DEBUG sem janela (repetível; em ordem). Só em builds com ferramentas |
 | `--exec-file <arquivo>` | O mesmo, lendo um comando por linha (linhas vazias e começadas por `#` são ignoradas). Pode ser misturado com `--exec` |
 
 ```sh
 ./build/debug/pointclick --rooms assets/rooms --check
 ./build/debug/pointclick --rooms assets/rooms --no-save --room gallery
+./build/debug/pointclick --rooms assets/rooms --room first --new-game --screenshot frame.png --frames 10
 ./build/debug/pointclick --rooms assets/rooms --exec "give brass_key" --exec "use brass_key red_box" --exec state
 ```
 

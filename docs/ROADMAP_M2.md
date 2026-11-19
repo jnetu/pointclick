@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 e F1 feitas (M2-01 a M2-10), F2 com M2-11 a M2-13 feitas (M2-14 e M2-15 opcionais, decisão depois do marco B), próxima F3 (M2-16) ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 e F1 feitas (M2-01 a M2-10), F2 com M2-11 a M2-13 feitas (M2-14 e M2-15 opcionais, decisão depois do marco B), F3 com M2-16 feita, próxima M2-17 ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -136,7 +136,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
 | F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 7/7 |
 | F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 3/5 (M2-14 e M2-15 opcionais pendentes) |
-| F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
+| F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 1/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
 | F5 Ferramentas | M2-26 a M2-28 | editor/`--exec`/`--check` enxergam tudo | 0/3 |
 | F6 Playground | M2-29 a M2-33 | **marco C:** sala `stage` jogável e testada | 0/5 |
@@ -285,10 +285,18 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 
 ### F3 — Profundidade (`baseline`)
 
-- [ ] **M2-16 · S · Arg. não — Campo e validação.**
+- [x] **M2-16 · S · Arg. não — Campo e validação.**
   `SceneObject::baseline` (`std::optional<float>`); `depth()` = `bounds.y + baseline.value_or(bounds.h)`.
   `Room::validationIssue`: `0 <= baseline <= bounds.h`, campo "baseline". **Teste:**
   `testObjectBaselineValidation` em `tests/EditorTests.cpp`.
+  Feito: membro no fim da struct, com `{}` explícito (sem ele o Clang dá
+  `-Wmissing-field-initializers` em toda inicialização agregada que para em `initialAnimation`).
+  Conferida logo depois de `bounds` (limites inclusivos; o erro de `bounds` tem prioridade e não
+  há comparação com NaN), mensagem `"Baseline fora de 0 a altura do objeto: <id>"`, campo
+  `baseline`. `testObjectBaselineValidation` cobre ausente/0/meio/`bounds.h`, `-0.1`,
+  `bounds.h + 0.1`, NaN e ±inf, a prioridade de `bounds` e a troca de ordem de dois objetos
+  sobrepostos por `depth()`. Para a M2-17/M2-26: o comando `size` do editor pode deixar `bounds.h`
+  menor que a baseline e invalidar a sala.
 - [ ] **M2-17 · S · Arg. não — Chave `baseline` no `.room`.**
   Leitura, gravação só quando definida (arquivos antigos salvam iguais), erro com linha. Se a
   M2-03 foi feita, é uma entrada na tabela do `ObjectFields`; senão, um `if`. **Teste:**

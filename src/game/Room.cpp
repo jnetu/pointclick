@@ -190,6 +190,14 @@ RoomValidationIssue Room::validationIssue() const {
             || object.bounds.y + object.bounds.h > height) {
             return objectIssue("Objeto fora da sala: " + object.id, "bounds");
         }
+        // Checked only once bounds is valid, so bounds.h is finite and the bounds error wins.
+        if (object.baseline) {
+            const float baseline = *object.baseline;
+            if (!std::isfinite(baseline) || baseline < 0 || baseline > object.bounds.h) {
+                return objectIssue("Baseline fora de 0 a altura do objeto: " + object.id,
+                                   "baseline");
+            }
+        }
         if (!validIdentifier(object.initialAnimation)) {
             return objectIssue("Animacao inicial invalida: " + object.id, "animation.initial");
         }

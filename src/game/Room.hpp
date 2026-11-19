@@ -39,7 +39,7 @@ struct RoomValidationIssue {
     // entries may share a bad ID); never use it to address an object.
     std::size_t index = 0;
     // The member at fault, by its .room key ("feet", "bounds", "collision",
-    // "animation.initial", "size", "image.file"); empty when the whole block is to blame.
+    // "animation.initial", "baseline", "size", "image.file"); empty when the whole block is to blame.
     std::string_view field{};
 };
 

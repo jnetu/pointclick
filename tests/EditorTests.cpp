@@ -432,6 +432,63 @@ TEST_CASE("testLayerValidation") {
     }
 }
 
+TEST_CASE("testObjectBaselineValidation") {
+    using Subject = RoomValidationIssue::Subject;
+    Room base = RoomPresets::defaults();
+    SceneObject crate;
+    crate.id = "crate";
+    crate.bounds = {100.0F, 300.0F, 80.0F, 60.0F};
+    SceneObject tree;
+    tree.id = "tree";
+    tree.bounds = {120.0F, 200.0F, 60.0F, 180.0F};
+    base.scenery.push_back(crate);
+    base.scenery.push_back(tree);
+    const std::size_t treeIndex = base.scenery.size() - 1;
+    REQUIRE(base.validationError().empty());
+
+    // Unset: today's depth, bit for bit.
+    REQUIRE(!tree.baseline);
+    REQUIRE(tree.depth() == tree.bounds.y + tree.bounds.h);
+
+    // Inclusive range [0, bounds.h]; bounds.h is the same as no baseline.
+    for (const float value : {0.0F, 90.0F, tree.bounds.h}) {
+        Room room = base;
+        room.scenery[treeIndex].baseline = value;
+        REQUIRE(room.validationError().empty());
+        REQUIRE(room.scenery[treeIndex].depth() == tree.bounds.y + value);
+    }
+
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float inf = std::numeric_limits<float>::infinity();
+    for (const float value : {-0.1F, tree.bounds.h + 0.1F, nan, inf, -inf}) {
+        Room room = base;
+        room.scenery[treeIndex].baseline = value;
+        const RoomValidationIssue issue = room.validationIssue();
+        REQUIRE(issue.message == "Baseline fora de 0 a altura do objeto: tree");
+        REQUIRE(issue.subject == Subject::object);
+        REQUIRE(issue.index == treeIndex);
+        REQUIRE(issue.field == "baseline");
+    }
+
+    // Invalid bounds and baseline together: the bounds error wins.
+    {
+        Room room = base;
+        room.scenery[treeIndex].bounds.h = nan;
+        room.scenery[treeIndex].baseline = -1.0F;
+        const RoomValidationIssue issue = room.validationIssue();
+        REQUIRE(issue.message == "Objeto fora da sala: tree");
+        REQUIRE(issue.index == treeIndex);
+        REQUIRE(issue.field == "bounds");
+    }
+
+    // Overlapping objects: without a baseline the tall tree (foot 380) is in front of the crate
+    // (foot 360); a short baseline on the tree puts it behind.
+    REQUIRE(tree.depth() > crate.depth());
+    tree.baseline = 100.0F;
+    REQUIRE(tree.depth() == 300.0F);
+    REQUIRE(tree.depth() < crate.depth());
+}
+
 void requireSameRect(const SDL_FRect& a, const SDL_FRect& b) {
     REQUIRE((a.x == b.x && a.y == b.y && a.w == b.w && a.h == b.h));
 }

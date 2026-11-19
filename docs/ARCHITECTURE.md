@@ -59,7 +59,7 @@ a renderização e as ferramentas de edição têm responsabilidades separadas.
 | `graphics/TextRenderer` | SDL3_ttf: implementa `TextMetrics`, cache de `TTF_Text` por (papel, linha) com descarte por desuso, atlas de glifos do *text engine*, contorno escuro, desenho 1:1 em pixels de saída (DPI), fallback para a fonte de debug por papel |
 | `graphics/SpeechRenderer` | Desenha `Scene::floatingText` com `SpeechLayout`, ancorada em `EntityRenderer::playerRect` |
 | `graphics/RoomBackdropRenderer` | Parede, chão e linhas de perspectiva deslocados pela câmera (só em sala sem camada `back`, D8) |
-| `graphics/LayerRenderer` | Camadas `[layer]` de um plano, na ordem do arquivo, no retângulo de `layerRect` (paralaxe), via `SpriteLibrary` |
+| `graphics/LayerRenderer` | Camadas `[layer]` de um plano, na ordem do arquivo, no retângulo de `layerRect` (paralaxe), via `SpriteLibrary`; pula a camada cujo retângulo não cruza a viewport (`World::intersectsViewport`). `SceneRenderer` chama `back` antes dos objetos e `front` depois do player |
 | `graphics/EntityRenderer` | Desenho do player e dos objetos deslocados pela câmera |
 | `graphics/SceneRenderer` | Ordenação por profundidade e composição da cena (filtrando objetos ocultos em `SessionState`) |
 | `graphics/SpriteLibrary` | Carregamento de PNG, cache de texturas por arquivo (mantido nas edições; descarta o que ficou duas trocas de sala sem uso), corte e quadriculado de substituição |

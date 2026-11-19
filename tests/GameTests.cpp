@@ -1511,6 +1511,24 @@ TEST_CASE("testLayerCoversViewport") {
     REQUIRE(agrees(still, small));
 }
 
+// M2-13: the culling test of LayerRenderer. Any overlap with the 1280 x 720 viewport counts;
+// touching an edge does not.
+TEST_CASE("testIntersectsViewport") {
+    REQUIRE(World::intersectsViewport({0.0F, 0.0F, 1280.0F, 720.0F}));
+    REQUIRE(World::intersectsViewport({-5000.0F, -100.0F, 10000.0F, 1000.0F})); // larger
+    REQUIRE(World::intersectsViewport({1279.5F, 300.0F, 100.0F, 10.0F}));       // right edge
+    REQUIRE(World::intersectsViewport({-100.0F, 300.0F, 100.5F, 10.0F}));       // left edge
+    REQUIRE(World::intersectsViewport({300.0F, -50.0F, 10.0F, 50.5F}));         // top edge
+    REQUIRE(World::intersectsViewport({300.0F, 719.5F, 10.0F, 50.0F}));         // bottom edge
+    REQUIRE(!World::intersectsViewport({1280.0F, 300.0F, 100.0F, 10.0F}));
+    REQUIRE(!World::intersectsViewport({-100.0F, 300.0F, 100.0F, 10.0F}));
+    REQUIRE(!World::intersectsViewport({300.0F, -50.0F, 10.0F, 50.0F}));
+    REQUIRE(!World::intersectsViewport({300.0F, 720.0F, 10.0F, 50.0F}));
+    // Beside the screen on one axis is enough, even when the other axis overlaps.
+    REQUIRE(!World::intersectsViewport({2000.0F, 0.0F, 300.0F, 720.0F}));
+    REQUIRE(!World::intersectsViewport({0.0F, -900.0F, 1280.0F, 300.0F}));
+}
+
 std::string readAll(const std::filesystem::path& path) {
     std::ifstream in(path, std::ios::binary);
     return {std::istreambuf_iterator<char>(in), {}};

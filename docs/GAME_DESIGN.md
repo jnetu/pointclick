@@ -205,8 +205,9 @@ usam os padrões de `Room.hpp`; a arte do jogador vem de `assets/actors/player.a
 > **Em implementação (M2, `docs/ROADMAP_M2.md`).** Esta seção é a especificação que as tarefas
 > M2-04 a M2-28 cumprem. **Já existe:** o bloco `[layer]` é lido, validado (erros com `Linha N:`) e
 > gravado (M2-04 a M2-07), e as camadas `back` já são desenhadas no lugar do fundo procedural
-> (M2-08), com a arte conferida pelo `--check` (M2-10). As camadas `front` **ainda não** são
-> desenhadas (M2-12). `[hotspot]` e `baseline` ainda são recusados até a tarefa
+> (M2-08), com a arte conferida pelo `--check` (M2-10). A paralaxe está provada em frame (M2-11),
+> as camadas `front` desenham por cima de objetos e player (M2-12) e camada fora da tela não é
+> desenhada (M2-13). `[hotspot]` e `baseline` ainda são recusados até a tarefa
 > correspondente. Quando cada parte ficar pronta, o texto "ainda não" some e o guia vira a referência final (M2-34).
 
 Hoje a sala é cor chapada com guias (`RoomBackdropRenderer`) e objeto sem sprite vira um

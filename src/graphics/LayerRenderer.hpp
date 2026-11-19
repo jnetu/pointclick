@@ -10,6 +10,7 @@ class SpriteLibrary;
 
 namespace LayerRenderer {
 // Draws the room's layers on one plane, in file order, where layerRect places them. A layer
+// whose rect does not cross the viewport is skipped (World::intersectsViewport). A layer
 // without art draws the checkerboard like any missing sprite. Expects a validated room.
 void draw(SDL_Renderer* renderer, SpriteLibrary& sprites, const Room& room, LayerPlane plane,
           SDL_FPoint cameraOffset);

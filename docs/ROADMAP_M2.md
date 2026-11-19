@@ -1,6 +1,6 @@
 # M2 — Fundo, camadas e hotspots: plano de execução
 
-**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 e F1 feitas (M2-01 a M2-10), próxima F2 (M2-11) ·
+**Data:** 14/11/2026 · **Origem:** `docs/ROADMAP.md`, seção 5 (M2) · **Estado:** em andamento; F0 e F1 feitas (M2-01 a M2-10), F2 com M2-11 a M2-13 feitas (M2-14 e M2-15 opcionais, decisão depois do marco B), próxima F3 (M2-16) ·
 **Tamanho:** 38 micro-tarefas, cerca de 6 a 9 dias de trabalho (S ≤ 1 h, M ≤ meio dia, L ≤ 1 dia).
 
 Este documento fatia o M2 em passos pequenos, cada um com **o que toca**, **quando está pronto** e
@@ -135,7 +135,7 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 | --- | --- | --- | --- |
 | F0 Preparação | M2-01 a M2-03 | rede de segurança e `ObjectFields` | 3/3 |
 | F1 Fundo pintado | M2-04 a M2-10 | **marco A:** um PNG de fundo aparece no lugar do placeholder | 7/7 |
-| F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 0/5 |
+| F2 Paralaxe e primeiro plano | M2-11 a M2-15 | **marco B:** camadas em movimento e à frente do player | 3/5 (M2-14 e M2-15 opcionais pendentes) |
 | F3 Profundidade (`baseline`) | M2-16 a M2-19 | player passa atrás de objeto alto | 0/4 |
 | F4 Hotspots | M2-20 a M2-25 | áreas invisíveis clicáveis e paredes invisíveis | 0/6 |
 | F5 Ferramentas | M2-26 a M2-28 | editor/`--exec`/`--check` enxergam tudo | 0/3 |
@@ -241,18 +241,38 @@ renderer ficam comigo; testes em lote, documentação e arte sintética podem ir
 
 ### F2 — Paralaxe e primeiro plano (marco B)
 
-- [ ] **M2-11 · S · Arg. sim — Teste de paralaxe em frame.**
+- [x] **M2-11 · S · Arg. sim — Teste de paralaxe em frame.**
   Câmera deslocada 400 px: camada fator 1 anda 400, fator 0,5 anda 200, fator 0 fica parada;
   pixel de uma marca no PNG confere a posição. Interpolação (`alpha` 0 e 1) usa o mesmo
   `interpolatedPosition` do mundo. **Toca:** `tests/SpriteTests.cpp`.
-- [ ] **M2-12 · M · Arg. não — Plano `front` por cima do player.**
+  Feito em `testLayerParallaxPixels`: três faixas `back` de `mark.png` (64×32, gerado no teste,
+  marca branca na coluna 20, desenhada 1:1 e `pixelated`), na mesma x da sala e em linhas
+  separadas. Câmera 0 → as três marcas na coluna 620; câmera 400 → 220, 420 e 620. No meio de um
+  passo (o player anda, a câmera vem atrás: anterior 400, atual ≥ 408) as marcas com `alpha` 0,
+  0,5 e 1 ficam a ±1 px de `posição - interpolatedPosition(alpha) × fator`. A conta do
+  `LayerRenderer` estava certa; nada mudou em `src/`.
+- [x] **M2-12 · M · Arg. não — Plano `front` por cima do player.**
   `SceneRenderer`: camadas `front` depois do laço de objetos e player. **Teste:** pixel sobre o
   player é o da camada `front`; sob a camada `back` o player aparece. **Pronto quando:** a ordem
   fundo → objetos/player → front vale com o player andando.
-- [ ] **M2-13 · S · Arg. não — *Culling* simples de camada.**
+  Feito: uma chamada `LayerRenderer::draw(..., LayerPlane::front, ...)` no fim de
+  `SceneRenderer::draw` (fala e menus continuam depois, em `Renderer::render`). Prova em
+  `testFrontLayerOverPlayer`: `back` do tamanho da sala (vermelho) e uma faixa `front` (amarelo)
+  que corta o topo do player (quadriculado, sem PNG); em dois pontos de uma caminhada, o ladrilho
+  roxo do topo do player sai amarelo, abaixo da faixa o player aparece sobre o vermelho.
+- [x] **M2-13 · S · Arg. não — *Culling* simples de camada.**
   `LayerRenderer` pula camada cujo retângulo na tela não cruza a viewport (`SDL_HasRectIntersectionFloat`
   ou conta própria). **Teste:** `layerRect` fora da tela não chama o desenho (contador via sala com
   PNG ausente: nenhum quadriculado quando fora). **Pronto quando:** nenhum desvio visual.
+  Feito com conta própria, `World::intersectsViewport(rect)` em `game/World.hpp` (ao lado de
+  `containsViewportPoint`; estrita: encostar na borda não conta, porque não desenha nenhum
+  pixel), aplicada ao `layerRect` já deslocado pela câmera. Teste puro das bordas em
+  `testIntersectsViewport` (`tests/GameTests.cpp`); em frame, `testLayerCulling`
+  (`tests/SpriteTests.cpp`) chama o `LayerRenderer` com uma `SpriteLibrary` própria e usa
+  `cachedImageCount()` como contador (desenhar um PNG ausente também o pede ao cache): camadas
+  fora da tela nos quatro lados, uma encostada na borda direita e uma `front` não pedem arquivo
+  nem pintam quadriculado; uma que cruza a borda direita desenha; com a câmera em 400, as que
+  entram na tela passam a desenhar. Os testes de frame anteriores seguem iguais.
 - [ ] **M2-14 · M · Arg. não — (opcional) Camada animada.**
   Relógio de sala determinístico em `Scene` (`roomTime`, zera em `apply` com `resetPlayer`, soma
   em `tick`); `LayerRenderer` passa o tempo ao `SpriteLibrary::draw`; clip com `frames`/`fps`.

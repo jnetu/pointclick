@@ -44,4 +44,6 @@ void SceneRenderer::draw(SDL_Renderer* renderer, SpriteLibrary& sprites,
                                        interpolation);
         }
     }
+    // Foreground over everything in the room, the player included; speech and menus come after.
+    LayerRenderer::draw(renderer, sprites, room, LayerPlane::front, cameraOffset);
 }

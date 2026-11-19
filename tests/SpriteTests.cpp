@@ -4,8 +4,10 @@
 #include "content/RoomFiles.hpp"
 #include "support/RoomPresets.hpp"
 #include "game/Game.hpp"
+#include "game/World.hpp"
 #include "graphics/EntityRenderer.hpp"
 #include "graphics/FontLibrary.hpp"
+#include "graphics/LayerRenderer.hpp"
 #include "graphics/Renderer.hpp"
 #include "graphics/SpriteLibrary.hpp"
 
@@ -691,6 +693,321 @@ TEST_CASE("testBackLayerReplacesBackdrop") {
 
     renderer.shutdown();
     SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+// A 64x32 strip of one opaque colour with a white mark at columns 20..23, the reference the
+// parallax and front-layer frames look for. Layers draw it 1:1 and pixelated, so the mark
+// lands on whole pixels wherever the camera puts it.
+constexpr SDL_Color markStripColor{60, 60, 200, 255};
+constexpr int markColumn = 20;
+
+void writeMarkStripPng(const std::filesystem::path& directory) {
+    SDL_Surface* strip = SDL_CreateSurface(64, 32, SDL_PIXELFORMAT_RGBA32);
+    REQUIRE(strip);
+    REQUIRE(SDL_FillSurfaceRect(
+            strip, nullptr,
+            SDL_MapSurfaceRGBA(strip, markStripColor.r, markStripColor.g, markStripColor.b, 255)));
+    const SDL_Rect mark{markColumn, 0, 4, 32};
+    REQUIRE(SDL_FillSurfaceRect(strip, &mark, SDL_MapSurfaceRGBA(strip, 255, 255, 255, 255)));
+    const auto file = directory / "mark.png";
+    REQUIRE(SDL_SavePNG(strip, file.string().c_str()));
+    SDL_DestroySurface(strip);
+}
+
+// The first screen column of row y with the white mark, or -1.
+int firstWhiteColumn(SDL_Surface* frame, const int y) {
+    for (int x = 0; x < frame->w; ++x) {
+        const SDL_Color color = pixel(frame, x, y);
+        if (color.r == 255 && color.g == 255 && color.b == 255) return x;
+    }
+    return -1;
+}
+
+// M2-11 (D7): parallax in a headless frame. Three `back` strips of mark.png sit at the same room
+// x in separate rows, with factors 1, 0.5 and 0. With the camera 400 px into the room the mark of
+// each moves 400, 200 and 0 px; mid-step, every alpha places them with the same
+// Camera::interpolatedPosition the world uses.
+TEST_CASE("testLayerParallaxPixels") {
+    const TempDirectory testDirectory("pointclick-parallax");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    writeMarkStripPng(testDirectory.path());
+    SDL_Window* window = SDL_CreateWindow("Parallax test", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    // No player PNG here: the player is the checkerboard around its feet, above every strip.
+    renderer.setSpriteRoot(testDirectory.path());
+
+    struct Strip {
+        const char* id;
+        float factor;
+        int row; // screen row through the middle of the strip (its y is fixed: camera y is 0)
+    };
+    constexpr Strip strips[]{{"near", 1.0F, 436}, {"mid", 0.5F, 516}, {"far", 0.0F, 596}};
+    constexpr float stripX = 600.0F;
+    Room room;
+    room.id = "parallax";
+    room.width = 2560.0F;
+    room.playerAnimations = sharedPlayerArt();
+    for (const Strip& strip : strips) {
+        RoomLayer layer;
+        layer.id = strip.id;
+        layer.image = {.file = "mark.png", .pixelated = true};
+        layer.position = {stripX, static_cast<float>(strip.row - 16)};
+        layer.size = {64.0F, 32.0F};
+        layer.scrollFactor = {strip.factor, strip.factor};
+        room.layers.push_back(layer);
+    }
+    REQUIRE(room.validationError().empty());
+
+    // Renders the frame and checks each strip's mark against the camera offset at that alpha.
+    const auto expectMarks = [&](const Game& game, const float alpha) {
+        const SDL_FPoint camera = game.scene().camera().interpolatedPosition(alpha);
+        const SDL_FRect player = EntityRenderer::playerRect(
+                game.scene().room(), game.scene().player(),
+                game.scene().player().interpolatedFeet(alpha), camera);
+        REQUIRE(player.y + player.h < static_cast<float>(strips[0].row - 16));
+        renderer.render(game, alpha);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+        for (const Strip& strip : strips) {
+            const float expected = stripX + static_cast<float>(markColumn)
+                                   - camera.x * strip.factor;
+            const int found = firstWhiteColumn(frame, strip.row);
+            INFO(strip.id << " alpha " << alpha << " camera " << camera.x << ": mark at " << found
+                          << ", expected " << expected);
+            REQUIRE(std::abs(static_cast<float>(found) - expected) <= 1.0F);
+            // The strip's own colour right after the mark: the PNG, not the clear colour.
+            const SDL_Color body = pixel(frame, found + 8, strip.row);
+            expectColor(body, markStripColor.r, markStripColor.g, markStripColor.b);
+        }
+        SDL_DestroySurface(frame);
+    };
+    const auto markAt = [&](const Game& game, const int row) {
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE(frame);
+        const int found = firstWhiteColumn(frame, row);
+        SDL_DestroySurface(frame);
+        return found;
+    };
+
+    // Camera at 0 (player at 640): the three marks share the column 620.
+    room.playerStart = {640.0F, 360.0F};
+    const Game atStart(room);
+    REQUIRE(atStart.scene().camera().position().x == 0.0F);
+    expectMarks(atStart, 1.0F);
+    for (const Strip& strip : strips) REQUIRE(markAt(atStart, strip.row) == 620);
+
+    // Camera at 400 (player at 1040): factor 1 moved 400, 0.5 moved 200, 0 stayed.
+    room.playerStart = {1040.0F, 360.0F};
+    Game moved(room);
+    REQUIRE(moved.scene().camera().position().x == 400.0F);
+    expectMarks(moved, 1.0F);
+    REQUIRE(markAt(moved, strips[0].row) == 220);
+    REQUIRE(markAt(moved, strips[1].row) == 420);
+    REQUIRE(markAt(moved, strips[2].row) == 620);
+
+    // Mid-step: the player walks right and the camera trails it, so the previous and current
+    // positions differ. alpha 0 is the previous offset (400), alpha 1 the current one, and 0.5
+    // sits between; the layers follow the interpolated camera exactly like the world.
+    moved.onClick({1200.0F, 360.0F});
+    moved.tick(0.25F);
+    REQUIRE(moved.scene().player().moving());
+    const float previous = moved.scene().camera().interpolatedPosition(0.0F).x;
+    const float current = moved.scene().camera().interpolatedPosition(1.0F).x;
+    REQUIRE(previous == 400.0F);
+    REQUIRE(current - previous >= 8.0F);
+    for (const float alpha : {0.0F, 0.5F, 1.0F}) expectMarks(moved, alpha);
+
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+// M2-12: draw order background -> objects and player by depth -> `front` layers. A room-sized
+// `back` layer (red, frame 0 of the sheet) sits under the player and a `front` band (yellow,
+// frame 3) runs across the top of the player's body. The player is the checkerboard (no PNG in
+// the folder), purple in its top-left tile: under the band the frame is yellow, below the band
+// the player shows over the red background. Checked at two points of a walk.
+TEST_CASE("testFrontLayerOverPlayer") {
+    const TempDirectory testDirectory("pointclick-front");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    writeSheetPng(testDirectory.path());
+    SDL_Window* window = SDL_CreateWindow("Front layer test", 1280, 720, SDL_WINDOW_HIDDEN);
+    REQUIRE(window);
+    Renderer renderer;
+    REQUIRE(renderer.initialize(window));
+    renderer.setSpriteRoot(testDirectory.path());
+    const auto layerOfFrame = [](const std::string& id, const int frame, const LayerPlane plane) {
+        RoomLayer layer;
+        layer.id = id;
+        layer.plane = plane;
+        layer.image = {.file = "sheet.png",
+                       .frameWidth = 4,
+                       .frameHeight = 4,
+                       .columns = 2,
+                       .firstFrame = frame,
+                       .marginX = 1,
+                       .marginY = 1,
+                       .spacingX = 1,
+                       .spacingY = 1};
+        return layer;
+    };
+    constexpr SDL_Color purple{145, 0, 190, 255};
+    const SDL_Color red = colors[0];
+    const SDL_Color yellow = colors[3];
+    const auto expectAt = [](SDL_Surface* frame, const SDL_FPoint at, const SDL_Color expected) {
+        const SDL_Color actual = pixel(frame, static_cast<int>(at.x), static_cast<int>(at.y));
+        INFO("pixel " << at.x << "," << at.y << " = " << int(actual.r) << "," << int(actual.g)
+                      << "," << int(actual.b));
+        expectColor(actual, expected.r, expected.g, expected.b);
+    };
+
+    Room room;
+    room.id = "front";
+    room.playerAnimations = sharedPlayerArt();
+    room.playerStart = {300.0F, 500.0F};
+    // The band ends 30 px below the top of the standing player: about two and a half tiles of
+    // its checkerboard are under it.
+    const SDL_FRect standing = [&] {
+        const Game probe(room);
+        return EntityRenderer::playerRect(probe.scene().room(), probe.scene().player(),
+                                          probe.scene().player().feet());
+    }();
+    const float bandBottom = standing.y + 30.0F;
+    RoomLayer band = layerOfFrame("band", 3, LayerPlane::front);
+    band.size = {1280.0F, bandBottom};
+    room.layers = {layerOfFrame("ground", 0, LayerPlane::back), band};
+    REQUIRE(room.validationError().empty());
+
+    Game game(room);
+    game.onClick({1000.0F, 500.0F});
+    float lastFeetX = game.scene().player().feet().x;
+    for (const float step : {0.5F, 1.5F}) {
+        game.tick(step);
+        REQUIRE(game.scene().player().moving());
+        const SDL_FPoint feet = game.scene().player().interpolatedFeet(1.0F);
+        REQUIRE(feet.x - lastFeetX > 50.0F);
+        lastFeetX = feet.x;
+        REQUIRE(game.scene().camera().position().x == 0.0F);
+        const SDL_FRect player = EntityRenderer::playerRect(game.scene().room(),
+                                                            game.scene().player(), feet);
+        REQUIRE(player.y + 6.0F < bandBottom);
+        // The first even row of tiles wholly below the band: purple in its first column.
+        int row = 0;
+        while (player.y + 12.0F * static_cast<float>(row) < bandBottom + 1.0F) row += 2;
+        const float belowBand = player.y + 12.0F * static_cast<float>(row) + 6.0F;
+        REQUIRE(belowBand < player.y + player.h);
+
+        renderer.render(game, 1.0F);
+        SDL_Surface* frame = SDL_RenderReadPixels(SDL_GetRenderer(window), nullptr);
+        REQUIRE((frame && frame->w == 1280 && frame->h == 720));
+        INFO("player at " << feet.x << "," << feet.y << ", rect " << player.x << "," << player.y
+                          << " " << player.w << "x" << player.h);
+        // Over the player's top-left (purple) tile, the front band wins.
+        expectAt(frame, {player.x + 6.0F, player.y + 6.0F}, yellow);
+        // Below the band, the player is drawn over the back layer...
+        expectAt(frame, {player.x + 6.0F, belowBand}, purple);
+        // ...which shows beside it, and the band covers the room away from the player too.
+        expectAt(frame, {player.x - 20.0F, belowBand}, red);
+        expectAt(frame, {player.x - 20.0F, player.y + 6.0F}, yellow);
+        SDL_DestroySurface(frame);
+    }
+
+    renderer.shutdown();
+    SDL_DestroyWindow(window);
+    SDL_Quit();
+}
+
+// M2-13: LayerRenderer skips a layer whose rect on the screen (layerRect, camera included) does
+// not cross the viewport. Every layer here points at a missing PNG: drawing one asks the
+// SpriteLibrary for the file (cachedImageCount grows) and paints the checkerboard, so a skipped
+// layer leaves both the count and the frame untouched.
+TEST_CASE("testLayerCulling") {
+    const TempDirectory testDirectory("pointclick-culling");
+    SDL_SetHint(SDL_HINT_VIDEO_DRIVER, "dummy");
+    REQUIRE(SDL_Init(SDL_INIT_VIDEO));
+    SDL_Surface* output = SDL_CreateSurface(World::width, World::height, SDL_PIXELFORMAT_RGBA32);
+    REQUIRE(output);
+    SDL_Renderer* renderer = SDL_CreateSoftwareRenderer(output);
+    REQUIRE(renderer);
+    SpriteLibrary sprites;
+    sprites.initialize(renderer);
+    sprites.setRoot(testDirectory.path());
+    constexpr SDL_Color clear{0, 0, 0, 255};
+    const auto purpleCount = [&] {
+        int count = 0;
+        for (int y = 0; y < output->h; y += 3) {
+            for (int x = 0; x < output->w; x += 3) {
+                const SDL_Color color = pixel(output, x, y);
+                if (color.r == 145 && color.g == 0 && color.b == 190) ++count;
+            }
+        }
+        return count;
+    };
+    const auto drawRoom = [&](const Room& room, const SDL_FPoint camera) {
+        REQUIRE(room.validationError().empty());
+        SDL_SetRenderDrawColor(renderer, clear.r, clear.g, clear.b, 255);
+        SDL_RenderClear(renderer);
+        for (const LayerPlane plane : {LayerPlane::back, LayerPlane::front}) {
+            LayerRenderer::draw(renderer, sprites, room, plane, camera);
+        }
+        SDL_RenderPresent(renderer);
+    };
+    const auto missingLayer = [](const std::string& id, const SDL_FRect at,
+                                 const LayerPlane plane = LayerPlane::back) {
+        RoomLayer layer;
+        layer.id = id;
+        layer.plane = plane;
+        layer.image.file = id + ".png";
+        layer.position = {at.x, at.y};
+        layer.size = {at.w, at.h};
+        return layer;
+    };
+    Room room;
+    room.width = 2560.0F;
+    room.playerAnimations = sharedPlayerArt();
+
+    // Wholly off the screen on each side, one of them only touching the right edge, and a
+    // `front` one: none is drawn, so no file is asked for and no checkerboard appears.
+    room.layers = {
+        missingLayer("left", {-300.0F, 100.0F, 300.0F, 200.0F}),
+        missingLayer("right", {1280.0F, 100.0F, 300.0F, 200.0F}),
+        missingLayer("above", {200.0F, -250.0F, 300.0F, 250.0F}),
+        missingLayer("below", {200.0F, 720.0F, 300.0F, 200.0F}),
+        missingLayer("beyond", {1500.0F, 0.0F, 300.0F, 720.0F}, LayerPlane::front),
+    };
+    drawRoom(room, {0.0F, 0.0F});
+    REQUIRE(sprites.cachedImageCount() == 0);
+    REQUIRE(purpleCount() == 0);
+
+    // A layer crossing the right edge still draws: its checkerboard starts at its corner.
+    room.layers.push_back(missingLayer("edge", {1200.0F, 300.0F, 200.0F, 100.0F}));
+    drawRoom(room, {0.0F, 0.0F});
+    REQUIRE(sprites.cachedImageCount() == 1);
+    expectColor(pixel(output, 1206, 306), 145, 0, 190);
+    expectColor(pixel(output, 1218, 306), 10, 7, 17);
+    expectColor(pixel(output, 1190, 306), clear.r, clear.g, clear.b);
+
+    // The test is on the rect after the camera: with the camera at 400, "right" (room x 1280)
+    // lands at 880 and "beyond" (room x 1500, front) at 1100, so both draw now; "edge" moved to
+    // 800 and still draws; left, above and below stay out.
+    drawRoom(room, {400.0F, 0.0F});
+    REQUIRE(sprites.cachedImageCount() == 3);
+    expectColor(pixel(output, 886, 106), 145, 0, 190);
+    expectColor(pixel(output, 1106, 6), 145, 0, 190);
+    expectColor(pixel(output, 806, 306), 145, 0, 190);
+    expectColor(pixel(output, 100, 150), clear.r, clear.g, clear.b);
+
+    sprites.clear();
+    SDL_DestroyRenderer(renderer);
+    SDL_DestroySurface(output);
     SDL_Quit();
 }
 
